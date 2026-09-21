@@ -60,8 +60,8 @@ final smsListenerProvider = Provider<SmsListener>(
   (ref) => SmsListener(ref.watch(appServicesProvider)),
 );
 
-/// Index of the Settings tab in the bottom navigation (Finance, Messages,
-/// Settings). Used by pages that deep-link to Settings.
+/// Bottom-navigation tab indices (Finance, Messages, Settings).
+const int kMessagesTabIndex = 1;
 const int kSettingsTabIndex = 2;
 
 /// The selected bottom-nav tab, held in a provider so any page can switch tabs.
