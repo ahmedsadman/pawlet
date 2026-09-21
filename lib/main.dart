@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'theme/catppuccin_theme.dart';
+import 'app.dart';
+import 'data/database.dart';
+import 'state/providers.dart';
 
-void main() {
-  runApp(const MeowniApp());
-}
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-class MeowniApp extends StatelessWidget {
-  const MeowniApp({super.key});
+  final prefs = await SharedPreferences.getInstance();
+  final database = await AppDatabase.open();
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Meowni',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.theme,
-      home: const Scaffold(
-        body: Center(child: Text('Meowni')),
-      ),
-    );
-  }
+  runApp(
+    ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        databaseProvider.overrideWithValue(database),
+      ],
+      child: const MeowniApp(),
+    ),
+  );
 }
