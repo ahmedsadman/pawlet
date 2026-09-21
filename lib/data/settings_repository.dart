@@ -15,6 +15,12 @@ class SettingsRepository {
   static const _kTxRange = 'tx_range';
   static const _kTxTypes = 'tx_types';
   static const _kTxSort = 'tx_sort';
+  static const _kResolveContacts = 'resolve_contacts';
+  static const _kLlmApiKey = 'llm_api_key';
+  static const _kLlmModel = 'llm_model';
+
+  /// Default OpenRouter model — the free-models router.
+  static const String defaultLlmModel = 'openrouter/free';
 
   /// User's normalized reporting currency (all amounts are stored in it).
   String get currency => _prefs.getString(_kCurrency) ?? 'BDT';
@@ -46,4 +52,28 @@ class SettingsRepository {
 
   String? get txSort => _prefs.getString(_kTxSort);
   Future<void> setTxSort(String key) => _prefs.setString(_kTxSort, key);
+
+  /// Attach a saved contact name to numeric senders (for display).
+  bool get resolveContacts => _prefs.getBool(_kResolveContacts) ?? true;
+  Future<void> setResolveContacts(bool value) =>
+      _prefs.setBool(_kResolveContacts, value);
+
+  /// OpenRouter API key. Stored in SharedPreferences for now; a later phase
+  /// migrates it to encrypted storage.
+  String get llmApiKey => _prefs.getString(_kLlmApiKey) ?? '';
+  Future<void> setLlmApiKey(String value) =>
+      _prefs.setString(_kLlmApiKey, value.trim());
+
+  bool get hasLlmApiKey => llmApiKey.isNotEmpty;
+
+  /// OpenRouter model id (default: the free-models router).
+  String get llmModel {
+    final v = _prefs.getString(_kLlmModel)?.trim();
+    return (v == null || v.isEmpty) ? defaultLlmModel : v;
+  }
+
+  Future<void> setLlmModel(String value) {
+    final trimmed = value.trim();
+    return _prefs.setString(_kLlmModel, trimmed.isEmpty ? defaultLlmModel : trimmed);
+  }
 }
