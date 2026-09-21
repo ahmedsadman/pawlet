@@ -1,0 +1,98 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:meowni/models/finance/bank.dart';
+import 'package:meowni/services/classification/classifier.dart';
+import 'package:meowni/services/llm/llm_provider.dart';
+import 'package:meowni/utils/bank_tokens.dart';
+
+/// Records invocations and returns a canned result, so we can assert whether the
+/// LLM was called and how the outcome is routed.
+class _FakeLlm implements LlmProvider {
+  _FakeLlm(this.result);
+  final ClassifyResult result;
+  int calls = 0;
+
+  @override
+  Future<ClassifyResult> classifyAndExtract({
+    required String content,
+    required String sender,
+    required List<String> bankNames,
+    required String currency,
+  }) async {
+    calls++;
+    return result;
+  }
+}
+
+Bank _bank(
+  String name, {
+  String accountType = 'deposit',
+  String alternates = '',
+  String? cardDigits,
+}) => Bank(
+  id: name.hashCode,
+  name: name,
+  accountType: accountType,
+  cardDigits: cardDigits,
+  matchTokens: buildMatchTokens(name, alternates),
+  createdAt: DateTime(2026, 1, 1),
+);
+
+void main() {
+  final unity = _bank('Unity Commercial', alternates: 'UCB, Unity Bank');
+  final ebl = _bank('EBL Credit Card', accountType: 'credit', cardDigits: '4238|3241');
+  final banks = [unity, ebl];
+
+  Future<ClassificationOutcome> run(
+    _FakeLlm llm,
+    String sender,
+    String content,
+  ) => Classifier(llm).classify(
+    sender: sender,
+    content: content,
+    banks: banks,
+    currency: 'BDT',
+  );
+
+  test('Layer-1 miss → ignored, no LLM call', () async {
+    final llm = _FakeLlm(const ClassifyResult.none());
+    final outcome = await run(llm, 'Daraz', 'win a prize');
+    expect(outcome.category, SmsCategory.none);
+    expect(outcome.llmInvoked, isFalse);
+    expect(llm.calls, 0);
+  });
+
+  test('sender match → one LLM call, transaction routed', () async {
+    final llm = _FakeLlm(
+      const ClassifyResult(
+        category: SmsCategory.transaction,
+        transaction: MetadataResult(bank: 'Unity Commercial', amount: '50'),
+      ),
+    );
+    final outcome = await run(llm, 'UCB', 'debit 50 BDT');
+    expect(llm.calls, 1);
+    expect(outcome.llmInvoked, isTrue);
+    expect(outcome.category, SmsCategory.transaction);
+    expect(outcome.transaction!.amount, '50');
+  });
+
+  test('card-digit match gates in even when the sender does not', () async {
+    final llm = _FakeLlm(
+      const ClassifyResult(
+        category: SmsCategory.bill,
+        bill: BillMetadataResult(bank: 'EBL Credit Card', normalizedTotalDue: '8020'),
+      ),
+    );
+    final outcome = await run(llm, 'RANDOM', 'Monthly bill 4238****3241');
+    expect(llm.calls, 1);
+    expect(outcome.category, SmsCategory.bill);
+    expect(outcome.bill!.normalizedTotalDue, '8020');
+  });
+
+  test('LLM returns none → outcome none but llmInvoked true', () async {
+    final llm = _FakeLlm(const ClassifyResult.none());
+    final outcome = await run(llm, 'UCB', 'some bank notice');
+    expect(llm.calls, 1);
+    expect(outcome.llmInvoked, isTrue);
+    expect(outcome.category, SmsCategory.none);
+  });
+}
