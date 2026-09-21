@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'services/permissions.dart';
 import 'state/providers.dart';
 import 'theme/catppuccin_theme.dart';
 import 'ui/finance_page.dart';
@@ -22,10 +25,12 @@ class MeowniApp extends StatelessWidget {
 }
 
 /// Persistent bottom-nav shell. Tabs are ordered Finance, Messages, Settings.
+/// Requests permissions, starts the SMS listener, and runs the processing queue
+/// when the app returns to the foreground.
 ///
 /// [pages] is only for tests: when provided, the shell renders those widgets
-/// instead of the real tabs.
-class RootShell extends ConsumerWidget {
+/// instead of the real tabs and skips the plugin-backed bootstrap.
+class RootShell extends ConsumerStatefulWidget {
   const RootShell({super.key}) : pages = null;
 
   @visibleForTesting
@@ -33,13 +38,49 @@ class RootShell extends ConsumerWidget {
 
   final List<Widget>? pages;
 
+  @override
+  ConsumerState<RootShell> createState() => _RootShellState();
+}
+
+class _RootShellState extends ConsumerState<RootShell>
+    with WidgetsBindingObserver {
   static const _defaultPages = [FinancePage(), MessagesPage(), SettingsPage()];
 
+  List<Widget> get _pages => widget.pages ?? _defaultPages;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    if (widget.pages != null) return; // test mode: no plugin bootstrap
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
+  }
+
+  Future<void> _bootstrap() async {
+    await AppPermissions.requestAll();
+    ref.read(smsListenerProvider).start();
+    await ref.read(processingServiceProvider).process();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Fire-and-forget: process() swallows its own pass-level errors.
+      unawaited(ref.read(processingServiceProvider).process());
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.pages == null) WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final index = ref.watch(selectedTabProvider);
     return Scaffold(
-      body: IndexedStack(index: index, children: pages ?? _defaultPages),
+      body: IndexedStack(index: index, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (i) =>

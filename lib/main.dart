@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'data/database.dart';
+import 'services/background_worker.dart';
+import 'services/notification_service.dart';
 import 'state/providers.dart';
 
 Future<void> main() async {
@@ -11,6 +13,10 @@ Future<void> main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final database = await AppDatabase.open();
+  // Inits the shared plugin singleton; the provider's NotificationService wraps
+  // the same native instance.
+  await NotificationService().init();
+  await BackgroundWorker.initialize();
 
   runApp(
     ProviderScope(

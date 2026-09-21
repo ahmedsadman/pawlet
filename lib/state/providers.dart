@@ -5,6 +5,10 @@ import 'package:sqflite/sqflite.dart';
 import '../data/banks_repository.dart';
 import '../data/finance_repository.dart';
 import '../data/settings_repository.dart';
+import '../data/sms_repository.dart';
+import '../services/app_services.dart';
+import '../services/processing_service.dart';
+import '../services/sms_listener.dart';
 
 /// Overridden in `main()` (and in tests) once async initialization completes.
 final sharedPreferencesProvider = Provider<SharedPreferences>(
@@ -28,6 +32,32 @@ final financeRepositoryProvider = Provider<FinanceRepository>(
     ref.watch(databaseProvider),
     currency: () => ref.read(settingsRepositoryProvider).currency,
   ),
+);
+
+/// Bundles the SMS capture + processing pipeline for the UI isolate.
+///
+/// The LLM API key / model are read once here at build time. Phase 8 (Settings)
+/// must `ref.invalidate(appServicesProvider)` after the user changes the key so
+/// the foreground pipeline picks it up without an app restart.
+final appServicesProvider = Provider<AppServices>((ref) {
+  final services = AppServices.from(
+    database: ref.watch(databaseProvider),
+    prefs: ref.watch(sharedPreferencesProvider),
+  );
+  ref.onDispose(services.dispose);
+  return services;
+});
+
+final smsRepositoryProvider = Provider<SmsRepository>(
+  (ref) => ref.watch(appServicesProvider).smsRepository,
+);
+
+final processingServiceProvider = Provider<ProcessingService>(
+  (ref) => ref.watch(appServicesProvider).processingService,
+);
+
+final smsListenerProvider = Provider<SmsListener>(
+  (ref) => SmsListener(ref.watch(appServicesProvider)),
 );
 
 /// Index of the Settings tab in the bottom navigation (Finance, Messages,
