@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'services/permissions.dart';
+import 'state/auth_providers.dart';
 import 'state/providers.dart';
 import 'theme/catppuccin_theme.dart';
 import 'ui/finance_page.dart';
 import 'ui/messages_page.dart';
+import 'ui/security/lock_screen.dart';
+import 'ui/security/setup_pin_screen.dart';
 import 'ui/settings_page.dart';
 
 class MeowniApp extends StatelessWidget {
@@ -19,8 +22,70 @@ class MeowniApp extends StatelessWidget {
       title: 'Meowni',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      home: const RootShell(),
+      home: const AuthGate(child: RootShell()),
     );
+  }
+}
+
+/// Gates the app behind PIN/biometric. Keeps [child] mounted underneath so the
+/// SMS listener + processing keep running, and covers it with an opaque overlay
+/// whenever the app isn't unlocked. Re-locks on device lock.
+class AuthGate extends ConsumerStatefulWidget {
+  const AuthGate({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  ConsumerState<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends ConsumerState<AuthGate>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(authControllerProvider.notifier).onResume();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = ref.watch(authControllerProvider.select((s) => s.status));
+    return Stack(
+      children: [
+        widget.child,
+        if (status != AuthStatus.unlocked)
+          Positioned.fill(
+            child: switch (status) {
+              AuthStatus.needsSetup => const SetupPinScreen(),
+              AuthStatus.locked => const LockScreen(),
+              _ => const _AuthSplash(),
+            },
+          ),
+      ],
+    );
+  }
+}
+
+/// Neutral splash while the lock state is read from secure storage.
+class _AuthSplash extends StatelessWidget {
+  const _AuthSplash();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }
 

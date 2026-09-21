@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/permissions.dart';
+import '../state/auth_providers.dart';
 import '../state/finance_providers.dart';
 import '../state/providers.dart';
 import 'banks_page.dart';
+import 'security/change_pin_screen.dart';
 
 /// Settings tab: AI (OpenRouter) key + model, normalized currency, bank
 /// management, contact-name resolution, and background-delivery help.
@@ -93,6 +95,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ? 'Battery optimization disabled for Meowni'
           : 'Permission not granted',
     );
+  }
+
+  Future<void> _setBiometric(bool value) async {
+    final ok = await ref
+        .read(authControllerProvider.notifier)
+        .setBiometricEnabled(value);
+    if (!mounted) return;
+    if (!ok && value) _toast('Biometric verification failed');
   }
 
   @override
@@ -209,6 +219,29 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             icon: const Icon(Icons.battery_saver),
             label: const Text('Disable battery optimization'),
           ),
+          const Divider(height: 32),
+          Text('Security', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.pin_outlined),
+            title: const Text('Change PIN'),
+            subtitle: const Text('Update your 4-digit app PIN'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ChangePinScreen())),
+          ),
+          if (ref.watch(authControllerProvider).biometricAvailable)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Unlock with biometrics'),
+              subtitle: const Text(
+                'Use your fingerprint or face to unlock the app.',
+              ),
+              value: ref.watch(authControllerProvider).biometricEnabled,
+              onChanged: _setBiometric,
+            ),
           if (_version != null) ...[
             const Divider(height: 32),
             Center(
