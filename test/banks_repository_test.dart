@@ -42,6 +42,23 @@ void main() {
       await database.close();
     });
 
+    test('computes match tokens from name + alternate sender names', () async {
+      final database = await openTestDb();
+      final r = BanksRepository(database, nowMs: () => 1);
+
+      final bank = await r.create(
+        name: 'Unity Commercial',
+        alternateNames: 'UCB, Unity Bank',
+      );
+      expect(bank.alternateNames, 'UCB, Unity Bank');
+      expect(bank.matchTokens, ['bank', 'commercial', 'ucb', 'unity']);
+
+      // Editing alternate names recomputes the tokens.
+      final updated = await r.update(bank.id, alternateNames: 'UCBL');
+      expect(updated!.matchTokens, ['commercial', 'ucbl', 'unity']);
+      await database.close();
+    });
+
     test('update mutates fields and clears balance', () async {
       final database = await openTestDb();
       final r = BanksRepository(database, nowMs: () => 1);
