@@ -43,7 +43,6 @@ class AppDatabase {
         updated_at INTEGER NOT NULL DEFAULT 0,
         next_attempt_at INTEGER,
         category TEXT,
-        normalized_content TEXT,
         processed_at INTEGER
       )
     ''');
