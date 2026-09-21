@@ -16,7 +16,6 @@ class SettingsRepository {
   static const _kTxTypes = 'tx_types';
   static const _kTxSort = 'tx_sort';
   static const _kResolveContacts = 'resolve_contacts';
-  static const _kLlmApiKey = 'llm_api_key';
   static const _kLlmModel = 'llm_model';
 
   /// Default OpenRouter model — the free-models router.
@@ -58,15 +57,8 @@ class SettingsRepository {
   Future<void> setResolveContacts(bool value) =>
       _prefs.setBool(_kResolveContacts, value);
 
-  /// OpenRouter API key. Stored in SharedPreferences for now; a later phase
-  /// migrates it to encrypted storage.
-  String get llmApiKey => _prefs.getString(_kLlmApiKey) ?? '';
-  Future<void> setLlmApiKey(String value) =>
-      _prefs.setString(_kLlmApiKey, value.trim());
-
-  bool get hasLlmApiKey => llmApiKey.isNotEmpty;
-
-  /// OpenRouter model id (default: the free-models router).
+  /// OpenRouter model id (default: the free-models router). (The API key itself
+  /// lives in encrypted storage — see SecureStore.)
   String get llmModel {
     final v = _prefs.getString(_kLlmModel)?.trim();
     return (v == null || v.isEmpty) ? defaultLlmModel : v;

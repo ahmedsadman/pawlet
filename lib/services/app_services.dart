@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../data/banks_repository.dart';
 import '../data/database.dart';
+import '../data/secure_store.dart';
 import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
 import '../models/sms_record.dart';
@@ -45,6 +46,7 @@ class AppServices {
   factory AppServices.from({
     required Database database,
     required SharedPreferences prefs,
+    required String apiKey,
   }) {
     final smsRepository = SmsRepository(database);
     final banksRepository = BanksRepository(database);
@@ -52,7 +54,7 @@ class AppServices {
     final connectivity = ConnectivityService();
     final notifications = NotificationService();
     final llmProvider = OpenRouterProvider(
-      apiKey: settings.llmApiKey,
+      apiKey: apiKey,
       model: settings.llmModel,
     );
     final matcher = FinanceMatcher(database);
@@ -87,7 +89,12 @@ class AppServices {
   static Future<AppServices> bootstrap() async {
     final database = await AppDatabase.open();
     final prefs = await SharedPreferences.getInstance();
-    final services = AppServices.from(database: database, prefs: prefs);
+    final apiKey = await SecureStore().readApiKey();
+    final services = AppServices.from(
+      database: database,
+      prefs: prefs,
+      apiKey: apiKey,
+    );
     await services.notifications.init();
     return services;
   }

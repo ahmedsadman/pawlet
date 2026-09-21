@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../data/banks_repository.dart';
 import '../data/finance_repository.dart';
+import '../data/secure_store.dart';
 import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
 import '../services/app_services.dart';
@@ -34,15 +35,36 @@ final financeRepositoryProvider = Provider<FinanceRepository>(
   ),
 );
 
-/// Bundles the SMS capture + processing pipeline for the UI isolate.
-///
-/// The LLM API key / model are read once here at build time. Phase 8 (Settings)
-/// must `ref.invalidate(appServicesProvider)` after the user changes the key so
-/// the foreground pipeline picks it up without an app restart.
+final secureStoreProvider = Provider<SecureStore>((ref) => SecureStore());
+
+/// The API key read from encrypted storage at startup, injected in `main()`.
+final bootstrapApiKeyProvider = Provider<String>(
+  (ref) =>
+      throw UnimplementedError('bootstrapApiKeyProvider must be overridden'),
+);
+
+/// The current OpenRouter API key. Seeded from encrypted storage at startup and
+/// updated live from Settings; the pipeline rebuilds when it changes.
+class ApiKey extends Notifier<String> {
+  @override
+  String build() => ref.read(bootstrapApiKeyProvider);
+
+  Future<void> set(String value) async {
+    final trimmed = value.trim();
+    await ref.read(secureStoreProvider).writeApiKey(trimmed);
+    state = trimmed;
+  }
+}
+
+final apiKeyProvider = NotifierProvider<ApiKey, String>(ApiKey.new);
+
+/// Bundles the SMS capture + processing pipeline for the UI isolate. Rebuilds
+/// when the API key changes so the change takes effect without a restart.
 final appServicesProvider = Provider<AppServices>((ref) {
   final services = AppServices.from(
     database: ref.watch(databaseProvider),
     prefs: ref.watch(sharedPreferencesProvider),
+    apiKey: ref.watch(apiKeyProvider),
   );
   ref.onDispose(services.dispose);
   return services;
