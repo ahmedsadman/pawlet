@@ -24,6 +24,7 @@ class ProcessingService {
     required this.currency,
     int Function()? clock,
     this.onCounts,
+    this.afterPass,
   }) : _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final SmsRepository smsRepository;
@@ -37,6 +38,10 @@ class ProcessingService {
   /// Optional hook fired after a pass with the current failed / retrying counts
   /// (used to reconcile notifications).
   final Future<void> Function(int failed, int retrying)? onCounts;
+
+  /// Optional hook run after the queue is drained (used to run the deferred
+  /// transfer / bill-payment matchers).
+  final Future<void> Function()? afterPass;
 
   /// Max attempts before a record is marked failed.
   static const int maxAttempts = 10;
@@ -70,6 +75,15 @@ class ProcessingService {
       for (final record in await smsRepository.dueForDelivery(_clock())) {
         final proceeded = await _processOne(record, banks, cur);
         if (!proceeded) break; // went offline — resume later
+      }
+
+      final after = afterPass;
+      if (after != null) {
+        try {
+          await after();
+        } catch (_) {
+          // A matcher error must not skip the counts reconcile below.
+        }
       }
 
       final counts = onCounts;

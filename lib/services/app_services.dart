@@ -10,6 +10,7 @@ import '../models/sms_record.dart';
 import 'classification/classifier.dart';
 import 'connectivity_service.dart';
 import 'contact_resolver.dart';
+import 'finance/finance_matcher.dart';
 import 'finance/finance_writer.dart';
 import 'llm/openrouter_provider.dart';
 import 'notification_service.dart';
@@ -54,6 +55,7 @@ class AppServices {
       apiKey: settings.llmApiKey,
       model: settings.llmModel,
     );
+    final matcher = FinanceMatcher(database);
     final processingService = ProcessingService(
       smsRepository: smsRepository,
       banksRepository: banksRepository,
@@ -61,6 +63,7 @@ class AppServices {
       financeWriter: FinanceWriter(database),
       isOnline: connectivity.isOnline,
       currency: () => settings.currency,
+      afterPass: matcher.runPending,
       onCounts: (failed, retrying) async {
         await notifications.reconcileFailures(failed);
         await notifications.reconcileRetrying(retrying);
