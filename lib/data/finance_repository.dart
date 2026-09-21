@@ -64,6 +64,9 @@ class FinanceRepository {
       whereArgs: [id],
       limit: 1,
     );
+    if (rows.isEmpty) {
+      throw ArgumentError('Message not found: $id');
+    }
     final r = rows.first;
     return _ok(
       ApiMessage(
