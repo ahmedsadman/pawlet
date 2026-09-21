@@ -19,8 +19,8 @@ android {
         applicationId = "com.meowni.meowni"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        // local_auth (biometrics) requires API 23+.
-        minSdk = maxOf(23, flutter.minSdkVersion)
+        // flutter_secure_storage and flutter_contacts require API 24+.
+        minSdk = maxOf(24, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

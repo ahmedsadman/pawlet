@@ -20,14 +20,17 @@ class _FakeSecureStore extends SecureStore {
   Future<void> writeApiKey(String value) async => key = value.trim();
 }
 
-Future<(Widget, ProviderContainer)> _app(List<Override> extra) async {
+Future<(Widget, ProviderContainer, _FakeSecureStore)> _app(
+  List<Override> extra,
+) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
+  final store = _FakeSecureStore();
   final container = ProviderContainer(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       bootstrapApiKeyProvider.overrideWithValue(''),
-      secureStoreProvider.overrideWith((ref) => _FakeSecureStore()),
+      secureStoreProvider.overrideWith((ref) => store),
       ...extra,
     ],
   );
@@ -36,14 +39,14 @@ Future<(Widget, ProviderContainer)> _app(List<Override> extra) async {
     container: container,
     child: MaterialApp(theme: AppTheme.theme, home: const SettingsPage()),
   );
-  return (widget, container);
+  return (widget, container, store);
 }
 
 void main() {
   testWidgets('renders the key, model, currency and manage-banks controls', (
     tester,
   ) async {
-    final (widget, _) = await _app(const []);
+    final (widget, _, _) = await _app(const []);
     await tester.pumpWidget(widget);
     await tester.pump();
 
@@ -55,7 +58,7 @@ void main() {
   });
 
   testWidgets('saving AI settings persists the key and model', (tester) async {
-    final (widget, container) = await _app(const []);
+    final (widget, container, store) = await _app(const []);
     await tester.pumpWidget(widget);
     await tester.pump();
 
@@ -66,11 +69,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(container.read(apiKeyProvider), 'sk-test');
+    expect(store.key, 'sk-test'); // actually persisted to secure storage
     expect(container.read(settingsRepositoryProvider).llmModel, 'vendor/model');
   });
 
   testWidgets('saving currency upper-cases and persists it', (tester) async {
-    final (widget, container) = await _app(const []);
+    final (widget, container, _) = await _app(const []);
     await tester.pumpWidget(widget);
     await tester.pump();
 
@@ -85,7 +89,7 @@ void main() {
   });
 
   testWidgets('Manage banks navigates to the Banks page', (tester) async {
-    final (widget, _) = await _app([
+    final (widget, _, _) = await _app([
       banksProvider.overrideWith(
         (ref) async => const CachedResult(data: <Bank>[]),
       ),

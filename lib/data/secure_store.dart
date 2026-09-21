@@ -10,8 +10,15 @@ class SecureStore {
 
   static const _kApiKey = 'llm_api_key';
 
-  Future<String> readApiKey() async =>
-      (await _storage.read(key: _kApiKey)) ?? '';
+  Future<String> readApiKey() async {
+    try {
+      return (await _storage.read(key: _kApiKey)) ?? '';
+    } catch (_) {
+      // A corrupted/locked keystore entry must not crash startup — treat as
+      // "no key set" so the user can re-enter it in Settings.
+      return '';
+    }
+  }
 
   Future<void> writeApiKey(String value) =>
       _storage.write(key: _kApiKey, value: value.trim());
