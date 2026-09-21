@@ -10,6 +10,7 @@ import '../models/finance/transaction.dart';
 import '../models/finance/transactions_page.dart';
 import '../models/finance/trends.dart';
 import '../models/finance/tx_query.dart';
+import '../utils/bank_tokens.dart';
 import '../utils/date_range.dart';
 import 'database.dart';
 
@@ -442,6 +443,8 @@ class FinanceRepository {
         ? null
         : DateTime.fromMillisecondsSinceEpoch(row['last_balance_at'] as int),
     createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),
+    alternateNames: (row['alternate_names'] as String?) ?? '',
+    matchTokens: matchTokensFromColumn(row['match_tokens'] as String?),
   );
 
   TransactionItem _txFromRow(Map<String, Object?> row) => TransactionItem(
