@@ -55,6 +55,7 @@ void main() {
     bool online = true,
     Future<bool> Function()? isOnline,
     Future<void> Function(int failed, int retrying)? onCounts,
+    Future<void> Function(Duration? delay)? reschedule,
   }) => ProcessingService(
     smsRepository: sms,
     banksRepository: banks,
@@ -64,6 +65,7 @@ void main() {
     currency: () => 'BDT',
     clock: () => now,
     onCounts: onCounts,
+    reschedule: reschedule,
   );
 
   Future<Map<String, Object?>> row(int id) async =>
@@ -180,6 +182,39 @@ void main() {
     expect(r['status'], 'queued');
     expect(r['attempts'], 0); // transport drop, not a real attempt
     expect(r['next_attempt_at'], isNull);
+    await db.close();
+  });
+
+  test('schedules the next catch-up at the backoff time after a retry', () async {
+    await queue('CHK');
+    Duration? scheduled;
+    var calls = 0;
+    final llm = _FakeLlm(error: const LlmException('rate', retryable: true));
+    await service(llm, reschedule: (d) async {
+      scheduled = d;
+      calls++;
+    }).process();
+    expect(calls, 1);
+    expect(scheduled, const Duration(seconds: 15)); // baseBackoff
+    await db.close();
+  });
+
+  test('cancels the catch-up when the queue drains', () async {
+    await queue('CHK');
+    var cancelled = false;
+    final llm = _FakeLlm(result: const ClassifyResult.none());
+    await service(llm, reschedule: (d) async => cancelled = d == null).process();
+    expect(cancelled, isTrue);
+    await db.close();
+  });
+
+  test('offline still schedules a catch-up for the due backlog', () async {
+    await queue('CHK'); // due now
+    Duration? scheduled;
+    final llm = _FakeLlm(result: const ClassifyResult.none());
+    await service(llm, online: false, reschedule: (d) async => scheduled = d)
+        .process();
+    expect(scheduled, Duration.zero);
     await db.close();
   });
 
