@@ -139,7 +139,14 @@ class AppServices {
     int? timestamp,
   }) async {
     final trimmedSender = sender.trim();
-    if (trimmedSender.isEmpty || content.isEmpty) return;
+    // Normalize newlines (CRLF/CR -> LF) and strip edge whitespace so dedup is
+    // exact and the stored/displayed text is clean. Transport (JSON/DB) already
+    // handles these chars safely; this is about content consistency.
+    final normalizedContent = content
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .trim();
+    if (trimmedSender.isEmpty || normalizedContent.isEmpty) return;
 
     final contactName = settings.resolveContacts
         ? await contactResolver.nameFor(trimmedSender)
@@ -150,7 +157,7 @@ class AppServices {
       SmsRecord(
         sender: trimmedSender,
         contactName: contactName,
-        content: content,
+        content: normalizedContent,
         timestamp: timestamp ?? now,
         updatedAt: now,
       ),
