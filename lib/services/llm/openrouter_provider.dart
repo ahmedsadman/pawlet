@@ -40,6 +40,10 @@ class OpenRouterProvider implements LlmProvider {
       'https://openrouter.ai/api/v1/chat/completions';
   // Generous single-attempt ceiling: free models can be slow, so give the one
   // request room to finish rather than failing fast and deferring to a backoff.
+  // This is a foreground ceiling, not a background guarantee — under Doze the OS
+  // may end a wake window sooner, which surfaces as a transient retry (by
+  // design). Must stay below ProcessingService.staleAfter so a slow in-flight
+  // call is never reclaimed as orphaned.
   static const Duration timeout = Duration(minutes: 2);
 
   @override

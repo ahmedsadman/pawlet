@@ -57,8 +57,12 @@ class ProcessingService {
   /// Ceiling for a single backoff step (~23.7h total across [maxAttempts]).
   static const Duration maxBackoff = Duration(hours: 6);
 
-  /// A `sending` row untouched for longer than this is treated as orphaned.
-  static const Duration staleAfter = Duration(seconds: 150);
+  /// A `sending` row untouched for longer than this is treated as orphaned and
+  /// requeued. Kept comfortably above the provider's single-attempt HTTP timeout
+  /// (OpenRouterProvider.timeout, 2 min) so a genuinely slow in-flight call is
+  /// never reclaimed mid-flight — which could otherwise cause duplicate
+  /// processing across isolates. See the guard in processing_service_test.
+  static const Duration staleAfter = Duration(minutes: 3);
 
   bool _running = false;
 

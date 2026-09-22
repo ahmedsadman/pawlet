@@ -5,6 +5,7 @@ import 'package:meowni/models/sms_record.dart';
 import 'package:meowni/services/classification/classifier.dart';
 import 'package:meowni/services/finance/finance_writer.dart';
 import 'package:meowni/services/llm/llm_provider.dart';
+import 'package:meowni/services/llm/openrouter_provider.dart';
 import 'package:meowni/services/processing_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -225,5 +226,13 @@ void main() {
     expect(r['status'], 'queued'); // untouched
     expect(llm.calls, 0);
     await db.close();
+  });
+
+  // The single-retry design's safety rests on this ordering across two files: a
+  // legitimately slow in-flight call (up to OpenRouterProvider.timeout) must not
+  // be reclaimed as orphaned (ProcessingService.staleAfter) mid-flight. Guard it
+  // so a future edit to either constant can't silently reintroduce that race.
+  test('provider timeout stays safely below the stale-reclaim threshold', () {
+    expect(OpenRouterProvider.timeout, lessThan(ProcessingService.staleAfter));
   });
 }
