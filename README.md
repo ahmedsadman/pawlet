@@ -1,9 +1,9 @@
 # Meowni
 
 Meowni is an on-device Android app that turns your bank SMS into a personal-finance
-dashboard — transactions, bills, balances, spending trends. It is a visual replica of the
-Textgenie mobile app, but with **no backend**: everything runs on the phone. The only network
-calls are to a large language model (OpenRouter's free models) to read each message.
+dashboard — transactions, bills, balances, spending trends. It runs with **no backend**:
+everything happens on the phone. The only network calls are to a large language model
+(OpenRouter's free models) to read each message.
 
 ## What it does
 

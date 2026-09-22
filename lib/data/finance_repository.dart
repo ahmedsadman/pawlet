@@ -24,10 +24,9 @@ class CachedResult<T> {
   final DateTime? fetchedAt;
 }
 
-/// Reads finance data from the local sqflite database, reproducing the shapes
-/// and aggregation the Textgenie backend produced (trends, summary, paginated
-/// transactions with totals, bills). Transfers are excluded from income/expense
-/// aggregates everywhere, matching the server.
+/// Reads finance data from the local sqflite database (trends, summary,
+/// paginated transactions with totals, bills). Transfers are excluded from
+/// income/expense aggregates everywhere.
 class FinanceRepository {
   FinanceRepository(this._db, {String Function()? currency})
     : _currency = currency ?? (() => 'BDT');

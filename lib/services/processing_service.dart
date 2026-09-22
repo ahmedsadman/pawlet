@@ -12,8 +12,7 @@ import 'llm/llm_provider.dart';
 /// single fused LLM call + finance write. Failures are rescheduled with a
 /// capped-exponential backoff persisted in `next_attempt_at`; the existing
 /// triggers (foreground resume, incoming-SMS isolate, WorkManager tick) drive
-/// later retries. Ports Textgenie's FlushService, swapping webhook delivery for
-/// the classification pipeline.
+/// later retries.
 class ProcessingService {
   ProcessingService({
     required this.smsRepository,
