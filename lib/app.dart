@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'services/permissions.dart';
@@ -122,9 +124,26 @@ class _RootShellState extends ConsumerState<RootShell>
   }
 
   Future<void> _bootstrap() async {
+    if (kDebugMode) _installDebugInjector();
     await AppPermissions.requestAll();
     ref.read(smsListenerProvider).start();
     await ref.read(processingServiceProvider).process();
+  }
+
+  /// Debug-only: lets `adb` inject a fake SMS (see MainActivity's
+  /// com.meowni.meowni.INJECT_SMS receiver) so the pipeline can be exercised
+  /// without a real message. Never installed in release builds.
+  void _installDebugInjector() {
+    const MethodChannel('meowni/debug').setMethodCallHandler((call) async {
+      if (call.method == 'injectSms') {
+        final args = (call.arguments as Map).cast<String, dynamic>();
+        await ref.read(appServicesProvider).handleIncomingRaw(
+          sender: args['sender'] as String? ?? '',
+          content: args['content'] as String? ?? '',
+        );
+      }
+      return null;
+    });
   }
 
   @override

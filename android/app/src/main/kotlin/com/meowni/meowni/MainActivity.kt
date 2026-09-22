@@ -13,6 +13,11 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterFragmentActivity() {
     private val channelName = "meowni/security"
 
+    // Debug-only: lets `adb` inject a fake SMS into the Dart pipeline.
+    private val debugChannelName = "meowni/debug"
+    private val injectAction = "com.meowni.meowni.INJECT_SMS"
+    private var debugChannel: MethodChannel? = null
+
     // Set by the screen-off receiver; read (and reset) by the app on resume so it
     // can re-lock only when the device was actually locked, not on app-switching.
     @Volatile
@@ -22,6 +27,20 @@ class MainActivity : FlutterFragmentActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Intent.ACTION_SCREEN_OFF) {
                 screenWasOff = true
+            }
+        }
+    }
+
+    private val injectReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != injectAction) return
+            val sender = intent.getStringExtra("sender") ?: return
+            val content = intent.getStringExtra("content") ?: return
+            runOnUiThread {
+                debugChannel?.invokeMethod(
+                    "injectSms",
+                    mapOf("sender" to sender, "content" to content),
+                )
             }
         }
     }
@@ -40,6 +59,18 @@ class MainActivity : FlutterFragmentActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        if (BuildConfig.DEBUG) {
+            debugChannel = MethodChannel(
+                flutterEngine.dartExecutor.binaryMessenger,
+                debugChannelName,
+            )
+            registerReceiver(
+                injectReceiver,
+                IntentFilter(injectAction),
+                Context.RECEIVER_EXPORTED,
+            )
+        }
     }
 
     override fun onDestroy() {
@@ -47,6 +78,13 @@ class MainActivity : FlutterFragmentActivity() {
             unregisterReceiver(screenOffReceiver)
         } catch (_: IllegalArgumentException) {
             // Receiver was never registered (engine not configured); ignore.
+        }
+        if (BuildConfig.DEBUG) {
+            try {
+                unregisterReceiver(injectReceiver)
+            } catch (_: IllegalArgumentException) {
+                // Not registered; ignore.
+            }
         }
         super.onDestroy()
     }

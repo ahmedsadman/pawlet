@@ -125,22 +125,33 @@ class AppServices {
   }
 
   /// Persists an incoming SMS (deduped) and runs the processing queue.
-  Future<void> handleIncomingSms(SmsMessage message) async {
-    final sender = (message.address ?? '').trim();
-    final content = message.body ?? '';
-    if (sender.isEmpty || content.isEmpty) return;
+  Future<void> handleIncomingSms(SmsMessage message) => handleIncomingRaw(
+    sender: message.address ?? '',
+    content: message.body ?? '',
+    timestamp: message.date,
+  );
+
+  /// Raw-string entry point shared by the telephony listener and the debug
+  /// injector. Persists (deduped) and runs the processing queue.
+  Future<void> handleIncomingRaw({
+    required String sender,
+    required String content,
+    int? timestamp,
+  }) async {
+    final trimmedSender = sender.trim();
+    if (trimmedSender.isEmpty || content.isEmpty) return;
 
     final contactName = settings.resolveContacts
-        ? await contactResolver.nameFor(sender)
+        ? await contactResolver.nameFor(trimmedSender)
         : null;
 
     final now = DateTime.now().millisecondsSinceEpoch;
     await smsRepository.insertIfNew(
       SmsRecord(
-        sender: sender,
+        sender: trimmedSender,
         contactName: contactName,
         content: content,
-        timestamp: message.date ?? now,
+        timestamp: timestamp ?? now,
         updatedAt: now,
       ),
     );
