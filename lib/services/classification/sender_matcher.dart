@@ -1,14 +1,15 @@
 import '../../models/finance/bank.dart';
-import '../../utils/bank_tokens.dart';
 
 /// Layer 1 of the pipeline: decide whether an incoming SMS belongs to any of the
 /// user's banks (by sender name or credit-card digits) before spending an LLM
 /// call. See spec/03-classification-pipeline.md.
 
-/// True when any word token of [sender] matches one of [bank]'s precomputed
-/// match tokens (derived from its name + alternate sender names).
-bool senderMatchesBank(String sender, Bank bank) =>
-    senderMatchesTokens(sender, bank.matchTokens);
+/// True when any of [bank]'s catalog matchers appears as a case-insensitive
+/// substring of the incoming [sender].
+bool senderMatchesBank(String sender, Bank bank) {
+  final lower = sender.toLowerCase();
+  return bank.matchers.any((m) => lower.contains(m.toLowerCase()));
+}
 
 /// True when [content] contains a card number matching a `"first4|last4"`
 /// [cardDigits] pattern, allowing masking/spacing between the two groups

@@ -8,8 +8,7 @@ class Bank {
     this.lastBalance,
     this.lastBalanceAt,
     required this.createdAt,
-    this.alternateNames = '',
-    this.matchTokens = const [],
+    this.matchers = const [],
   });
 
   final int id;
@@ -21,13 +20,9 @@ class Bank {
   /// `"1234|5678"` (first4|last4) for credit cards, else null.
   final String? cardDigits;
 
-  /// User-entered alternate sender names for this bank (free text). Used only
-  /// to derive [matchTokens]; kept raw so it can be shown when editing.
-  final String alternateNames;
-
-  /// Precomputed word tokens (from name + alternate names) that gate whether an
-  /// incoming SMS sender belongs to this bank. Computed on create/update.
-  final List<String> matchTokens;
+  /// Lowercase matcher substrings from the bank catalog: an incoming SMS belongs
+  /// to this bank when its sender contains any of them.
+  final List<String> matchers;
 
   /// Decimal amount kept as a string for precision; null for credit cards.
   final String? lastBalance;

@@ -1,7 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../models/finance/bank.dart';
-import '../utils/bank_tokens.dart';
+import 'bank_catalog.dart';
 import 'database.dart';
 
 /// CRUD for user-managed bank accounts (deposit) and credit cards.
@@ -14,15 +14,15 @@ class BanksRepository {
 
   static const _table = AppDatabase.banksTable;
 
-  /// Inserts a bank and returns it with its assigned id. [alternateNames] is
-  /// free text (comma/newline separated); its match tokens are precomputed here.
+  /// Inserts a bank and returns it with its assigned id. [matchers] come from the
+  /// bank catalog (the sender substrings that identify this bank's SMS).
   Future<Bank> create({
     required String name,
     String accountType = 'deposit',
     String? cardDigits,
     String? lastBalance,
     int? lastBalanceAt,
-    String alternateNames = '',
+    List<String> matchers = const [],
   }) async {
     final createdAt = _nowMs();
     final id = await _db.insert(_table, {
@@ -32,8 +32,7 @@ class BanksRepository {
       'last_balance': lastBalance,
       'last_balance_at': lastBalanceAt,
       'created_at': createdAt,
-      'alternate_names': alternateNames,
-      'match_tokens': buildMatchTokens(name, alternateNames).join(' '),
+      'matchers': matchersToColumn(matchers),
     });
     return (await getById(id))!;
   }
@@ -53,8 +52,8 @@ class BanksRepository {
     return rows.isEmpty ? null : _fromRow(rows.first);
   }
 
-  /// Updates the mutable fields of a bank. Only provided args are written. When
-  /// [name] or [alternateNames] changes, the match tokens are recomputed.
+  /// Updates the mutable fields of a bank. Only provided args are written.
+  /// Selecting a different catalog bank replaces both [name] and [matchers].
   Future<Bank?> update(
     int id, {
     String? name,
@@ -64,7 +63,7 @@ class BanksRepository {
     String? lastBalance,
     bool clearLastBalance = false,
     int? lastBalanceAt,
-    String? alternateNames,
+    List<String>? matchers,
   }) async {
     final values = <String, Object?>{};
     if (name != null) values['name'] = name;
@@ -80,16 +79,7 @@ class BanksRepository {
       values['last_balance'] = lastBalance;
     }
     if (lastBalanceAt != null) values['last_balance_at'] = lastBalanceAt;
-
-    // Recompute match tokens whenever the name or alternate names change.
-    if (name != null || alternateNames != null) {
-      final current = await getById(id);
-      if (current == null) return null;
-      final newName = name ?? current.name;
-      final newAlternates = alternateNames ?? current.alternateNames;
-      values['alternate_names'] = newAlternates;
-      values['match_tokens'] = buildMatchTokens(newName, newAlternates).join(' ');
-    }
+    if (matchers != null) values['matchers'] = matchersToColumn(matchers);
 
     if (values.isNotEmpty) {
       await _db.update(_table, values, where: 'id = ?', whereArgs: [id]);
@@ -111,7 +101,6 @@ class BanksRepository {
         ? null
         : DateTime.fromMillisecondsSinceEpoch(row['last_balance_at'] as int),
     createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),
-    alternateNames: (row['alternate_names'] as String?) ?? '',
-    matchTokens: matchTokensFromColumn(row['match_tokens'] as String?),
+    matchers: matchersFromColumn(row['matchers'] as String?),
   );
 }

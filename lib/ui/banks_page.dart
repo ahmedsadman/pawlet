@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/bank_catalog.dart';
 import '../models/finance/bank.dart';
 import '../state/finance_providers.dart';
 import '../state/providers.dart';
@@ -169,12 +170,11 @@ class BankFormPage extends ConsumerStatefulWidget {
 
 class _BankFormPageState extends ConsumerState<BankFormPage> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _name;
-  late final TextEditingController _alternates;
   late final TextEditingController _first4;
   late final TextEditingController _last4;
   late final TextEditingController _balance;
   late String _accountType;
+  String? _selectedBank;
 
   bool get _isEdit => widget.bank != null;
 
@@ -182,8 +182,10 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
   void initState() {
     super.initState();
     final b = widget.bank;
-    _name = TextEditingController(text: b?.name ?? '');
-    _alternates = TextEditingController(text: b?.alternateNames ?? '');
+    // Only preselect when the stored bank is a known catalog entry.
+    _selectedBank = (b != null && bankCatalogByLabel(b.name) != null)
+        ? b.name
+        : null;
     final digits = b?.cardDigits?.split('|');
     _first4 = TextEditingController(
       text: (digits != null && digits.length == 2) ? digits[0] : '',
@@ -197,8 +199,6 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
 
   @override
   void dispose() {
-    _name.dispose();
-    _alternates.dispose();
     _first4.dispose();
     _last4.dispose();
     _balance.dispose();
@@ -215,13 +215,16 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
     final balanceText = _balance.text.trim();
     final hasBalance = !isCredit && balanceText.isNotEmpty;
 
+    final label = _selectedBank!;
+    final matchers = bankCatalogByLabel(label)?.matchers ?? const [];
+
     try {
       if (_isEdit) {
         await repo.update(
           widget.bank!.id,
-          name: _name.text.trim(),
+          name: label,
           accountType: _accountType,
-          alternateNames: _alternates.text.trim(),
+          matchers: matchers,
           cardDigits: cardDigits,
           clearCardDigits: !isCredit,
           lastBalance: hasBalance ? balanceText : null,
@@ -232,9 +235,9 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
         );
       } else {
         await repo.create(
-          name: _name.text.trim(),
+          name: label,
           accountType: _accountType,
-          alternateNames: _alternates.text.trim(),
+          matchers: matchers,
           cardDigits: cardDigits,
           lastBalance: hasBalance ? balanceText : null,
           lastBalanceAt: hasBalance
@@ -249,7 +252,7 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
         SnackBar(
           content: Text(
             duplicate
-                ? 'A bank named "${_name.text.trim()}" already exists.'
+                ? '"$label" is already added.'
                 : 'Could not save bank. Please try again.',
           ),
         ),
@@ -278,15 +281,25 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            TextFormField(
-              controller: _name,
-              decoration: const InputDecoration(
-                labelText: 'Name',
-                hintText: 'e.g. Unity Commercial',
+            DropdownButtonFormField<String>(
+              initialValue: _selectedBank,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Bank'),
+              items: [
+                for (final entry in kBankCatalog)
+                  DropdownMenuItem(value: entry.label, child: Text(entry.label)),
+              ],
+              onChanged: (v) => setState(() => _selectedBank = v),
+              validator: (v) => v == null ? 'Please select your bank' : null,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Pick your bank from the list — Meowni recognizes its SMS '
+              'automatically, no sender names to type. Missing a bank? Let us '
+              'know and it will be added.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
               ),
-              textInputAction: TextInputAction.next,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
             const SizedBox(height: 16),
             SegmentedButton<String>(
@@ -297,28 +310,6 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
               selected: {_accountType},
               onSelectionChanged: (s) =>
                   setState(() => _accountType = s.first),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _alternates,
-              minLines: 1,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Alternate sender names',
-                hintText: 'e.g. UCB, Unity Bank',
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Sender-name matching decides whether a message gets categorized — '
-              'only texts whose sender matches a bank you\'ve added are processed. '
-              'Enter the bank\'s main name plus any alternate sender names it texts '
-              'you from; a single matching word is enough. Example: bank '
-              '"Unity Commercial Bank" texting from "UCB" / "Unity Bank" → '
-              'Name "Unity Commercial", Alternate sender names "UCB, Unity Bank".',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
             ),
             if (isCredit) ...[
               const SizedBox(height: 16),

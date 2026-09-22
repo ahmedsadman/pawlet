@@ -61,8 +61,7 @@ class AppDatabase {
         last_balance TEXT,
         last_balance_at INTEGER,
         created_at INTEGER NOT NULL,
-        alternate_names TEXT,
-        match_tokens TEXT
+        matchers TEXT
       )
     ''');
     await db.execute('''
