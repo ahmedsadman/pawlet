@@ -47,7 +47,6 @@ class Classifier {
     final result = await _llm.classifyAndExtract(
       content: content,
       sender: sender,
-      bankNames: banks.map((b) => b.name).toList(),
       currency: currency,
     );
 

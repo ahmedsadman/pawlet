@@ -76,10 +76,12 @@ class FinanceWriter {
       return false;
     }
 
-    // Bank match: credit-card digits in content first, else the LLM's name.
+    // Bank identity is deterministic (the LLM no longer guesses it): a
+    // credit-card digit match in the content wins; otherwise the single bank
+    // whose matchers match the sender. Ambiguous → null (unlinked).
     final bank =
         matchCreditCardInContent(record.content, banks) ??
-        _matchByName(banks, meta.bank);
+        singleSenderMatch(record.sender, banks);
 
     await _maybeUpdateBalance(db, bank, meta, record, currency);
 
@@ -183,14 +185,5 @@ class FinanceWriter {
       limit: 1,
     );
     return rows.isNotEmpty;
-  }
-
-  Bank? _matchByName(List<Bank> banks, String? name) {
-    if (name == null) return null;
-    final lower = name.toLowerCase();
-    for (final b in banks) {
-      if (b.name.toLowerCase() == lower) return b;
-    }
-    return null;
   }
 }

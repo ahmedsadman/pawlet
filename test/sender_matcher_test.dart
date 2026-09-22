@@ -65,6 +65,21 @@ void main() {
     });
   });
 
+  group('singleSenderMatch', () {
+    test('returns the one bank whose matcher hits the sender', () {
+      expect(singleSenderMatch('AD-MTB', [mtb, ebl]), mtb);
+    });
+
+    test('returns null when nothing matches', () {
+      expect(singleSenderMatch('Daraz', [mtb, ebl]), isNull);
+    });
+
+    test('returns null when the sender is ambiguous (multiple matches)', () {
+      final eblTwin = _bank('EBL Savings', matchers: const ['ebl']);
+      expect(singleSenderMatch('EBL', [ebl, eblTwin]), isNull);
+    });
+  });
+
   group('gateBanks / matchCreditCardInContent', () {
     test('gates in by a sender substring match', () {
       expect(gateBanks('AD-MTB', 'anything', [mtb, ebl]), [mtb]);

@@ -30,6 +30,20 @@ bool contentMatchesCardDigits(String content, String? cardDigits) {
   return pattern.hasMatch(content);
 }
 
+/// The single bank whose matchers match [sender], or null when zero or more
+/// than one match. Ambiguity (e.g. two accounts sharing matchers) resolves to
+/// null so the caller leaves the row unlinked rather than guessing.
+Bank? singleSenderMatch(String sender, List<Bank> banks) {
+  Bank? found;
+  for (final bank in banks) {
+    if (senderMatchesBank(sender, bank)) {
+      if (found != null) return null;
+      found = bank;
+    }
+  }
+  return found;
+}
+
 /// The first credit bank whose card digits appear in [content], or null.
 /// Reused by the finance writer (Phase 5) to attach a bill/transaction to a card.
 Bank? matchCreditCardInContent(String content, List<Bank> banks) {

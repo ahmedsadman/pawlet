@@ -21,7 +21,6 @@ class _FakeLlm implements LlmProvider {
   Future<ClassifyResult> classifyAndExtract({
     required String content,
     required String sender,
-    required List<String> bankNames,
     required String currency,
   }) async {
     calls++;
@@ -87,7 +86,6 @@ void main() {
       result: const ClassifyResult(
         category: SmsCategory.transaction,
         transaction: MetadataResult(
-          bank: 'Checking',
           amount: '50',
           originalAmount: '50',
           transactionType: 'expense',

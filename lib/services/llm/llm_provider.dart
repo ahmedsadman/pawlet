@@ -8,7 +8,6 @@ enum SmsCategory { transaction, bill, none }
 /// together per the prompt's pairing rules.
 class MetadataResult {
   const MetadataResult({
-    this.bank,
     this.balance,
     this.amount,
     this.transactionType,
@@ -16,7 +15,6 @@ class MetadataResult {
     this.originalAmount,
   });
 
-  final String? bank;
   final String? balance;
   final String? amount;
 
@@ -30,7 +28,6 @@ class MetadataResult {
 /// the user's normalized currency; the statement period components may be null.
 class BillMetadataResult {
   const BillMetadataResult({
-    this.bank,
     this.normalizedTotalDue,
     this.originalAmount,
     this.originalCurrency,
@@ -38,7 +35,6 @@ class BillMetadataResult {
     this.statementYear,
   });
 
-  final String? bank;
   final String? normalizedTotalDue;
   final String? originalAmount;
   final String? originalCurrency;
@@ -83,7 +79,6 @@ abstract class LlmProvider {
   Future<ClassifyResult> classifyAndExtract({
     required String content,
     required String sender,
-    required List<String> bankNames,
     required String currency,
   });
 }

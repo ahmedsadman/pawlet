@@ -14,7 +14,6 @@ class _FakeLlm implements LlmProvider {
   Future<ClassifyResult> classifyAndExtract({
     required String content,
     required String sender,
-    required List<String> bankNames,
     required String currency,
   }) async {
     calls++;
@@ -69,7 +68,7 @@ void main() {
     final llm = _FakeLlm(
       const ClassifyResult(
         category: SmsCategory.transaction,
-        transaction: MetadataResult(bank: 'Mutual Trust Bank', amount: '50'),
+        transaction: MetadataResult(amount: '50'),
       ),
     );
     final outcome = await run(llm, 'MTB', 'debit 50 BDT');
@@ -83,7 +82,7 @@ void main() {
     final llm = _FakeLlm(
       const ClassifyResult(
         category: SmsCategory.bill,
-        bill: BillMetadataResult(bank: 'EBL Credit Card', normalizedTotalDue: '8020'),
+        bill: BillMetadataResult(normalizedTotalDue: '8020'),
       ),
     );
     final outcome = await run(llm, 'RANDOM', 'Monthly bill 4238****3241');

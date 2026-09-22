@@ -33,10 +33,11 @@ void main() {
       ClassificationOutcome(category: SmsCategory.bill, bill: b, llmInvoked: true);
 
   group('transactions', () {
-    test('records a transaction, matches the bank by name, updates balance', () async {
+    test('records a transaction, matches the bank by sender, updates balance', () async {
       final db = await openTestDb();
       final checking = await BanksRepository(db).create(
         name: 'Checking',
+        matchers: const ['chk'],
         lastBalance: '1000.00',
         lastBalanceAt: _jan,
       );
@@ -44,7 +45,6 @@ void main() {
       final cat = await FinanceWriter(db, nowMs: () => 0).apply(
         record: rec,
         outcome: tx(const MetadataResult(
-          bank: 'Checking',
           balance: '1950.00',
           amount: '50',
           originalAmount: '50',
@@ -58,7 +58,7 @@ void main() {
       expect(cat, 'transaction');
       final rows = await db.query('transactions');
       expect(rows.length, 1);
-      expect(rows.first['bank_id'], checking.id);
+      expect(rows.first['bank_id'], checking.id); // linked via sender match
       expect(rows.first['type'], 'expense');
       final bank = (await db.query('banks', where: 'id = ?', whereArgs: [checking.id])).first;
       expect(bank['last_balance'], '1950.00'); // newer timestamp → updated
@@ -67,11 +67,10 @@ void main() {
 
     test('dedupes by message_id', () async {
       final db = await openTestDb();
-      final checking = await BanksRepository(db).create(name: 'Checking');
+      final checking = await BanksRepository(db).create(name: 'Checking', matchers: const ['chk']);
       final rec = await seedSms(db, sender: 'CHK', content: 'debit 50');
       final w = FinanceWriter(db, nowMs: () => 0);
       final m = tx(const MetadataResult(
-        bank: 'Checking',
         amount: '50',
         originalAmount: '50',
         transactionType: 'expense',
@@ -106,17 +105,61 @@ void main() {
       await db.close();
     });
 
+    test('records the transaction unlinked when no bank matches', () async {
+      final db = await openTestDb();
+      final checking = await BanksRepository(db).create(name: 'Checking', matchers: const ['chk']);
+      final rec = await seedSms(db, sender: 'SOMEONE', content: 'debit 50');
+      await FinanceWriter(db, nowMs: () => 0).apply(
+        record: rec,
+        outcome: tx(const MetadataResult(
+          amount: '50',
+          originalAmount: '50',
+          transactionType: 'expense',
+          originalCurrency: 'BDT',
+        )),
+        banks: [checking],
+        currency: 'BDT',
+      );
+      final rows = await db.query('transactions');
+      expect(rows.length, 1);
+      expect(rows.first['bank_id'], isNull); // sender matched nothing
+      await db.close();
+    });
+
+    test('records unlinked when the sender is ambiguous (two banks match)', () async {
+      final db = await openTestDb();
+      final repo = BanksRepository(db);
+      final a = await repo.create(name: 'EBL Savings', matchers: const ['ebl']);
+      final b = await repo.create(name: 'EBL Current', matchers: const ['ebl']);
+      final rec = await seedSms(db, sender: 'EBL', content: 'debit 50');
+      await FinanceWriter(db, nowMs: () => 0).apply(
+        record: rec,
+        outcome: tx(const MetadataResult(
+          amount: '50',
+          originalAmount: '50',
+          transactionType: 'expense',
+          originalCurrency: 'BDT',
+        )),
+        banks: [a, b],
+        currency: 'BDT',
+      );
+      final rows = await db.query('transactions');
+      expect(rows.length, 1);
+      expect(rows.first['bank_id'], isNull); // ambiguous → not guessed
+      await db.close();
+    });
+
     test('skips balance update on currency mismatch / credit / older ts', () async {
       final db = await openTestDb();
       final repo = BanksRepository(db);
-      final deposit = await repo.create(name: 'Dep', lastBalance: '100.00', lastBalanceAt: _feb);
+      final deposit = await repo.create(name: 'Dep', matchers: const ['dep'], lastBalance: '100.00', lastBalanceAt: _feb);
       final credit = await repo.create(name: 'Cred', accountType: 'credit', cardDigits: '1111|2222');
       final w = FinanceWriter(db, nowMs: () => 0);
 
       // Currency mismatch → no update.
       await w.apply(
         record: await seedSms(db, sender: 'DEP', content: 'x'),
-        outcome: tx(const MetadataResult(bank: 'Dep', balance: '999.00', amount: '5', originalAmount: '5', transactionType: 'expense', originalCurrency: 'USD')),
+        outcome: tx(const MetadataResult(balance: '999.00', amount: '5', originalAmount: '5', transactionType: 'expense', originalCurrency: 'USD')),
         banks: [deposit],
         currency: 'BDT',
       );
@@ -126,17 +169,17 @@ void main() {
       // Older timestamp than last_balance_at → no update.
       await w.apply(
         record: await seedSms(db, sender: 'DEP', content: 'y', ts: _jan),
-        outcome: tx(const MetadataResult(bank: 'Dep', balance: '5.00', amount: '5', originalAmount: '5', transactionType: 'expense', originalCurrency: 'BDT')),
+        outcome: tx(const MetadataResult(balance: '5.00', amount: '5', originalAmount: '5', transactionType: 'expense', originalCurrency: 'BDT')),
         banks: [deposit],
         currency: 'BDT',
       );
       dep = (await db.query('banks', where: 'id = ?', whereArgs: [deposit.id])).first;
       expect(dep['last_balance'], '100.00');
 
-      // Credit account → never updates balance (stays null).
+      // Credit account (matched by card digits) → never updates balance.
       await w.apply(
         record: await seedSms(db, sender: 'CRD', content: '1111 2222'),
-        outcome: tx(const MetadataResult(bank: 'Cred', balance: '50.00', amount: '5', originalAmount: '5', transactionType: 'expense', originalCurrency: 'BDT')),
+        outcome: tx(const MetadataResult(balance: '50.00', amount: '5', originalAmount: '5', transactionType: 'expense', originalCurrency: 'BDT')),
         banks: [credit],
         currency: 'BDT',
       );
@@ -147,11 +190,11 @@ void main() {
 
     test('a transaction with no amount records nothing', () async {
       final db = await openTestDb();
-      final checking = await BanksRepository(db).create(name: 'Checking');
+      final checking = await BanksRepository(db).create(name: 'Checking', matchers: const ['chk']);
       final rec = await seedSms(db, sender: 'CHK', content: 'balance is 100');
       final cat = await FinanceWriter(db, nowMs: () => 0).apply(
         record: rec,
-        outcome: tx(const MetadataResult(bank: 'Checking', balance: '100')),
+        outcome: tx(const MetadataResult(balance: '100')),
         banks: [checking],
         currency: 'BDT',
       );

@@ -44,7 +44,6 @@ class OpenRouterProvider implements LlmProvider {
   Future<ClassifyResult> classifyAndExtract({
     required String content,
     required String sender,
-    required List<String> bankNames,
     required String currency,
   }) async {
     final body = jsonEncode({
@@ -56,7 +55,6 @@ class OpenRouterProvider implements LlmProvider {
           'content': buildUserContent(
             sender: sender,
             content: content,
-            bankNames: bankNames,
             currency: currency,
           ),
         },
@@ -68,7 +66,7 @@ class OpenRouterProvider implements LlmProvider {
     for (var cycle = 0; cycle < maxCycles; cycle++) {
       try {
         final raw = await _post(body);
-        return _parse(raw, bankNames);
+        return _parse(raw);
       } on LlmException catch (e) {
         if (!e.retryable) rethrow;
         last = e;
@@ -107,7 +105,7 @@ class OpenRouterProvider implements LlmProvider {
     throw LlmException('HTTP $code', retryable: retryable);
   }
 
-  ClassifyResult _parse(String raw, List<String> bankNames) {
+  ClassifyResult _parse(String raw) {
     final Map<String, dynamic> obj;
     try {
       final outer = jsonDecode(raw) as Map<String, dynamic>;
@@ -127,13 +125,13 @@ class OpenRouterProvider implements LlmProvider {
     if (category == 'transaction') {
       return ClassifyResult(
         category: SmsCategory.transaction,
-        transaction: _metadata(obj['transaction'], bankNames),
+        transaction: _metadata(obj['transaction']),
       );
     }
     if (category == 'bill') {
       return ClassifyResult(
         category: SmsCategory.bill,
-        bill: _bill(obj['bill'], bankNames),
+        bill: _bill(obj['bill']),
       );
     }
     if (category == null) return const ClassifyResult.none();
@@ -152,11 +150,9 @@ class OpenRouterProvider implements LlmProvider {
     return t.trim();
   }
 
-  MetadataResult _metadata(Object? raw, List<String> bankNames) {
+  MetadataResult _metadata(Object? raw) {
     if (raw is! Map) return const MetadataResult();
-    final bank = _matchBank(raw['bank'], bankNames);
-    // balance is only meaningful with an identified bank.
-    final balance = bank == null ? null : _numStr(raw['balance']);
+    final balance = _numStr(raw['balance']);
 
     var amount = _numStr(raw['amount']);
     var originalAmount = _numStr(raw['original_amount']);
@@ -173,7 +169,6 @@ class OpenRouterProvider implements LlmProvider {
     if (amount == null && balance == null) currency = null;
 
     return MetadataResult(
-      bank: bank,
       balance: balance,
       amount: amount,
       originalAmount: originalAmount,
@@ -182,7 +177,7 @@ class OpenRouterProvider implements LlmProvider {
     );
   }
 
-  BillMetadataResult _bill(Object? raw, List<String> bankNames) {
+  BillMetadataResult _bill(Object? raw) {
     if (raw is! Map) return const BillMetadataResult();
 
     // normalized_total_due / original_amount / original_currency are
@@ -197,7 +192,6 @@ class OpenRouterProvider implements LlmProvider {
     }
 
     return BillMetadataResult(
-      bank: _matchBank(raw['bank'], bankNames),
       normalizedTotalDue: total,
       originalAmount: originalAmount,
       originalCurrency: currency,
@@ -207,17 +201,6 @@ class OpenRouterProvider implements LlmProvider {
   }
 
   // ---- validation helpers -------------------------------------------------
-
-  /// Case-insensitive exact match against the user's bank list; returns the
-  /// canonical name (never an invented one), else null.
-  String? _matchBank(Object? value, List<String> bankNames) {
-    if (value is! String) return null;
-    final lower = value.toLowerCase();
-    for (final name in bankNames) {
-      if (name.toLowerCase() == lower) return name;
-    }
-    return null;
-  }
 
   /// Returns a decimal-as-string when [value] parses as a number, else null.
   String? _numStr(Object? value) {

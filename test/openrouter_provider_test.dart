@@ -25,15 +25,12 @@ OpenRouterProvider _provider(http.Client client) => OpenRouterProvider(
   sleep: (_) async {}, // no real backoff waits in tests
 );
 
-Future<ClassifyResult> _run(
-  http.Client client, {
-  List<String> banks = const ['BRAC Bank PLC', 'EBL Credit Card'],
-}) => _provider(client).classifyAndExtract(
-  content: 'msg',
-  sender: 'SENDER',
-  bankNames: banks,
-  currency: 'BDT',
-);
+Future<ClassifyResult> _run(http.Client client) =>
+    _provider(client).classifyAndExtract(
+      content: 'msg',
+      sender: 'SENDER',
+      currency: 'BDT',
+    );
 
 void _stubOnce(http.Client client, http.Response response) {
   when(
@@ -62,12 +59,12 @@ void main() {
   setUp(() => client = _MockClient());
 
   group('parsing', () {
-    test('parses a transaction and matches the bank case-insensitively', () async {
+    test('parses a transaction (no bank field)', () async {
       _stubOnce(
         client,
         http.Response(
           _completion(
-            '{"category":"transaction","transaction":{"bank":"brac bank plc",'
+            '{"category":"transaction","transaction":{'
             '"balance":2000,"amount":50.0,"original_amount":50.0,'
             '"transaction_type":"expense","original_currency":"bdt"},"bill":null}',
           ),
@@ -78,7 +75,6 @@ void main() {
       final r = await _run(client);
       expect(r.category, SmsCategory.transaction);
       final tx = r.transaction!;
-      expect(tx.bank, 'BRAC Bank PLC'); // canonical, case-corrected
       expect(tx.balance, '2000');
       expect(tx.amount, '50.0');
       expect(tx.transactionType, 'expense');
@@ -90,7 +86,7 @@ void main() {
         client,
         http.Response(
           _completion(
-            '{"category":"bill","transaction":null,"bill":{"bank":"EBL Credit Card",'
+            '{"category":"bill","transaction":null,"bill":{'
             '"normalized_total_due":8020.0,"original_amount":8020.0,'
             '"original_currency":"BDT","statement_month":7,"statement_year":2026}}',
           ),
@@ -99,7 +95,6 @@ void main() {
       );
 
       final bill = (await _run(client)).bill!;
-      expect(bill.bank, 'EBL Credit Card');
       expect(bill.normalizedTotalDue, '8020.0');
       expect(bill.statementMonth, 7);
       expect(bill.statementYear, 2026);
@@ -139,7 +134,7 @@ void main() {
         client,
         http.Response(
           _completion(
-            '{"category":"transaction","transaction":{"bank":"BRAC Bank PLC",'
+            '{"category":"transaction","transaction":{'
             '"balance":100,"amount":50,"original_amount":50,'
             '"transaction_type":null,"original_currency":"BDT"},"bill":null}',
           ),
@@ -153,12 +148,12 @@ void main() {
       expect(tx.balance, '100'); // balance is independent of the amount trio
     });
 
-    test('drops balance and currency when no bank was identified', () async {
+    test('keeps balance + currency when only a balance is present', () async {
       _stubOnce(
         client,
         http.Response(
           _completion(
-            '{"category":"transaction","transaction":{"bank":"Unknown Bank",'
+            '{"category":"transaction","transaction":{'
             '"balance":999,"amount":null,"original_amount":null,'
             '"transaction_type":null,"original_currency":"BDT"},"bill":null}',
           ),
@@ -166,9 +161,26 @@ void main() {
         ),
       );
       final tx = (await _run(client)).transaction!;
-      expect(tx.bank, isNull); // not in the user's list
-      expect(tx.balance, isNull); // dropped without a bank
-      expect(tx.originalCurrency, isNull); // no amount and no balance
+      expect(tx.balance, '999');
+      expect(tx.amount, isNull);
+      expect(tx.originalCurrency, 'BDT'); // a number (balance) is present
+    });
+
+    test('drops currency when neither amount nor balance is present', () async {
+      _stubOnce(
+        client,
+        http.Response(
+          _completion(
+            '{"category":"transaction","transaction":{'
+            '"balance":null,"amount":null,"original_amount":null,'
+            '"transaction_type":null,"original_currency":"BDT"},"bill":null}',
+          ),
+          200,
+        ),
+      );
+      final tx = (await _run(client)).transaction!;
+      expect(tx.balance, isNull);
+      expect(tx.originalCurrency, isNull);
     });
 
     test('rejects out-of-range month/year but keeps a valid bill total', () async {
@@ -176,7 +188,7 @@ void main() {
         client,
         http.Response(
           _completion(
-            '{"category":"bill","transaction":null,"bill":{"bank":"EBL Credit Card",'
+            '{"category":"bill","transaction":null,"bill":{'
             '"normalized_total_due":100,"original_amount":100,'
             '"original_currency":"BDT","statement_month":13,"statement_year":1999}}',
           ),
@@ -195,7 +207,7 @@ void main() {
         client,
         http.Response(
           _completion(
-            '{"category":"bill","transaction":null,"bill":{"bank":"EBL Credit Card",'
+            '{"category":"bill","transaction":null,"bill":{'
             '"normalized_total_due":100,"original_amount":100,'
             '"original_currency":"dollars","statement_month":7,"statement_year":2026}}',
           ),
@@ -222,7 +234,6 @@ void main() {
       await _provider(client).classifyAndExtract(
         content: 'debit 50',
         sender: 'BRACBANK',
-        bankNames: const ['BRAC Bank PLC'],
         currency: 'BDT',
       );
 
@@ -245,7 +256,6 @@ void main() {
       expect(messages.first['role'], 'system');
       expect(messages.last['role'], 'user');
       final userContent = messages.last['content'] as String;
-      expect(userContent, contains('BRAC Bank PLC'));
       expect(userContent, contains('BDT'));
       expect(userContent, contains('BRACBANK'));
       expect(userContent, contains('debit 50'));
