@@ -127,7 +127,15 @@ void main() {
     expect(find.widgetWithText(ListTile, 'Income'), findsOneWidget);
     expect(find.widgetWithText(ListTile, 'Expense'), findsOneWidget);
     expect(find.widgetWithText(ListTile, 'Transfer'), findsOneWidget);
+    // Exactly one type is checked, and it is the current type (expense).
     expect(find.byIcon(Icons.check), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Expense'),
+        matching: find.byIcon(Icons.check),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('shows the one-time long-press hint until dismissed',

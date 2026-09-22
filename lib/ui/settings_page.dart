@@ -31,7 +31,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final settings = ref.read(settingsRepositoryProvider);
     // Clamp to the two supported options so the SegmentedButton never asserts on
     // a legacy free-text currency.
-    _currency = settings.currency == 'USD' ? 'USD' : 'BDT';
+    final stored = settings.currency;
+    _currency = stored == 'USD' ? 'USD' : 'BDT';
+    // Normalize a legacy free-text value (e.g. from the old text field) so the
+    // stored currency matches the toggle the user sees — otherwise finance
+    // amounts would keep rendering against the stale currency until first tap.
+    if (stored != 'BDT' && stored != 'USD') {
+      settings.setCurrency(_currency);
+    }
     _resolveContacts = settings.resolveContacts;
     _loadVersion();
   }

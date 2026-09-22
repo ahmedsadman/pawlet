@@ -22,6 +22,8 @@ void main() {
   test('resolveApiKey returns empty when nothing stored and no --dart-define',
       () async {
     // Tests run without --dart-define=OPENROUTER_API_KEY, so the fallback is ''.
+    // The injected→persisted branch is only reachable with a compile-time
+    // define, so it cannot be exercised from unit tests (harness limitation).
     final s = _FakeStore();
     expect(await s.resolveApiKey(), '');
     expect(s.key, ''); // nothing persisted
