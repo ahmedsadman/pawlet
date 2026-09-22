@@ -8,6 +8,7 @@ import '../data/secure_store.dart';
 import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
 import '../models/sms_record.dart';
+import 'background_worker.dart';
 import 'classification/classifier.dart';
 import 'connectivity_service.dart';
 import 'contact_resolver.dart';
@@ -70,6 +71,9 @@ class AppServices {
         await notifications.reconcileFailures(failed);
         await notifications.reconcileRetrying(retrying);
       },
+      reschedule: (delay) => delay == null
+          ? BackgroundWorker.cancelCatchUp()
+          : BackgroundWorker.scheduleCatchUp(delay),
     );
     return AppServices(
       database: database,

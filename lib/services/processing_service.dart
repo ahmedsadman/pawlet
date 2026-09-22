@@ -25,6 +25,7 @@ class ProcessingService {
     int Function()? clock,
     this.onCounts,
     this.afterPass,
+    this.reschedule,
   }) : _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final SmsRepository smsRepository;
@@ -42,6 +43,11 @@ class ProcessingService {
   /// Optional hook run after the queue is drained (used to run the deferred
   /// transfer / bill-payment matchers).
   final Future<void> Function()? afterPass;
+
+  /// Optional hook to (re)schedule the next background catch-up. Called after
+  /// every pass with the delay until the soonest pending retry, or null when
+  /// nothing is queued (so the background job can be cancelled — no idle wakes).
+  final Future<void> Function(Duration? delay)? reschedule;
 
   /// Max attempts before a record is marked failed.
   static const int maxAttempts = 10;
@@ -63,7 +69,12 @@ class ProcessingService {
     if (_running) return;
     _running = true;
     try {
-      if (!await isOnline()) return;
+      if (!await isOnline()) {
+        // Still (re)schedule so an offline backlog gets a connectivity-gated
+        // catch-up, then bail.
+        await _rescheduleNext();
+        return;
+      }
 
       await smsRepository.reclaimStale(
         _clock() - staleAfter.inMilliseconds,
@@ -93,6 +104,8 @@ class ProcessingService {
           await smsRepository.countRetrying(),
         );
       }
+
+      await _rescheduleNext();
     } catch (_) {
       // Best-effort background drain: per-record failures are already handled
       // inside the loop; swallow any pass-level error (reclaim/list/counts) so
@@ -195,6 +208,21 @@ class ProcessingService {
       nextAttemptAt: _clock() + _backoff(attempts).inMilliseconds,
     );
     return true;
+  }
+
+  /// Computes the next background catch-up from the queue state and hands it to
+  /// [reschedule]: a delay until the soonest pending retry, or null (cancel) when
+  /// nothing is queued. Due-now rows (or an offline backlog) yield zero delay.
+  Future<void> _rescheduleNext() async {
+    final cb = reschedule;
+    if (cb == null) return;
+    final soonest = await smsRepository.soonestQueuedAttempt();
+    if (soonest == null) {
+      await cb(null);
+      return;
+    }
+    final delayMs = soonest - _clock();
+    await cb(Duration(milliseconds: delayMs < 0 ? 0 : delayMs));
   }
 
   /// Capped exponential backoff. [attempt] is the already-incremented count, so

@@ -53,6 +53,18 @@ class SmsRepository {
   Future<int> countFailed() =>
       _count('status = ?', [SmsStatus.failure.name]);
 
+  /// The soonest time any queued row wants to run (epoch ms), treating a null
+  /// `next_attempt_at` as "due now" (0). Returns null when nothing is queued —
+  /// used to decide whether/when to schedule a background catch-up.
+  Future<int?> soonestQueuedAttempt() async {
+    final rows = await _db.rawQuery(
+      'SELECT MIN(COALESCE(next_attempt_at, 0)) AS soonest FROM $_table '
+      'WHERE status = ?',
+      [SmsStatus.queued.name],
+    );
+    return rows.first['soonest'] as int?;
+  }
+
   /// Records that hit at least one real failure and are still retrying.
   Future<int> countRetrying() => _count(
     'status IN (?, ?) AND attempts >= 1',

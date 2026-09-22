@@ -6,10 +6,12 @@ import 'package:workmanager/workmanager.dart';
 import 'app_services.dart';
 
 const String _processTask = 'meowni.process';
-const String _periodicName = 'meowni.process.periodic';
+const String _catchUpName = 'meowni.process.catchup';
 
-/// WorkManager entry point. Best-effort catch-up processing when the app is
-/// killed (e.g. a backlog queued while offline). Must be top-level.
+/// WorkManager entry point. Best-effort catch-up when the app is killed (a
+/// backlog queued while offline, or a message in retry backoff). Must be
+/// top-level. The pass itself reschedules the next catch-up (or cancels it when
+/// the queue is empty) via AppServices' reschedule hook.
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, _) async {
@@ -28,18 +30,27 @@ void callbackDispatcher() {
   });
 }
 
-/// Initializes WorkManager and schedules the periodic processing pass.
+/// Adaptive background scheduling: instead of an always-on periodic task, a
+/// single one-off catch-up is (re)scheduled only when there is pending work, so
+/// an idle app never wakes in the background.
 class BackgroundWorker {
   const BackgroundWorker._();
 
-  static Future<void> initialize() async {
-    await Workmanager().initialize(callbackDispatcher);
-    await Workmanager().registerPeriodicTask(
-      _periodicName,
-      _processTask,
-      frequency: const Duration(minutes: 15), // Android minimum
-      constraints: Constraints(networkType: NetworkType.connected),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
-    );
-  }
+  static Future<void> initialize() =>
+      Workmanager().initialize(callbackDispatcher);
+
+  /// Schedules (replacing any pending one) a catch-up pass after [delay], gated
+  /// on connectivity so it fires when the network is available.
+  static Future<void> scheduleCatchUp(Duration delay) =>
+      Workmanager().registerOneOffTask(
+        _catchUpName,
+        _processTask,
+        initialDelay: delay,
+        constraints: Constraints(networkType: NetworkType.connected),
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+      );
+
+  /// Cancels the pending catch-up (nothing left to process).
+  static Future<void> cancelCatchUp() =>
+      Workmanager().cancelByUniqueName(_catchUpName);
 }
