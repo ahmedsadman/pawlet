@@ -9,24 +9,26 @@ import 'prompts.dart';
 
 /// [LlmProvider] backed by OpenRouter's chat-completions API. One call both
 /// classifies the SMS and extracts its metadata (fused prompt). Output is forced
-/// to JSON, validated, and mapped to [ClassifyResult]. Transient failures
-/// (429/5xx/network/timeout/malformed JSON) are retried with capped-exponential
-/// backoff; fatal failures (bad key / bad request) surface immediately.
+/// to JSON, validated, and mapped to [ClassifyResult].
+///
+/// A single attempt is made per call — there is no internal retry loop. Transient
+/// failures (429/5xx/network/timeout/malformed JSON) surface as retryable
+/// [LlmException]s so the processing pipeline owns retry/backoff (persistent and
+/// visible via `attempts`/`next_attempt_at`); fatal failures (bad key / bad
+/// request) surface as non-retryable. Keeping retry in one layer avoids a slow
+/// provider blocking the single-flight queue while retrying invisibly.
 class OpenRouterProvider implements LlmProvider {
   OpenRouterProvider({
     required this.apiKey,
     required this.model,
     http.Client? client,
-    Future<void> Function(Duration)? sleep,
   }) : _client = client ?? http.Client(),
-       _ownsClient = client == null,
-       _sleep = sleep ?? Future<void>.delayed;
+       _ownsClient = client == null;
 
   final String apiKey;
   final String model;
   final http.Client _client;
   final bool _ownsClient;
-  final Future<void> Function(Duration) _sleep;
 
   /// Closes the internally-created HTTP client. No-op when the caller injected
   /// their own client (they own its lifecycle).
@@ -36,9 +38,9 @@ class OpenRouterProvider implements LlmProvider {
 
   static const String endpoint =
       'https://openrouter.ai/api/v1/chat/completions';
-  static const int maxCycles = 3;
-  static const Duration baseBackoff = Duration(seconds: 10);
-  static const Duration timeout = Duration(seconds: 30);
+  // Generous single-attempt ceiling: free models can be slow, so give the one
+  // request room to finish rather than failing fast and deferring to a backoff.
+  static const Duration timeout = Duration(minutes: 2);
 
   @override
   Future<ClassifyResult> classifyAndExtract({
@@ -62,20 +64,8 @@ class OpenRouterProvider implements LlmProvider {
       'response_format': {'type': 'json_object'},
     });
 
-    LlmException? last;
-    for (var cycle = 0; cycle < maxCycles; cycle++) {
-      try {
-        final raw = await _post(body);
-        return _parse(raw);
-      } on LlmException catch (e) {
-        if (!e.retryable) rethrow;
-        last = e;
-        if (cycle < maxCycles - 1) {
-          await _sleep(baseBackoff * (1 << cycle)); // 10s, 20s, 40s
-        }
-      }
-    }
-    throw last!;
+    // One attempt; retryable/fatal LlmExceptions propagate to the pipeline.
+    return _parse(await _post(body));
   }
 
   Future<String> _post(String body) async {

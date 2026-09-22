@@ -22,7 +22,6 @@ OpenRouterProvider _provider(http.Client client) => OpenRouterProvider(
   apiKey: 'secret-key',
   model: 'openrouter/free',
   client: client,
-  sleep: (_) async {}, // no real backoff waits in tests
 );
 
 Future<ClassifyResult> _run(http.Client client) =>
@@ -262,71 +261,44 @@ void main() {
     });
   });
 
-  group('retry / error classification', () {
-    test('retries on 429 then succeeds', () async {
-      var calls = 0;
-      when(
-        () => client.post(
-          any(),
-          headers: any(named: 'headers'),
-          body: any(named: 'body'),
+  // The provider makes a SINGLE attempt and does not retry internally; transient
+  // failures surface as retryable LlmExceptions and the processing pipeline owns
+  // retry/backoff (see processing_service_test). Every case below makes 1 call.
+  group('error classification (single attempt)', () {
+    test('429 rate-limit → retryable', () async {
+      _stubOnce(client, http.Response('rate limited', 429));
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>().having((e) => e.retryable, 'retryable', isTrue),
         ),
-      ).thenAnswer((_) async {
-        calls++;
-        return calls == 1
-            ? http.Response('rate limited', 429)
-            : http.Response(
-                _completion('{"category":null,"transaction":null,"bill":null}'),
-                200,
-              );
-      });
-      expect((await _run(client)).category, SmsCategory.none);
-      expect(calls, 2);
+      );
+      _verifyCalls(client, 1);
     });
 
-    test('retries on 5xx then succeeds', () async {
-      var calls = 0;
-      when(
-        () => client.post(
-          any(),
-          headers: any(named: 'headers'),
-          body: any(named: 'body'),
+    test('5xx server error → retryable', () async {
+      _stubOnce(client, http.Response('server error', 503));
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>().having((e) => e.retryable, 'retryable', isTrue),
         ),
-      ).thenAnswer((_) async {
-        calls++;
-        return calls == 1
-            ? http.Response('server error', 503)
-            : http.Response(
-                _completion('{"category":null,"transaction":null,"bill":null}'),
-                200,
-              );
-      });
-      expect((await _run(client)).category, SmsCategory.none);
-      expect(calls, 2);
+      );
+      _verifyCalls(client, 1);
     });
 
-    test('retries on 408 request timeout then succeeds', () async {
-      var calls = 0;
-      when(
-        () => client.post(
-          any(),
-          headers: any(named: 'headers'),
-          body: any(named: 'body'),
+    test('408 request timeout → retryable', () async {
+      _stubOnce(client, http.Response('timeout', 408));
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>().having((e) => e.retryable, 'retryable', isTrue),
         ),
-      ).thenAnswer((_) async {
-        calls++;
-        return calls == 1
-            ? http.Response('timeout', 408)
-            : http.Response(
-                _completion('{"category":null,"transaction":null,"bill":null}'),
-                200,
-              );
-      });
-      expect((await _run(client)).category, SmsCategory.none);
-      expect(calls, 2);
+      );
+      _verifyCalls(client, 1);
     });
 
-    test('classifies a TimeoutException as retryable and exhausts cycles', () async {
+    test('TimeoutException → retryable', () async {
       when(
         () => client.post(
           any(),
@@ -340,10 +312,10 @@ void main() {
           isA<LlmException>().having((e) => e.retryable, 'retryable', isTrue),
         ),
       );
-      _verifyCalls(client, OpenRouterProvider.maxCycles);
+      _verifyCalls(client, 1);
     });
 
-    test('classifies a network error as retryable', () async {
+    test('network error → retryable', () async {
       when(
         () => client.post(
           any(),
@@ -357,10 +329,10 @@ void main() {
           isA<LlmException>().having((e) => e.retryable, 'retryable', isTrue),
         ),
       );
-      _verifyCalls(client, OpenRouterProvider.maxCycles);
+      _verifyCalls(client, 1);
     });
 
-    test('fails immediately on 401 (fatal)', () async {
+    test('401 → fatal (not retryable)', () async {
       _stubOnce(client, http.Response('unauthorized', 401));
       await expectLater(
         _run(client),
@@ -371,7 +343,7 @@ void main() {
       _verifyCalls(client, 1);
     });
 
-    test('empty choices → retryable, exhausts cycles', () async {
+    test('empty choices → retryable', () async {
       _stubOnce(client, http.Response(jsonEncode({'choices': []}), 200));
       await expectLater(
         _run(client),
@@ -379,7 +351,7 @@ void main() {
           isA<LlmException>().having((e) => e.retryable, 'retryable', isTrue),
         ),
       );
-      _verifyCalls(client, OpenRouterProvider.maxCycles);
+      _verifyCalls(client, 1);
     });
 
     test('content that is valid JSON but not an object → retryable', () async {
@@ -390,9 +362,10 @@ void main() {
           isA<LlmException>().having((e) => e.retryable, 'retryable', isTrue),
         ),
       );
+      _verifyCalls(client, 1);
     });
 
-    test('malformed content → retryable, exhausts cycles', () async {
+    test('malformed content → retryable', () async {
       _stubOnce(client, http.Response(_completion('not json at all'), 200));
       await expectLater(
         _run(client),
@@ -400,7 +373,7 @@ void main() {
           isA<LlmException>().having((e) => e.retryable, 'retryable', isTrue),
         ),
       );
-      _verifyCalls(client, OpenRouterProvider.maxCycles);
+      _verifyCalls(client, 1);
     });
 
     test('unexpected category value → retryable (not silently ignored)', () async {
@@ -417,6 +390,7 @@ void main() {
           isA<LlmException>().having((e) => e.retryable, 'retryable', isTrue),
         ),
       );
+      _verifyCalls(client, 1);
     });
   });
 }
