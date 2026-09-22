@@ -213,6 +213,30 @@ void main() {
     });
   });
 
+  group('updateTransactionType', () {
+    test('changes a stored transaction type', () async {
+      final db = await openTestDb();
+      final m = await insertSms(db, sender: 'A', ts: 1);
+      final id = await insertTx(
+        db,
+        messageId: m,
+        amount: '50',
+        type: 'expense',
+        date: DateTime(2026, 1, 1),
+      );
+      final repo = FinanceRepository(db);
+
+      await repo.updateTransactionType(id, TxType.income);
+
+      final page = (await repo.transactions(const TxQuery())).data;
+      expect(page.transactions.single.type, TxType.income);
+      // Aggregates recompute from the stored type: income now counts it.
+      expect(_n(page.totals.income), 50);
+      expect(_n(page.totals.expense), 0);
+      await db.close();
+    });
+  });
+
   group('message', () {
     test('reads the backing SMS', () async {
       final db = await openTestDb();

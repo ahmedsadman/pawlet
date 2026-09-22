@@ -75,6 +75,22 @@ the original app (trends over rolling windows, monthly summaries, balances, spen
   last four digits.
 - **Security**: a PIN plus optional biometric lock gates the whole app, re-locking on screen-off.
 
+## Building
+
+The only secret is the OpenRouter API key. It is **not** entered in the app; it is injected at
+build time and then persisted to encrypted storage (`flutter_secure_storage`) on first launch, so
+subsequent runs work even without the define. Copy the example, fill in your key, and pass it:
+
+```bash
+cp dart_define.example.json dart_define.json   # dart_define.json is gitignored
+# edit dart_define.json → {"OPENROUTER_API_KEY": "sk-or-..."}
+flutter run --dart-define-from-file=dart_define.json
+```
+
+No key baked into a client binary is truly secret — a determined attacker can extract it. Keeping
+it out of source control and out of plaintext prefs is the right pragmatic call for a serverless
+app; a backend proxy is the only real fix and can be a later step.
+
 ## Debug SMS injector
 
 Physical (non-rooted) devices can't have a fake `SMS_RECEIVED` delivered over adb, which makes
@@ -97,8 +113,8 @@ exactly like a real message.
 1. Build and install a debug build on the device, and make sure the app is in the foreground
    (the channel handler is installed when the UI starts).
 2. For the injected message to do anything past the gate, the matching bank must already be
-   added in-app (e.g. add "Eastern Bank Limited" before sending an `EBL` message), and an
-   OpenRouter API key must be set in Settings.
+   added in-app (e.g. add "EBL" before sending an `EBL` message), and an OpenRouter API key
+   must be provisioned at build time (see [Building](#building)).
 3. Broadcast a fake message with adb:
 
 ```bash

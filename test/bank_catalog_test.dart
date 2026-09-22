@@ -4,9 +4,13 @@ import 'package:meowni/data/bank_catalog.dart';
 void main() {
   test('catalog exposes labels with lowercase matchers', () {
     expect(kBankCatalog, isNotEmpty);
-    final ebl = bankCatalogByLabel('Eastern Bank Limited');
+    // Labels are short display names; matchers (not the label) drive routing.
+    final ebl = bankCatalogByLabel('EBL');
     expect(ebl, isNotNull);
     expect(ebl!.matchers, ['ebl', 'eastern bank limited']);
+    expect(bankCatalogByLabel('MTB')!.matchers, ['mtb']);
+    expect(bankCatalogByLabel('StanChart (SCB)')!.matchers, ['scb', 'stanchart']);
+    expect(bankCatalogByLabel('Eastern Bank Limited'), isNull); // old label gone
     expect(bankCatalogByLabel('Not A Bank'), isNull);
   });
 

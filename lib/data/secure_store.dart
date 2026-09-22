@@ -22,4 +22,20 @@ class SecureStore {
 
   Future<void> writeApiKey(String value) =>
       _storage.write(key: _kApiKey, value: value.trim());
+
+  /// Resolves the API key for the pipeline: the stored key if present, else the
+  /// compile-time `--dart-define=OPENROUTER_API_KEY` value (persisted for next
+  /// launch so it survives even if the define is later dropped). Returns '' when
+  /// neither is set. No key baked into a client binary is truly secret, but this
+  /// keeps it out of source control and out of plaintext prefs.
+  Future<String> resolveApiKey() async {
+    final stored = await readApiKey();
+    if (stored.isNotEmpty) return stored;
+    const injected = String.fromEnvironment('OPENROUTER_API_KEY');
+    if (injected.isNotEmpty) {
+      await writeApiKey(injected);
+      return injected;
+    }
+    return '';
+  }
 }

@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Secrets injected at build time — commit dart_define.example.json, not the real one
+dart_define.json

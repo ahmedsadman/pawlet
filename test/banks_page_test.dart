@@ -80,9 +80,9 @@ void main() {
 
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Mutual Trust Bank').last);
+    await tester.tap(find.text('MTB').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('Mutual Trust Bank'), findsOneWidget); // now selected
+    expect(find.text('MTB'), findsOneWidget); // now selected
   });
 }

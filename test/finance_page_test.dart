@@ -37,11 +37,11 @@ Future<void> _pump(WidgetTester tester, List<Bank> banks) async {
 }
 
 void main() {
-  testWidgets('empty database shows the Finance header and Add Bank CTA', (
+  testWidgets('empty database shows the Meowni header and Add Bank CTA', (
     tester,
   ) async {
     await _pump(tester, const []);
-    expect(find.widgetWithText(AppBar, 'Finance'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, 'Meowni'), findsOneWidget);
     expect(find.text('Add a bank to get started'), findsOneWidget);
   });
 

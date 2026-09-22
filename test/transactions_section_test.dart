@@ -117,6 +117,34 @@ void main() {
     expect(find.text('Page 2 of 3'), findsOneWidget);
   });
 
+  testWidgets('long-press opens the change-type sheet, current type checked',
+      (tester) async {
+    await _pump(tester);
+    await tester.longPress(find.text('ACME-1'));
+    await tester.pumpAndSettle();
+
+    // Three options; the current type (expense) is the only checked one.
+    expect(find.widgetWithText(ListTile, 'Income'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Expense'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Transfer'), findsOneWidget);
+    expect(find.byIcon(Icons.check), findsOneWidget);
+  });
+
+  testWidgets('shows the one-time long-press hint until dismissed',
+      (tester) async {
+    await _pump(tester);
+    expect(find.textContaining('long-press a transaction'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pump();
+    expect(find.textContaining('long-press a transaction'), findsNothing);
+  });
+
+  testWidgets('does not show the hint once it has been seen', (tester) async {
+    await _pump(tester, prefsSeed: const {'tx_type_hint_seen': true});
+    expect(find.textContaining('long-press a transaction'), findsNothing);
+  });
+
   testWidgets('restores persisted filters on load', (tester) async {
     await _pump(
       tester,

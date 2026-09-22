@@ -4,6 +4,7 @@ import '../../../models/finance/bank.dart';
 import '../../../theme/catppuccin_theme.dart';
 import '../../../utils/currency_format.dart';
 import '../../../utils/time_format.dart';
+import '../../banks_page.dart';
 import 'finance_badge.dart';
 
 /// Per-bank breakdown revealed under the total-balance card. Deposit accounts
@@ -41,6 +42,18 @@ class BankBreakdownList extends StatelessWidget {
         const Divider(height: 24),
         for (final bank in banks)
           _BankRow(bank: bank, currency: currency, hidden: hidden),
+        // A subtle, non-primary entry point to bank management (a FilledButton
+        // would read as a heavy CTA inside the balance card).
+        SizedBox(
+          width: double.infinity,
+          child: TextButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BanksPage()),
+            ),
+            icon: const Icon(Icons.account_balance_outlined, size: 18),
+            label: const Text('Manage Banks & Cards'),
+          ),
+        ),
       ],
     );
   }

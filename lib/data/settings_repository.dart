@@ -16,9 +16,10 @@ class SettingsRepository {
   static const _kTxTypes = 'tx_types';
   static const _kTxSort = 'tx_sort';
   static const _kResolveContacts = 'resolve_contacts';
-  static const _kLlmModel = 'llm_model';
+  static const _kTxTypeHintSeen = 'tx_type_hint_seen';
 
-  /// Default OpenRouter model — the free-models router.
+  /// Default OpenRouter model — the free-models router. Hardcoded now (the model
+  /// is no longer user-configurable); the pipeline reads it directly.
   static const String defaultLlmModel = 'openrouter/free';
 
   /// User's normalized reporting currency (all amounts are stored in it).
@@ -57,15 +58,8 @@ class SettingsRepository {
   Future<void> setResolveContacts(bool value) =>
       _prefs.setBool(_kResolveContacts, value);
 
-  /// OpenRouter model id (default: the free-models router). (The API key itself
-  /// lives in encrypted storage — see SecureStore.)
-  String get llmModel {
-    final v = _prefs.getString(_kLlmModel)?.trim();
-    return (v == null || v.isEmpty) ? defaultLlmModel : v;
-  }
-
-  Future<void> setLlmModel(String value) {
-    final trimmed = value.trim();
-    return _prefs.setString(_kLlmModel, trimmed.isEmpty ? defaultLlmModel : trimmed);
-  }
+  /// Whether the user has seen the one-time "long-press to change type" hint.
+  bool get txTypeHintSeen => _prefs.getBool(_kTxTypeHintSeen) ?? false;
+  Future<void> setTxTypeHintSeen(bool value) =>
+      _prefs.setBool(_kTxTypeHintSeen, value);
 }

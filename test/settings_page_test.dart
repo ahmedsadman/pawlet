@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meowni/data/finance_repository.dart';
-import 'package:meowni/data/secure_store.dart';
 import 'package:meowni/models/finance/bank.dart';
 import 'package:meowni/state/finance_providers.dart';
 import 'package:meowni/state/providers.dart';
@@ -11,26 +10,12 @@ import 'package:meowni/theme/catppuccin_theme.dart';
 import 'package:meowni/ui/settings_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// In-memory SecureStore so tests never touch the platform keystore.
-class _FakeSecureStore extends SecureStore {
-  String key = '';
-  @override
-  Future<String> readApiKey() async => key;
-  @override
-  Future<void> writeApiKey(String value) async => key = value.trim();
-}
-
-Future<(Widget, ProviderContainer, _FakeSecureStore)> _app(
-  List<Override> extra,
-) async {
+Future<(Widget, ProviderContainer)> _app(List<Override> extra) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
-  final store = _FakeSecureStore();
   final container = ProviderContainer(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
-      bootstrapApiKeyProvider.overrideWithValue(''),
-      secureStoreProvider.overrideWith((ref) => store),
       ...extra,
     ],
   );
@@ -39,57 +24,53 @@ Future<(Widget, ProviderContainer, _FakeSecureStore)> _app(
     container: container,
     child: MaterialApp(theme: AppTheme.theme, home: const SettingsPage()),
   );
-  return (widget, container, store);
+  return (widget, container);
 }
 
 void main() {
-  testWidgets('renders the key, model, currency and manage-banks controls', (
-    tester,
-  ) async {
-    final (widget, _, _) = await _app(const []);
+  testWidgets('renders currency toggle, manage-banks and privacy — no AI fields',
+      (tester) async {
+    final (widget, _) = await _app(const []);
     await tester.pumpWidget(widget);
     await tester.pump();
 
-    expect(find.widgetWithText(TextField, 'API key'), findsOneWidget);
-    expect(find.widgetWithText(TextField, 'Model'), findsOneWidget);
-    expect(find.widgetWithText(TextField, 'Normalized currency'), findsOneWidget);
-    expect(find.text('Manage banks'), findsOneWidget);
+    // AI (OpenRouter) section is gone.
+    expect(find.text('AI (OpenRouter)'), findsNothing);
+    expect(find.widgetWithText(TextField, 'API key'), findsNothing);
+    expect(find.widgetWithText(TextField, 'Model'), findsNothing);
+
+    // Currency is a BDT/USD segmented toggle (no free-text field).
+    expect(find.byType(SegmentedButton<String>), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Normalized currency'), findsNothing);
+
+    expect(find.text('Manage Banks & Cards'), findsOneWidget);
     expect(find.text('Resolve contact names'), findsOneWidget);
-  });
 
-  testWidgets('saving AI settings persists the key and model', (tester) async {
-    final (widget, container, store) = await _app(const []);
-    await tester.pumpWidget(widget);
-    await tester.pump();
-
-    await tester.enterText(find.widgetWithText(TextField, 'API key'), 'sk-test');
-    await tester.enterText(find.widgetWithText(TextField, 'Model'), 'vendor/model');
-    await tester.tap(find.widgetWithText(FilledButton, 'Save').first);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    expect(container.read(apiKeyProvider), 'sk-test');
-    expect(store.key, 'sk-test'); // actually persisted to secure storage
-    expect(container.read(settingsRepositoryProvider).llmModel, 'vendor/model');
-  });
-
-  testWidgets('saving currency upper-cases and persists it', (tester) async {
-    final (widget, container, _) = await _app(const []);
-    await tester.pumpWidget(widget);
-    await tester.pump();
-
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Normalized currency'),
-      'usd',
+    // Privacy sits near the bottom of the (lazy) ListView — scroll it in.
+    await tester.dragUntilVisible(
+      find.text('Privacy'),
+      find.byType(ListView),
+      const Offset(0, -200),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Save').last);
+    expect(find.text('Privacy'), findsOneWidget);
+    expect(find.textContaining('stays on this device'), findsOneWidget);
+  });
+
+  testWidgets('selecting a currency persists it', (tester) async {
+    final (widget, container) = await _app(const []);
+    await tester.pumpWidget(widget);
+    await tester.pump();
+
+    expect(container.read(settingsRepositoryProvider).currency, 'BDT');
+    await tester.tap(find.text('USD'));
     await tester.pump();
 
     expect(container.read(settingsRepositoryProvider).currency, 'USD');
   });
 
-  testWidgets('Manage banks navigates to the Banks page', (tester) async {
-    final (widget, _, _) = await _app([
+  testWidgets('Manage Banks & Cards navigates to the Banks page',
+      (tester) async {
+    final (widget, _) = await _app([
       banksProvider.overrideWith(
         (ref) async => const CachedResult(data: <Bank>[]),
       ),
@@ -97,10 +78,10 @@ void main() {
     await tester.pumpWidget(widget);
     await tester.pump();
 
-    await tester.tap(find.text('Manage banks'));
+    await tester.tap(find.text('Manage Banks & Cards'));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(AppBar, 'Banks'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, 'Banks & Cards'), findsOneWidget);
     expect(find.text('No banks yet'), findsOneWidget);
   });
 }

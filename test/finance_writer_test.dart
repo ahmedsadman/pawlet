@@ -126,6 +126,47 @@ void main() {
       await db.close();
     });
 
+    test('deposit + card of the same bank: sender routes to deposit, digits to card', () async {
+      final db = await openTestDb();
+      final repo = BanksRepository(db);
+      // Same bank name; the deposit carries the sender matchers, the credit
+      // card carries NONE (it routes purely by card digits). This is what lets
+      // a non-card SMS fall back to the deposit instead of going ambiguous.
+      final deposit = await repo.create(name: 'EBL', matchers: const ['ebl']);
+      final card = await repo.create(
+        name: 'EBL',
+        accountType: 'credit',
+        cardDigits: '4238|3241',
+        matchers: const [],
+      );
+      final w = FinanceWriter(db, nowMs: () => 0);
+      final meta = tx(const MetadataResult(
+        amount: '50',
+        originalAmount: '50',
+        transactionType: 'expense',
+        originalCurrency: 'BDT',
+      ));
+
+      // Non-card SMS from EBL → deposit (sender fallback, unambiguous).
+      final plain = await seedSms(db, sender: 'AD-EBL', content: 'debit 50');
+      await w.apply(record: plain, outcome: meta, banks: [deposit, card], currency: 'BDT');
+      // Card SMS (digits in body) → the card.
+      final withCard = await seedSms(
+        db,
+        sender: 'AD-EBL',
+        content: 'purchase 4238****3241 for 50',
+      );
+      await w.apply(record: withCard, outcome: meta, banks: [deposit, card], currency: 'BDT');
+
+      final byMsg = {
+        for (final r in await db.query('transactions'))
+          r['message_id'] as int: r['bank_id'],
+      };
+      expect(byMsg[plain.id], deposit.id);
+      expect(byMsg[withCard.id], card.id);
+      await db.close();
+    });
+
     test('records unlinked when the sender is ambiguous (two banks match)', () async {
       final db = await openTestDb();
       final repo = BanksRepository(db);

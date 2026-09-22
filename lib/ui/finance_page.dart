@@ -34,10 +34,16 @@ class _FinancePageState extends ConsumerState<FinancePage> {
   @override
   Widget build(BuildContext context) {
     final hidden = ref.watch(balanceHiddenProvider);
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Finance'),
+        title: Text(
+          'Meowni',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: hidden ? 'Show balances' : 'Hide balances',

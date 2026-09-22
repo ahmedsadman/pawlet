@@ -88,13 +88,18 @@ void main() {
     );
   });
 
-  testWidgets('typing in search updates the history query', (tester) async {
+  testWidgets('typing in search updates the history query after the debounce',
+      (tester) async {
     await _pump(tester, _overrides());
     await tester.enterText(find.byType(TextField), 'brac');
     await tester.pump();
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MessagesPage)),
     );
+    // Debounced: the query is not updated on the keystroke itself.
+    expect(container.read(historyQueryProvider).search, '');
+
+    await tester.pump(const Duration(milliseconds: 450));
     expect(container.read(historyQueryProvider).search, 'brac');
   });
 
@@ -143,7 +148,8 @@ void main() {
 
     await tester.enterText(find.byType(TextField), 'brac');
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 450)); // past the debounce
+    await tester.pump(const Duration(milliseconds: 200)); // resolve the fetch
     expect(find.text('BRAC'), findsOneWidget);
     expect(find.text('Transaction'), findsOneWidget);
   });

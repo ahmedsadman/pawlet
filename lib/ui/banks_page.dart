@@ -55,7 +55,7 @@ class BanksPage extends ConsumerWidget {
     final banksAsync = ref.watch(banksProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Banks')),
+      appBar: AppBar(title: const Text('Banks & Cards')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openForm(context, ref),
         child: const Icon(Icons.add),
@@ -216,7 +216,12 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
     final hasBalance = !isCredit && balanceText.isNotEmpty;
 
     final label = _selectedBank!;
-    final matchers = bankCatalogByLabel(label)?.matchers ?? const [];
+    // Credit cards route purely by card digits and must carry NO sender-matchers,
+    // so a non-card SMS falls back to the same bank's deposit instead of matching
+    // both and resolving as ambiguous.
+    final matchers = isCredit
+        ? const <String>[]
+        : (bankCatalogByLabel(label)?.matchers ?? const []);
 
     try {
       if (_isEdit) {

@@ -45,6 +45,8 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
   // Rows in the last loaded page, so the loading skeleton matches the count and
   // the list doesn't jump when paging. Starts at a full page.
   int _lastCount = _pageSize;
+  // Seeded from the pref; drives the one-time long-press hint.
+  late bool _hintSeen;
 
   @override
   void initState() {
@@ -55,6 +57,53 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
     _types = repo.txTypes.map(TxType.fromValue).toList();
     final sort = repo.txSort;
     _sortKey = _sortOptions.containsKey(sort) ? sort! : _defaultSort;
+    _hintSeen = repo.txTypeHintSeen;
+  }
+
+  void _markHintSeen() {
+    if (_hintSeen) return;
+    setState(() => _hintSeen = true);
+    ref.read(settingsRepositoryProvider).setTxTypeHintSeen(true);
+  }
+
+  String _typeLabel(TxType t) => switch (t) {
+    TxType.income => 'Income',
+    TxType.expense => 'Expense',
+    TxType.transfer => 'Transfer',
+  };
+
+  /// Long-press handler: pick a new type from a bottom sheet, then persist it and
+  /// refresh so totals/trends recompute. Also retires the one-time hint.
+  Future<void> _changeType(TransactionItem tx) async {
+    _markHintSeen();
+    final selected = await showModalBottomSheet<TxType>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final type in TxType.values)
+              ListTile(
+                title: Text(_typeLabel(type)),
+                trailing: type == tx.type
+                    ? Icon(
+                        Icons.check,
+                        color: Theme.of(context).colorScheme.primary,
+                      )
+                    : null,
+                onTap: () => Navigator.of(context).pop(type),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || selected == tx.type) return;
+    await ref
+        .read(financeRepositoryProvider)
+        .updateTransactionType(tx.id, selected);
+    if (!mounted) return;
+    refreshAllFinance(ref);
   }
 
   void _persistFilters() {
@@ -170,7 +219,8 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
         const SizedBox(height: 8),
         if (page.transactions.isEmpty)
           const EmptyHint('No transactions in selected range.')
-        else
+        else ...[
+          if (!_hintSeen) ...[_hintBanner(), const SizedBox(height: 8)],
           for (final tx in page.transactions)
             TransactionRow(
               tx: tx,
@@ -183,9 +233,46 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
                   : () => setState(
                       () => _expandedId = _expandedId == tx.id ? null : tx.id,
                     ),
+              // Long-press changes the type; allowed even while hidden (it never
+              // reveals the amount).
+              onLongPress: () => _changeType(tx),
             ),
+        ],
         if (page.totalPages > 1) _Pagination(page: page, onChange: _goToPage),
       ],
+    );
+  }
+
+  Widget _hintBanner() {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.lightbulb_outline,
+            size: 16,
+            color: theme.colorScheme.outline,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Tip: long-press a transaction to change its type.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Dismiss',
+            icon: const Icon(Icons.close, size: 16),
+            visualDensity: VisualDensity.compact,
+            onPressed: _markHintSeen,
+          ),
+        ],
+      ),
     );
   }
 

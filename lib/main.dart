@@ -14,7 +14,7 @@ Future<void> main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final database = await AppDatabase.open();
-  final apiKey = await SecureStore().readApiKey();
+  final apiKey = await SecureStore().resolveApiKey();
   // Inits the shared plugin singleton; the provider's NotificationService wraps
   // the same native instance.
   await NotificationService().init();

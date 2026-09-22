@@ -56,7 +56,7 @@ class AppServices {
     final notifications = NotificationService();
     final llmProvider = OpenRouterProvider(
       apiKey: apiKey,
-      model: settings.llmModel,
+      model: SettingsRepository.defaultLlmModel,
     );
     final matcher = FinanceMatcher(database);
     final processingService = ProcessingService(
@@ -93,7 +93,7 @@ class AppServices {
   static Future<AppServices> bootstrap() async {
     final database = await AppDatabase.open();
     final prefs = await SharedPreferences.getInstance();
-    final apiKey = await SecureStore().readApiKey();
+    final apiKey = await SecureStore().resolveApiKey();
     final services = AppServices.from(
       database: database,
       prefs: prefs,

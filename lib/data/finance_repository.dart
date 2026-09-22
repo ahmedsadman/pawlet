@@ -164,6 +164,18 @@ class FinanceRepository {
     );
   }
 
+  /// Overrides a transaction's type (income / expense / transfer). Aggregates
+  /// are computed live from `transactions.type`, so callers should refresh the
+  /// finance providers afterwards to recompute totals/trends.
+  Future<void> updateTransactionType(int id, TxType type) async {
+    await _db.update(
+      AppDatabase.transactionsTable,
+      {'type': type.value},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   // ---- bills --------------------------------------------------------------
 
   Future<CachedResult<BillsPage>> bills(

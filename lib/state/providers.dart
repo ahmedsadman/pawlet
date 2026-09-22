@@ -43,17 +43,12 @@ final bootstrapApiKeyProvider = Provider<String>(
       throw UnimplementedError('bootstrapApiKeyProvider must be overridden'),
 );
 
-/// The current OpenRouter API key. Seeded from encrypted storage at startup and
-/// updated live from Settings; the pipeline rebuilds when it changes.
+/// The current OpenRouter API key, seeded from encrypted storage at startup.
+/// The pipeline reads it via [appServicesProvider]; there is no in-app writer
+/// (the key is provisioned out-of-band via `--dart-define`, see [SecureStore]).
 class ApiKey extends Notifier<String> {
   @override
   String build() => ref.read(bootstrapApiKeyProvider);
-
-  Future<void> set(String value) async {
-    final trimmed = value.trim();
-    await ref.read(secureStoreProvider).writeApiKey(trimmed);
-    state = trimmed;
-  }
 }
 
 final apiKeyProvider = NotifierProvider<ApiKey, String>(ApiKey.new);

@@ -17,6 +17,7 @@ class TransactionRow extends StatelessWidget {
     required this.currency,
     required this.expanded,
     required this.onTap,
+    this.onLongPress,
     super.key,
   });
 
@@ -26,6 +27,8 @@ class TransactionRow extends StatelessWidget {
   // Null disables expansion (e.g. while balances are hidden, so the backing SMS
   // — which usually contains the amount — can't be revealed).
   final VoidCallback? onTap;
+  // Long-press opens the change-type sheet; independent of [onTap]/hidden.
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +37,7 @@ class TransactionRow extends StatelessWidget {
       children: [
         InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: Row(

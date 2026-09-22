@@ -16,13 +16,13 @@ class BankCatalogEntry {
 
 const List<BankCatalogEntry> kBankCatalog = [
   BankCatalogEntry(label: 'City Bank', matchers: ['city bank']),
-  BankCatalogEntry(label: 'Mutual Trust Bank', matchers: ['mtb']),
+  BankCatalogEntry(label: 'MTB', matchers: ['mtb']),
   BankCatalogEntry(
-    label: 'Eastern Bank Limited',
+    label: 'EBL',
     matchers: ['ebl', 'eastern bank limited'],
   ),
   BankCatalogEntry(
-    label: 'Standard Chartered Bank (SCB)',
+    label: 'StanChart (SCB)',
     matchers: ['scb', 'stanchart'],
   ),
 ];

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -21,6 +23,9 @@ class MessagesPage extends ConsumerStatefulWidget {
 class _MessagesPageState extends ConsumerState<MessagesPage> {
   bool _queueExpanded = false;
   late final TextEditingController _search;
+  // Debounces the history fetch so typing doesn't refetch on every keystroke.
+  Timer? _debounce;
+  static const _debounceDelay = Duration(milliseconds: 400);
 
   @override
   void initState() {
@@ -32,6 +37,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _search.dispose();
     super.dispose();
   }
@@ -120,17 +126,23 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
 
   Widget _searchField() {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: TextField(
         controller: _search,
         decoration: InputDecoration(
-          hintText: 'Search by sender or name',
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
+          hintText: 'Search by sender',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _search.text.isEmpty
               ? null
               : IconButton(
                   icon: const Icon(Icons.clear),
                   onPressed: () {
+                    _debounce?.cancel();
                     _search.clear();
                     ref.read(historyQueryProvider.notifier).setSearch('');
                     setState(() {});
@@ -138,8 +150,13 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
                 ),
         ),
         onChanged: (value) {
-          ref.read(historyQueryProvider.notifier).setSearch(value);
-          setState(() {}); // refresh the clear-button visibility
+          // setState immediately so the clear button shows/hides without lag,
+          // but debounce the (paginated DB) fetch behind the query.
+          setState(() {});
+          _debounce?.cancel();
+          _debounce = Timer(_debounceDelay, () {
+            ref.read(historyQueryProvider.notifier).setSearch(value);
+          });
         },
       ),
     );
