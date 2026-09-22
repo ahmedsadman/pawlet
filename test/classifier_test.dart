@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:meowni/models/finance/bank.dart';
 import 'package:meowni/services/classification/classifier.dart';
 import 'package:meowni/services/llm/llm_provider.dart';
-import 'package:meowni/utils/bank_tokens.dart';
 
 /// Records invocations and returns a canned result, so we can assert whether the
 /// LLM was called and how the outcome is routed.
@@ -26,21 +25,26 @@ class _FakeLlm implements LlmProvider {
 Bank _bank(
   String name, {
   String accountType = 'deposit',
-  String alternates = '',
+  List<String> matchers = const [],
   String? cardDigits,
 }) => Bank(
   id: name.hashCode,
   name: name,
   accountType: accountType,
   cardDigits: cardDigits,
-  matchTokens: buildMatchTokens(name, alternates),
+  matchers: matchers,
   createdAt: DateTime(2026, 1, 1),
 );
 
 void main() {
-  final unity = _bank('Unity Commercial', alternates: 'UCB, Unity Bank');
-  final ebl = _bank('EBL Credit Card', accountType: 'credit', cardDigits: '4238|3241');
-  final banks = [unity, ebl];
+  final mtb = _bank('Mutual Trust Bank', matchers: const ['mtb']);
+  final ebl = _bank(
+    'EBL Credit Card',
+    accountType: 'credit',
+    cardDigits: '4238|3241',
+    matchers: const ['ebl'],
+  );
+  final banks = [mtb, ebl];
 
   Future<ClassificationOutcome> run(
     _FakeLlm llm,
@@ -65,10 +69,10 @@ void main() {
     final llm = _FakeLlm(
       const ClassifyResult(
         category: SmsCategory.transaction,
-        transaction: MetadataResult(bank: 'Unity Commercial', amount: '50'),
+        transaction: MetadataResult(bank: 'Mutual Trust Bank', amount: '50'),
       ),
     );
-    final outcome = await run(llm, 'UCB', 'debit 50 BDT');
+    final outcome = await run(llm, 'MTB', 'debit 50 BDT');
     expect(llm.calls, 1);
     expect(outcome.llmInvoked, isTrue);
     expect(outcome.category, SmsCategory.transaction);
@@ -90,7 +94,7 @@ void main() {
 
   test('LLM returns none → outcome none but llmInvoked true', () async {
     final llm = _FakeLlm(const ClassifyResult.none());
-    final outcome = await run(llm, 'UCB', 'some bank notice');
+    final outcome = await run(llm, 'MTB', 'some bank notice');
     expect(llm.calls, 1);
     expect(outcome.llmInvoked, isTrue);
     expect(outcome.category, SmsCategory.none);

@@ -38,26 +38,20 @@ void main() {
   testWidgets('lists a bank', (tester) async {
     await _pump(tester, const BanksPage(), [
       banksProvider.overrideWith(
-        (ref) async => CachedResult(data: [_bank('BRAC Bank')]),
+        (ref) async => CachedResult(data: [_bank('City Bank')]),
       ),
     ]);
-    expect(find.text('BRAC Bank'), findsOneWidget);
+    expect(find.text('City Bank'), findsOneWidget);
     expect(find.text('No banks yet'), findsNothing);
   });
 
-  testWidgets('form renders name, alternate names + help, and conditional '
-      'credit-card digit fields', (tester) async {
+  testWidgets('form shows the bank picker + conditional credit fields', (
+    tester,
+  ) async {
     await _pump(tester, const BankFormPage(), const []);
 
-    expect(find.widgetWithText(TextFormField, 'Name'), findsOneWidget);
-    expect(
-      find.widgetWithText(TextFormField, 'Alternate sender names'),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('Sender-name matching decides'),
-      findsOneWidget,
-    );
+    expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
+    expect(find.textContaining('Pick your bank'), findsOneWidget);
     // Deposit is the default → balance field, no card-digit fields.
     expect(
       find.widgetWithText(TextFormField, 'Current balance (optional)'),
@@ -65,16 +59,30 @@ void main() {
     );
     expect(find.widgetWithText(TextFormField, 'First 4'), findsNothing);
 
-    // Switch to credit card → digit fields appear, balance field goes away.
     await tester.tap(find.text('Credit card'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.widgetWithText(TextFormField, 'First 4'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'Last 4'), findsOneWidget);
     expect(
       find.widgetWithText(TextFormField, 'Current balance (optional)'),
       findsNothing,
     );
+  });
+
+  testWidgets('selecting a bank from the catalog updates the picker', (
+    tester,
+  ) async {
+    // No real DB (widget tests can't drive sqflite under FakeAsync); the
+    // catalog→matchers→persist path is covered by bank_catalog / banks_repository
+    // tests. Here we only verify the picker works.
+    await _pump(tester, const BankFormPage(), const []);
+
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mutual Trust Bank').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mutual Trust Bank'), findsOneWidget); // now selected
   });
 }

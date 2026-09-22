@@ -1,38 +1,46 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meowni/models/finance/bank.dart';
 import 'package:meowni/services/classification/sender_matcher.dart';
-import 'package:meowni/utils/bank_tokens.dart';
 
 Bank _bank(
   String name, {
   String accountType = 'deposit',
-  String alternates = '',
+  List<String> matchers = const [],
   String? cardDigits,
 }) => Bank(
   id: name.hashCode,
   name: name,
   accountType: accountType,
   cardDigits: cardDigits,
-  matchTokens: buildMatchTokens(name, alternates),
+  matchers: matchers,
   createdAt: DateTime(2026, 1, 1),
 );
 
 void main() {
-  final unity = _bank('Unity Commercial', alternates: 'UCB, Unity Bank');
-  final ebl = _bank('EBL Credit Card', accountType: 'credit', cardDigits: '4238|3241');
+  // Mutual Trust Bank ("mtb") and Eastern Bank Limited ("ebl","eastern bank limited").
+  final mtb = _bank('Mutual Trust Bank', matchers: const ['mtb']);
+  final ebl = _bank(
+    'Eastern Bank Limited',
+    accountType: 'credit',
+    cardDigits: '4238|3241',
+    matchers: const ['ebl', 'eastern bank limited'],
+  );
 
   group('senderMatchesBank', () {
-    test('matches when a sender word overlaps a bank token', () {
-      expect(senderMatchesBank('UCB', unity), isTrue);
-      expect(senderMatchesBank('Unity Bank', unity), isTrue);
-      expect(senderMatchesBank('AD-UCB', unity), isTrue); // split on '-'
+    test('matches when a matcher is a substring of the sender', () {
+      expect(senderMatchesBank('MTBLBD', mtb), isTrue); // contains "mtb"
+      expect(senderMatchesBank('AD-EBL', ebl), isTrue); // contains "ebl"
+      expect(
+        senderMatchesBank('EASTERN BANK LIMITED', ebl),
+        isTrue, // the longer matcher too
+      );
+      expect(senderMatchesBank('ebl', ebl), isTrue); // case-insensitive
     });
 
-    test('does not match unrelated or concatenated senders', () {
-      expect(senderMatchesBank('Daraz', unity), isFalse);
-      expect(senderMatchesBank('+8801234', unity), isFalse);
-      // "BRACBANK" is one token; it only matches if registered as an alternate.
-      expect(senderMatchesBank('BRACBANK', unity), isFalse);
+    test('does not match unrelated senders', () {
+      expect(senderMatchesBank('Daraz', mtb), isFalse);
+      expect(senderMatchesBank('+8801234', ebl), isFalse);
+      expect(senderMatchesBank('SCB', mtb), isFalse);
     });
   });
 
@@ -58,28 +66,28 @@ void main() {
   });
 
   group('gateBanks / matchCreditCardInContent', () {
-    test('gates in by sender token', () {
-      expect(gateBanks('UCB', 'anything', [unity, ebl]), [unity]);
+    test('gates in by a sender substring match', () {
+      expect(gateBanks('AD-MTB', 'anything', [mtb, ebl]), [mtb]);
     });
 
     test('gates in a credit card by digits in content even if sender differs', () {
-      final gated = gateBanks('RANDOM', 'stmt 4238****3241', [unity, ebl]);
+      final gated = gateBanks('RANDOM', 'stmt 4238****3241', [mtb, ebl]);
       expect(gated, [ebl]);
-      expect(matchCreditCardInContent('stmt 4238****3241', [unity, ebl]), ebl);
+      expect(matchCreditCardInContent('stmt 4238****3241', [mtb, ebl]), ebl);
     });
 
     test('gates out when nothing matches', () {
-      expect(gateBanks('Daraz', 'win a prize', [unity, ebl]), isEmpty);
+      expect(gateBanks('Daraz', 'win a prize', [mtb, ebl]), isEmpty);
     });
 
     test('empty banks list gates nothing in', () {
-      expect(gateBanks('UCB', '4238****3241', const []), isEmpty);
+      expect(gateBanks('MTB', '4238****3241', const []), isEmpty);
     });
 
-    test('a bank with no match tokens never matches by sender', () {
-      final blank = _bank('Nameless'); // buildMatchTokens still yields "nameless"
-      expect(senderMatchesBank('UCB', blank), isFalse);
-      expect(gateBanks('UCB', 'x', [blank]), isEmpty);
+    test('a bank with no matchers never matches by sender', () {
+      final blank = _bank('Nameless');
+      expect(senderMatchesBank('MTB', blank), isFalse);
+      expect(gateBanks('MTB', 'x', [blank]), isEmpty);
     });
 
     test('a deposit bank carrying card digits is not gated by content', () {

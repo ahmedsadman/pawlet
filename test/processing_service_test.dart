@@ -46,8 +46,8 @@ void main() {
     sms = SmsRepository(db);
     banks = BanksRepository(db);
     now = 1_000_000;
-    // A bank whose alternate name "CHK" lets sender "CHK" pass Layer 1.
-    await banks.create(name: 'Checking', alternateNames: 'CHK');
+    // A bank whose matcher "chk" lets sender "CHK" pass Layer 1.
+    await banks.create(name: 'Checking', matchers: const ['chk']);
   });
 
   ProcessingService service(

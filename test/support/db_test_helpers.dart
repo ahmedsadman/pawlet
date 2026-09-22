@@ -38,8 +38,7 @@ Future<int> insertBank(
   String? lastBalance,
   int? lastBalanceAt,
   int createdAt = 0,
-  String? alternateNames,
-  String? matchTokens,
+  List<String>? matchers,
 }) {
   return db.insert(AppDatabase.banksTable, {
     'name': name,
@@ -48,8 +47,7 @@ Future<int> insertBank(
     'last_balance': lastBalance,
     'last_balance_at': lastBalanceAt,
     'created_at': createdAt,
-    'alternate_names': alternateNames,
-    'match_tokens': matchTokens,
+    'matchers': matchers?.join('\n'),
   });
 }
 

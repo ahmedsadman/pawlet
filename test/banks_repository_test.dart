@@ -42,20 +42,18 @@ void main() {
       await database.close();
     });
 
-    test('computes match tokens from name + alternate sender names', () async {
+    test('stores and round-trips catalog matchers', () async {
       final database = await openTestDb();
       final r = BanksRepository(database, nowMs: () => 1);
 
       final bank = await r.create(
-        name: 'Unity Commercial',
-        alternateNames: 'UCB, Unity Bank',
+        name: 'Eastern Bank Limited',
+        matchers: const ['ebl', 'eastern bank limited'],
       );
-      expect(bank.alternateNames, 'UCB, Unity Bank');
-      expect(bank.matchTokens, ['bank', 'commercial', 'ucb', 'unity']);
+      expect(bank.matchers, ['ebl', 'eastern bank limited']);
 
-      // Editing alternate names recomputes the tokens.
-      final updated = await r.update(bank.id, alternateNames: 'UCBL');
-      expect(updated!.matchTokens, ['commercial', 'ucbl', 'unity']);
+      final updated = await r.update(bank.id, matchers: const ['mtb']);
+      expect(updated!.matchers, ['mtb']);
       await database.close();
     });
 
