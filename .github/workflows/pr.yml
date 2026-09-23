@@ -10,6 +10,12 @@ on:
       - ".github/workflows/pr.yml"
       - ".github/workflows/checks.yml"
 
+# dorny/paths-filter reads the PR's changed-files list via the API, which needs
+# pull-requests:read (the repo's default GITHUB_TOKEN is contents:read only).
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   changes:
     name: detect-changes
