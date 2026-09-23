@@ -118,16 +118,17 @@ class OpenRouterProvider implements LlmProvider {
     return Duration(seconds: n);
   }
 
-  /// Parses an `X-RateLimit-Reset` header to epoch **milliseconds**. The unit is
-  /// unspecified across APIs, so magnitude-detect it: a value `< 1e12` is
-  /// epoch-seconds (×1000); `>= 1e12` is already epoch-ms (now ≈ 1.76e12 ms, so
-  /// the split is unambiguous for centuries). Missing / non-integer / negative
-  /// returns null; time math (past/skew/clamp) is left to ProcessingService.
+  /// Parses an `X-RateLimit-Reset` header to epoch **milliseconds**. OpenRouter
+  /// sends an absolute epoch-ms timestamp (13-digit; confirmed via captured 429
+  /// responses), so the raw integer is carried as-is — no unit conversion. A
+  /// stray seconds value would land in 1970, becoming a past timestamp that
+  /// ProcessingService floors to backoff; its 24h clamp bounds any bad value.
+  /// Missing / non-integer / negative returns null.
   int? _parseResetAt(String? value) {
     if (value == null) return null;
     final n = int.tryParse(value.trim());
     if (n == null || n < 0) return null;
-    return n < 1000000000000 ? n * 1000 : n;
+    return n;
   }
 
   ClassifyResult _parse(String raw) {

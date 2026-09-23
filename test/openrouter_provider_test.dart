@@ -413,10 +413,10 @@ void main() {
       _verifyCalls(client, 1);
     });
 
-    test('X-RateLimit-Reset epoch seconds → normalized to ms', () async {
+    test('X-RateLimit-Reset epoch ms → carried as-is, no reset<->retryAfter mix', () async {
       _stubOnce(
         client,
-        http.Response('rate', 429, headers: {'x-ratelimit-reset': '1758000000'}),
+        http.Response('rate', 429, headers: {'x-ratelimit-reset': '1758000000000'}),
       );
       await expectLater(
         _run(client),
@@ -428,16 +428,19 @@ void main() {
       );
     });
 
-    test('X-RateLimit-Reset epoch ms → used as-is', () async {
+    test('X-RateLimit-Reset is carried raw, with no unit conversion', () async {
+      // OpenRouter sends epoch-ms; the raw integer is used as-is (no
+      // seconds->ms magnitude-detect). A sub-1e12 value is not silently
+      // rescaled — downstream it becomes a past timestamp floored to backoff.
       _stubOnce(
         client,
-        http.Response('rate', 429, headers: {'x-ratelimit-reset': '1758000000000'}),
+        http.Response('rate', 429, headers: {'x-ratelimit-reset': '1758000000'}),
       );
       await expectLater(
         _run(client),
         throwsA(
           isA<LlmException>()
-              .having((e) => e.resetAtEpochMs, 'resetAtEpochMs', 1758000000000),
+              .having((e) => e.resetAtEpochMs, 'resetAtEpochMs', 1758000000),
         ),
       );
     });
@@ -447,7 +450,7 @@ void main() {
         client,
         http.Response('rate', 429, headers: {
           'retry-after': '30',
-          'x-ratelimit-reset': '1758000000',
+          'x-ratelimit-reset': '1758000000000',
         }),
       );
       await expectLater(
