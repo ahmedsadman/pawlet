@@ -20,13 +20,16 @@ import 'prompts.dart';
 class OpenRouterProvider implements LlmProvider {
   OpenRouterProvider({
     required this.apiKey,
-    required this.model,
+    required this.models,
     http.Client? client,
   }) : _client = client ?? http.Client(),
        _ownsClient = client == null;
 
   final String apiKey;
-  final String model;
+
+  /// Ordered fallback list. OpenRouter tries these in order within one request,
+  /// falling through on any error (429/5xx/downtime/moderation/context).
+  final List<String> models;
   final http.Client _client;
   final bool _ownsClient;
 
@@ -53,7 +56,7 @@ class OpenRouterProvider implements LlmProvider {
     required String currency,
   }) async {
     final body = jsonEncode({
-      'model': model,
+      'models': models,
       'messages': [
         {'role': 'system', 'content': fusedSystemPrompt},
         {
@@ -65,7 +68,14 @@ class OpenRouterProvider implements LlmProvider {
           ),
         },
       ],
-      'response_format': {'type': 'json_object'},
+      // Strict structured output. require_parameters keeps every fallback hop on
+      // a provider that actually enforces the schema (else it would be silently
+      // dropped and we'd be back to prose/null output).
+      'response_format': {
+        'type': 'json_schema',
+        'json_schema': fusedJsonSchema,
+      },
+      'provider': {'require_parameters': true},
     });
 
     // One attempt; retryable/fatal LlmExceptions propagate to the pipeline.

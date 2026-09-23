@@ -19,9 +19,15 @@ class SettingsRepository {
   static const _kTxTypeHintSeen = 'tx_type_hint_seen';
   static const _kHistoryHintSeen = 'history_hint_seen';
 
-  /// Default OpenRouter model — the free-models router. Hardcoded now (the model
-  /// is no longer user-configurable); the pipeline reads it directly.
-  static const String defaultLlmModel = 'openrouter/free';
+  /// OpenRouter models tried in order (static ordered fallback in one request).
+  /// All are structured-outputs-capable, so `response_format: json_schema` is
+  /// honored; `provider.require_parameters` keeps each hop on a schema-capable
+  /// provider. Strongest first (best extraction on the common case).
+  static const List<String> defaultLlmModels = [
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'qwen/qwen3.8-27b:free',
+    'nex-agi/nex-n2.5-pro:free',
+  ];
 
   /// User's normalized reporting currency (all amounts are stored in it).
   String get currency => _prefs.getString(_kCurrency) ?? 'BDT';

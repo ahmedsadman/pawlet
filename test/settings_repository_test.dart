@@ -29,7 +29,11 @@ void main() {
     expect(r.historyHintSeen, isTrue);
   });
 
-  test('defaultLlmModel is the free router', () {
-    expect(SettingsRepository.defaultLlmModel, 'openrouter/free');
+  test('defaultLlmModels lists the SO fallback chain, strongest first', () {
+    expect(SettingsRepository.defaultLlmModels, const [
+      'nvidia/nemotron-3-super-120b-a12b:free',
+      'qwen/qwen3.8-27b:free',
+      'nex-agi/nex-n2.5-pro:free',
+    ]);
   });
 }
