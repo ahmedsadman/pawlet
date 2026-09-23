@@ -120,16 +120,6 @@ class AppServices {
     llmProvider.close();
   }
 
-  /// Manual retry entry point: returns every failed message to the queue for a
-  /// single re-process attempt, then runs the queue.
-  Future<void> requeueFailed() async {
-    await smsRepository.requeueFailed(
-      DateTime.now().millisecondsSinceEpoch,
-      attempts: ProcessingService.maxAttempts - 1,
-    );
-    await processingService.process();
-  }
-
   /// Manual per-message retry: returns one failed message to the queue for a
   /// single re-process attempt, then runs the queue.
   Future<void> retryMessage(int id) async {
