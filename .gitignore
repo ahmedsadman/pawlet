@@ -46,3 +46,7 @@ app.*.map.json
 
 # Secrets injected at build time — commit dart_define.example.json, not the real one
 dart_define.json
+
+# Android release signing — never commit the keystore or its passwords
+android/key.properties
+**/*.jks
