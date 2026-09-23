@@ -118,15 +118,44 @@ void main() {
     await db.close();
   });
 
-  test('gates out an unregistered sender with no LLM call', () async {
+  test('gates out an unregistered sender as ignored/gated, no LLM', () async {
     final id = await queue('DARAZ', content: 'win a prize');
     final llm = _FakeLlm(result: const ClassifyResult.none());
     await service(llm).process();
 
     final r = await row(id);
-    expect(r['status'], 'success');
-    expect(r['category'], 'ignored');
+    expect(r['status'], 'ignored');
+    expect(r['category'], isNull);
+    expect(r['ignore_reason'], IgnoreReason.gated.value);
     expect(llm.calls, 0);
+    await db.close();
+  });
+
+  test('LLM "none" marks the row ignored/llm_none', () async {
+    final id = await queue('CHK', content: 'hello');
+    final llm = _FakeLlm(result: const ClassifyResult.none());
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['status'], 'ignored');
+    expect(r['category'], isNull);
+    expect(r['ignore_reason'], IgnoreReason.llmNone.value);
+    expect(llm.calls, 1); // gate passed, LLM ran
+    await db.close();
+  });
+
+  test('financial but unwritten marks the row ignored/no_record', () async {
+    final id = await queue('CHK');
+    // LLM says transaction, but no amount/type → FinanceWriter writes nothing.
+    final llm = _FakeLlm(
+      result: const ClassifyResult(category: SmsCategory.transaction),
+    );
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['status'], 'ignored');
+    expect(r['ignore_reason'], IgnoreReason.noRecord.value);
+    expect((await db.query('transactions')), isEmpty);
     await db.close();
   });
 
@@ -277,7 +306,7 @@ void main() {
     await db.close();
   });
 
-  test('fails immediately on a fatal error', () async {
+  test('fails immediately on a fatal error (llm_error)', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(
       error: const LlmException('bad key', retryable: false),
@@ -286,11 +315,24 @@ void main() {
 
     final r = await row(id);
     expect(r['status'], 'failure');
+    expect(r['failure_reason'], FailureReason.llmError.value);
     expect(r['last_error'], 'bad key');
     await db.close();
   });
 
-  test('exhausts maxAttempts into failure', () async {
+  test('truncates a long fatal error to 100 chars', () async {
+    final id = await queue('CHK');
+    final long = 'x' * 250;
+    final llm = _FakeLlm(error: LlmException(long, retryable: false));
+    await service(llm).process();
+
+    final r = await row(id);
+    expect((r['last_error'] as String).length, 100);
+    expect(r['last_error'], 'x' * 100);
+    await db.close();
+  });
+
+  test('exhausts maxAttempts into failure (retry_exhausted)', () async {
     final id = await queue('CHK', attempts: ProcessingService.maxAttempts - 1);
     final llm = _FakeLlm(error: const LlmException('rate', retryable: true));
     await service(llm).process();
@@ -298,6 +340,31 @@ void main() {
     final r = await row(id);
     expect(r['status'], 'failure');
     expect(r['attempts'], ProcessingService.maxAttempts);
+    expect(r['failure_reason'], FailureReason.retryExhausted.value);
+    await db.close();
+  });
+
+  test('process() prunes an aged ignored row (pruneIfDue)', () async {
+    // An old ignored row plus an empty due-queue: the pass-level pruneIfDue
+    // should delete it (last_prune_at is unset → due immediately).
+    final id = (await sms.insertIfNew(
+      SmsRecord(sender: 'OLD', content: 'x', timestamp: now, updatedAt: now),
+    ))!;
+    await sms.updateStatus(
+      id,
+      SmsStatus.ignored,
+      updatedAt: now - const Duration(days: 8).inMilliseconds,
+      ignoreReason: IgnoreReason.gated,
+    );
+    final llm = _FakeLlm(result: const ClassifyResult.none());
+    await service(llm).process();
+
+    final rows = await db.query(
+      'sms_records',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    expect(rows, isEmpty);
     await db.close();
   });
 
