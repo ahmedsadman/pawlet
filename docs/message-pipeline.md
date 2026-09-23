@@ -114,9 +114,13 @@ call while one is running is ignored) and, before touching anything, requeues st
      **ignored with no LLM call** — this is what stops OTPs, promos, and personal texts
      from spending API quota.
    - **Fused LLM call:** a message that passes the gate goes to a *single* OpenRouter
-     request that both classifies (transaction / bill / neither) and extracts the
-     structured fields, including currency normalization. One attempt, no internal retry
-     loop — transient failures surface as exceptions for the queue to retry (§7).
+     request carrying a static ordered fallback list of structured-output-capable models
+     (from `SettingsRepository.defaultLlmModels`). The request uses strict structured
+     output (`response_format: {type: json_schema, json_schema: <schema>}`) with
+     `provider: {require_parameters: true}` so every fallback hop enforces the schema.
+     OpenRouter tries the models in order server-side within the single request. One
+     attempt, no internal retry loop — transient failures surface as exceptions for the
+     queue to retry (§7).
 4. **Write** (`FinanceWriter`) — persist the result in one DB transaction (balance update
    and row insert commit together or not at all). Returns the category label, or
    `ignored` when nothing was written.
@@ -140,7 +144,7 @@ notifications, a **throttled prune** runs (§9), and the next background catch-u
 | An SMS arrives while the app is alive | `handleIncomingRaw` in `app_services.dart` |
 | An SMS arrives while the app is killed | `backgroundSmsHandler` isolate |
 | Pull-to-refresh on the Messages screen | `lib/ui/messages_page.dart` |
-| Manual "retry failed" | `AppServices.requeueFailed` |
+| Manual per-message retry | `AppServices.retryMessage` |
 | Scheduled background catch-up | `callbackDispatcher` in `background_worker.dart` |
 
 ## 5. Offline behavior
@@ -236,16 +240,19 @@ never fire *faster* than the backoff ladder would allow, and escalation is prese
 
 ### Manual retry
 
-The "retry failed" action returns every `failure` row to `queued` with `attempts` preset
-to one below the max, so the next drain gives each exactly **one** more shot; if it fails
-again it lands back in `failure`.
+Retry is **per-message**: each `failure` row in History has its own retry control
+(`AppServices.retryMessage`) that returns just that message to `queued` with `attempts`
+preset to one below the max, so the next drain gives it exactly **one** more shot; if it
+fails again it lands back in `failure`. Queued messages that have already failed at least
+once show their retry progress (Retry n/10) and, while a next attempt is still upcoming,
+the scheduled next-attempt time.
 
 ## 8. Notifications
 
-After each drain the pipeline reconciles two counts into notifications:
+After each drain the pipeline reconciles the failed count into a notification:
 
-- **Failed** — rows in `failure`.
-- **Retrying** — rows still `queued`/`sending` that have failed at least once.
+- **Failed** — rows in `failure`. A notification fires when messages reach this terminal
+  state.
 
 ## 9. Retention
 
