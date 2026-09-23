@@ -128,6 +128,101 @@ void main() {
     await db.close();
   });
 
+  // Server retry hints fold into a single clamped floor, then take the max with
+  // our backoff: honor "don't retry before" without ever hammering faster than
+  // our own escalation.
+  test('honors Retry-After when it exceeds the backoff', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(
+      error: const LlmException('rate',
+          retryable: true, retryAfter: Duration(seconds: 120)),
+    );
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['next_attempt_at'], now + 120000); // hint 120s > 15s backoff
+    await db.close();
+  });
+
+  test('backoff wins when Retry-After is shorter', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(
+      error: const LlmException('rate',
+          retryable: true, retryAfter: Duration(seconds: 5)),
+    );
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['next_attempt_at'], now + 15000); // 15s backoff > 5s hint
+    await db.close();
+  });
+
+  test('clamps an over-long Retry-After to 24h', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(
+      error: const LlmException('rate',
+          retryable: true, retryAfter: Duration(hours: 30)),
+    );
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['next_attempt_at'], now + 86400000); // clamped to 24h
+    await db.close();
+  });
+
+  test('honors an absolute X-RateLimit-Reset in the future', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(
+      error: LlmException('rate',
+          retryable: true, resetAtEpochMs: now + 120000),
+    );
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['next_attempt_at'], now + 120000); // absolute honored
+    await db.close();
+  });
+
+  test('ignores a past X-RateLimit-Reset (floors to backoff)', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(
+      error: LlmException('rate', retryable: true, resetAtEpochMs: now - 5000),
+    );
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['next_attempt_at'], now + 15000); // past → floored → backoff wins
+    await db.close();
+  });
+
+  test('clamps an over-long X-RateLimit-Reset to 24h', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(
+      error: LlmException('rate',
+          retryable: true, resetAtEpochMs: now + Duration(hours: 30).inMilliseconds),
+    );
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['next_attempt_at'], now + 86400000); // clamped to 24h
+    await db.close();
+  });
+
+  test('takes the larger of both hints vs backoff', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(
+      error: LlmException('rate',
+          retryable: true,
+          retryAfter: const Duration(seconds: 120),
+          resetAtEpochMs: now + 300000),
+    );
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['next_attempt_at'], now + 300000); // reset 300s > retryAfter 120s > backoff
+    await db.close();
+  });
+
   test('fails immediately on a fatal error', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(error: const LlmException('bad key', retryable: false));

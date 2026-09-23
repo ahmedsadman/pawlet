@@ -96,7 +96,38 @@ class OpenRouterProvider implements LlmProvider {
     // Rate limits (429), request timeout (408) and server errors are transient;
     // other 4xx (bad key / bad request) are fatal.
     final retryable = code == 429 || code == 408 || code >= 500;
-    throw LlmException('HTTP $code', retryable: retryable);
+    // Carry any server retry hint through to the pipeline. OpenRouter sends one
+    // of these per 429/503; both are parsed clock-free (Retry-After is relative,
+    // X-RateLimit-Reset is an absolute epoch normalized to ms).
+    throw LlmException(
+      'HTTP $code',
+      retryable: retryable,
+      retryAfter: _parseRetryAfter(resp.headers['retry-after']),
+      resetAtEpochMs: _parseResetAt(resp.headers['x-ratelimit-reset']),
+    );
+  }
+
+  /// Parses a `Retry-After` header. Only the delta-seconds form OpenRouter
+  /// sends is honored: a non-negative integer becomes that many seconds.
+  /// Missing / non-integer / negative / HTTP-date forms return null (an
+  /// HTTP-date would need a clock, which the provider deliberately avoids).
+  Duration? _parseRetryAfter(String? value) {
+    if (value == null) return null;
+    final n = int.tryParse(value.trim());
+    if (n == null || n < 0) return null;
+    return Duration(seconds: n);
+  }
+
+  /// Parses an `X-RateLimit-Reset` header to epoch **milliseconds**. The unit is
+  /// unspecified across APIs, so magnitude-detect it: a value `< 1e12` is
+  /// epoch-seconds (×1000); `>= 1e12` is already epoch-ms (now ≈ 1.76e12 ms, so
+  /// the split is unambiguous for centuries). Missing / non-integer / negative
+  /// returns null; time math (past/skew/clamp) is left to ProcessingService.
+  int? _parseResetAt(String? value) {
+    if (value == null) return null;
+    final n = int.tryParse(value.trim());
+    if (n == null || n < 0) return null;
+    return n < 1000000000000 ? n * 1000 : n;
   }
 
   ClassifyResult _parse(String raw) {

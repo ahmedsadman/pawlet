@@ -63,10 +63,25 @@ class ClassifyResult {
 /// queue should back off and retry, from fatal ones (bad API key, bad request)
 /// that should fail the message immediately.
 class LlmException implements Exception {
-  const LlmException(this.message, {required this.retryable});
+  const LlmException(
+    this.message, {
+    required this.retryable,
+    this.retryAfter,
+    this.resetAtEpochMs,
+  });
 
   final String message;
   final bool retryable;
+
+  /// From a `Retry-After` header: a relative "don't retry before" delay. Null
+  /// when absent or unparseable. Both hints are floors combined with our
+  /// backoff (max), never a replacement — see ProcessingService.
+  final Duration? retryAfter;
+
+  /// From an `X-RateLimit-Reset` header: an absolute reset time as epoch
+  /// **milliseconds** (normalized from seconds when needed). Null when absent
+  /// or unparseable.
+  final int? resetAtEpochMs;
 
   @override
   String toString() => 'LlmException($message, retryable=$retryable)';

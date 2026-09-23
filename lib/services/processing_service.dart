@@ -57,6 +57,12 @@ class ProcessingService {
   /// Ceiling for a single backoff step (~23.7h total across [maxAttempts]).
   static const Duration maxBackoff = Duration(hours: 6);
 
+  /// Ceiling for a server-supplied retry hint (Retry-After / X-RateLimit-Reset).
+  /// Independent of [maxBackoff]: a legitimate daily-cap reset can be ~24h out,
+  /// so hints get a wider cap — which also bounds clock skew or a ms/seconds
+  /// misparse from parking a row absurdly far in the future.
+  static const Duration maxRetryAfter = Duration(hours: 24);
+
   /// A `sending` row untouched for longer than this is treated as orphaned and
   /// requeued. Kept comfortably above the provider's single-attempt HTTP timeout
   /// (OpenRouterProvider.timeout, 2 min) so a genuinely slow in-flight call is
@@ -167,14 +173,24 @@ class ProcessingService {
         );
         return true;
       }
-      return _reschedule(record, e.message);
+      return _reschedule(
+        record,
+        e.message,
+        retryAfter: e.retryAfter,
+        resetAtEpochMs: e.resetAtEpochMs,
+      );
     } catch (e) {
       // Unexpected (e.g. a DB error): treat as transient and back off.
       return _reschedule(record, e.toString());
     }
   }
 
-  Future<bool> _reschedule(SmsRecord record, String error) async {
+  Future<bool> _reschedule(
+    SmsRecord record,
+    String error, {
+    Duration? retryAfter,
+    int? resetAtEpochMs,
+  }) async {
     final id = record.id!;
     // A failure while offline is a transport drop, not a real attempt: release
     // the row unchanged (still due) so the next online pass retries it.
@@ -202,13 +218,27 @@ class ProcessingService {
       return true;
     }
 
+    // Fold any server hints into a single clamped floor, then take the max with
+    // our backoff: honor "don't retry before" while preserving escalation and
+    // never hammering faster than the backoff would.
+    final now = _clock();
+    var hint = Duration.zero;
+    if (retryAfter != null && retryAfter > hint) hint = retryAfter;
+    if (resetAtEpochMs != null) {
+      final d = Duration(milliseconds: resetAtEpochMs - now); // absolute → delay
+      if (d > hint) hint = d; // past/negative delta stays below zero → ignored
+    }
+    if (hint > maxRetryAfter) hint = maxRetryAfter; // clamp skew / ms-misparse
+    final backoff = _backoff(attempts);
+    final delay = hint > backoff ? hint : backoff;
+
     await smsRepository.updateStatus(
       id,
       SmsStatus.queued,
       attempts: attempts,
       lastError: error,
-      updatedAt: _clock(),
-      nextAttemptAt: _clock() + _backoff(attempts).inMilliseconds,
+      updatedAt: now,
+      nextAttemptAt: now + delay.inMilliseconds,
     );
     return true;
   }

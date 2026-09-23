@@ -393,4 +393,140 @@ void main() {
       _verifyCalls(client, 1);
     });
   });
+
+  // Server-supplied retry hints on 429/503. OpenRouter sends exactly one of
+  // Retry-After (relative delta-seconds) or X-RateLimit-Reset (absolute epoch)
+  // per response; the provider parses both clock-free and carries them on the
+  // thrown LlmException. Reset is normalized to epoch-milliseconds.
+  group('retry hints', () {
+    test('Retry-After delta-seconds → retryAfter, no reset', () async {
+      _stubOnce(client, http.Response('rate', 429, headers: {'retry-after': '30'}));
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>()
+              .having((e) => e.retryable, 'retryable', isTrue)
+              .having((e) => e.retryAfter, 'retryAfter', const Duration(seconds: 30))
+              .having((e) => e.resetAtEpochMs, 'resetAtEpochMs', isNull),
+        ),
+      );
+      _verifyCalls(client, 1);
+    });
+
+    test('X-RateLimit-Reset epoch seconds → normalized to ms', () async {
+      _stubOnce(
+        client,
+        http.Response('rate', 429, headers: {'x-ratelimit-reset': '1758000000'}),
+      );
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>()
+              .having((e) => e.resetAtEpochMs, 'resetAtEpochMs', 1758000000000)
+              .having((e) => e.retryAfter, 'retryAfter', isNull),
+        ),
+      );
+    });
+
+    test('X-RateLimit-Reset epoch ms → used as-is', () async {
+      _stubOnce(
+        client,
+        http.Response('rate', 429, headers: {'x-ratelimit-reset': '1758000000000'}),
+      );
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>()
+              .having((e) => e.resetAtEpochMs, 'resetAtEpochMs', 1758000000000),
+        ),
+      );
+    });
+
+    test('both headers → both fields set', () async {
+      _stubOnce(
+        client,
+        http.Response('rate', 429, headers: {
+          'retry-after': '30',
+          'x-ratelimit-reset': '1758000000',
+        }),
+      );
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>()
+              .having((e) => e.retryAfter, 'retryAfter', const Duration(seconds: 30))
+              .having((e) => e.resetAtEpochMs, 'resetAtEpochMs', 1758000000000),
+        ),
+      );
+    });
+
+    test('no hint headers → both null', () async {
+      _stubOnce(client, http.Response('rate', 429));
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>()
+              .having((e) => e.retryAfter, 'retryAfter', isNull)
+              .having((e) => e.resetAtEpochMs, 'resetAtEpochMs', isNull),
+        ),
+      );
+    });
+
+    test('HTTP-date Retry-After → null (out of scope, no clock)', () async {
+      _stubOnce(
+        client,
+        http.Response('rate', 429,
+            headers: {'retry-after': 'Wed, 21 Oct 2026 07:28:00 GMT'}),
+      );
+      await expectLater(
+        _run(client),
+        throwsA(isA<LlmException>().having((e) => e.retryAfter, 'retryAfter', isNull)),
+      );
+    });
+
+    test('negative Retry-After → null', () async {
+      _stubOnce(client, http.Response('rate', 429, headers: {'retry-after': '-5'}));
+      await expectLater(
+        _run(client),
+        throwsA(isA<LlmException>().having((e) => e.retryAfter, 'retryAfter', isNull)),
+      );
+    });
+
+    test('non-integer X-RateLimit-Reset → null', () async {
+      _stubOnce(
+        client,
+        http.Response('rate', 429, headers: {'x-ratelimit-reset': 'soon'}),
+      );
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>().having((e) => e.resetAtEpochMs, 'resetAtEpochMs', isNull),
+        ),
+      );
+    });
+
+    test('negative X-RateLimit-Reset → null', () async {
+      _stubOnce(
+        client,
+        http.Response('rate', 429, headers: {'x-ratelimit-reset': '-100'}),
+      );
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>().having((e) => e.resetAtEpochMs, 'resetAtEpochMs', isNull),
+        ),
+      );
+    });
+
+    test('503 Retry-After → parsed on any retryable status', () async {
+      _stubOnce(client, http.Response('busy', 503, headers: {'retry-after': '10'}));
+      await expectLater(
+        _run(client),
+        throwsA(
+          isA<LlmException>()
+              .having((e) => e.retryAfter, 'retryAfter', const Duration(seconds: 10)),
+        ),
+      );
+    });
+  });
 }
