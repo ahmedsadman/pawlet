@@ -53,7 +53,7 @@ class AppServices {
     final banksRepository = BanksRepository(database);
     final settings = SettingsRepository(prefs);
     final connectivity = ConnectivityService();
-    final notifications = NotificationService();
+    final notifications = NotificationService(prefs: prefs);
     final llmProvider = OpenRouterProvider(
       apiKey: apiKey,
       model: SettingsRepository.defaultLlmModel,
