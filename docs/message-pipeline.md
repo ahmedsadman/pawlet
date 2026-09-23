@@ -47,38 +47,47 @@ Capture then does, in order:
    `(sender, timestamp, content)` means overlapping foreground / background / cold-start
    reads of the *same* SMS collapse to one row (duplicate inserts are ignored).
 4. **Kick off processing** — call the queue drain immediately.
-5. **Prune** — bound local storage (runs last so cleanup never delays capture).
 
-A freshly captured row starts in status **`queued`**.
+A freshly captured row starts in status **`queued`**. Storage cleanup no longer runs on
+capture — it moved into the drain pass as a throttled step (§3, §9).
 
 ## 2. The queue and a record's lifecycle
 
 Every message is a row in `sms_records`, which doubles as the queue. Its `status` moves
-through four states:
+through five states:
 
 ```
-                 claim (atomic)          success
-   queued  ───────────────────────►  sending ──────────►  success
-     ▲                                  │
-     │  reschedule (retryable,          │  retryable failure  (attempts < max)
-     │   attempts++ , backoff)          ▼
-     └──────────────────────────────  queued
-     ▲                                  │
-     │  reclaimStale (orphaned          │  fatal error, or attempts == max
-     │   > 3 min → requeued)            ▼
-     └──────────────────────────────  failure
+        claim (atomic)                    reschedule (retryable,
+   ┌───────────────────►────────────┐      attempts++, backoff)
+   │                                 │  ┌──────────────────────┐
+ queued ◄──────────────────────── sending ◄───────────────────┘
+   ▲   reschedule / reclaimStale      │
+   │   (orphaned >3 min → requeued)   ├──►  success   (wrote a finance record)
+   │                                  ├──►  ignored   (processed, not financial)
+   └──────────────────────────────── └──►  failure   (fatal, or attempts == max)
 ```
 
 - **`queued`** — waiting to run. Also the resting state *between* retries (with a future
   `next_attempt_at`).
 - **`sending`** — claimed and in flight (gate + LLM call).
-- **`success`** — processed and written (or deliberately ignored).
-- **`failure`** — gave up (hit max attempts, or a fatal error).
+- **`success`** — processed and written to a finance record (`transaction` or `bill`).
+- **`ignored`** — processed but deliberately not a financial record. Terminal, but kept
+  only briefly (§9). Invisible in History.
+- **`failure`** — gave up (hit max attempts, or a fatal error). Shown in History with a
+  short reason hint.
 
-Separately, a **category label** is stored once processed: `transaction`, `bill`, or
-`ignored`. `ignored` covers both messages the gate rejected and messages the model
-classified but that couldn't be written as a real record (e.g. a "bill" whose body
-lacked a matching credit-card number).
+A **category label** (`transaction` / `bill`) is stored only on `success` rows.
+
+Two internal, debug-only reason columns explain terminal non-success outcomes (see
+`lib/models/sms_record.dart`):
+
+- **`ignore_reason`** on `ignored` rows — `gated` (Layer-1 gate rejected it, no LLM call),
+  `llm_none` (the model said "not financial"), or `no_record` (the model classified it as
+  financial but no row was written — missing metadata, unmatched card, or a duplicate).
+- **`failure_reason`** on `failure` rows — `llm_error` (fatal) or `retry_exhausted`. The
+  underlying error text is stored (truncated) in `last_error`; both are internal (read via
+  ADB/debug), never surfaced in the UI. History shows only a short hint derived from
+  `failure_reason`.
 
 Queue queries that matter:
 
@@ -109,13 +118,16 @@ call while one is running is ignored) and, before touching anything, requeues st
      structured fields, including currency normalization. One attempt, no internal retry
      loop — transient failures surface as exceptions for the queue to retry (§7).
 4. **Write** (`FinanceWriter`) — persist the result in one DB transaction (balance update
-   and row insert commit together or not at all). Returns the category label to stamp on
-   the SMS row.
-5. **Mark success** — status `success`, `next_attempt_at` cleared, `processed_at` set.
+   and row insert commit together or not at all). Returns the category label, or
+   `ignored` when nothing was written.
+5. **Mark terminal** — `next_attempt_at` cleared, `processed_at` set. A written record →
+   `success` with its category; an `ignored` label → status `ignored` with the matching
+   `ignore_reason`.
 
 After the queue drains, deferred **relationship matchers** run once (transfer pairing,
 credit-card-payment ↔ bill), then failure/retry **counts** are reconciled into
-notifications, and the next background catch-up is (re)scheduled (§6).
+notifications, a **throttled prune** runs (§9), and the next background catch-up is
+(re)scheduled (§6).
 
 ## 4. What triggers a drain
 
@@ -237,10 +249,20 @@ After each drain the pipeline reconciles two counts into notifications:
 
 ## 9. Retention
 
-Storage is bounded on every capture:
+Storage is bounded by a **throttled prune** that runs at the end of a drain pass (§3),
+not on capture. `pruneIfDue` (`lib/data/sms_repository.dart`) does at most one real prune
+per 24 h, coordinated across every trigger and both isolates by a single timestamp row in
+`app_meta` (`last_prune_at`): if the last prune was under the gap ago, the call is a no-op.
 
-- Keep only the newest **500** processed (`success`) rows.
-- Delete `failure` rows older than **30 days**.
+What it deletes:
+
+- **`ignored`** rows older than **7 days**.
+- Nothing else. **`success` and `failure` rows are permanent.**
+
+Keeping financial (`success`) rows forever also removes a class of bug: transactions/bills
+`INNER JOIN sms_records`, so pruning a backing SMS used to make its record vanish from the
+list while still counting in totals. Failures are kept so the user can always see *why* a
+message didn't process.
 
 ## Tuning constants
 
@@ -256,8 +278,8 @@ matters, since numbers can drift.
 | Server-hint ceiling | 24h | `processing_service.dart` |
 | Stale `sending` reclaim window | 3 min | `processing_service.dart` |
 | LLM single-attempt HTTP timeout | 2 min | `openrouter_provider.dart` |
-| Failure retention | 30 days | `sms_repository.dart` |
-| Processed rows kept | 500 | `sms_repository.dart` |
+| Ignored retention | 7 days | `sms_repository.dart` |
+| Prune throttle gap | 24h | `sms_repository.dart` |
 
 The stale window (3 min) is deliberately kept **above** the HTTP timeout (2 min) so a
 genuinely slow in-flight call is never reclaimed as orphaned mid-flight — which would risk
