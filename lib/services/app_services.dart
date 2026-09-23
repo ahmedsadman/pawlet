@@ -56,7 +56,7 @@ class AppServices {
     final notifications = NotificationService(prefs: prefs);
     final llmProvider = OpenRouterProvider(
       apiKey: apiKey,
-      model: SettingsRepository.defaultLlmModel,
+      models: SettingsRepository.defaultLlmModels,
     );
     final matcher = FinanceMatcher(database);
     final processingService = ProcessingService(

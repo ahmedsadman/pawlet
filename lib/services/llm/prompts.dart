@@ -54,3 +54,84 @@ String buildUserContent({
       'Message from "$sender":\n'
       '<<<SMS\n$content\nSMS>>>';
 }
+
+/// Strict JSON schema mirroring [fusedSystemPrompt]'s output object. Sent as
+/// `response_format: {type: json_schema, json_schema: fusedJsonSchema}` so a
+/// structured-outputs-capable model is grammar-constrained to this exact shape:
+/// every key required, nullables expressed as `["<type>", "null"]` unions, no
+/// extra keys and no prose. Kills the null-content and prose-preamble failures
+/// that unconstrained output produced. The provider's defensive parse stays as
+/// a belt-and-suspenders backup (providers implement `strict` slightly
+/// differently).
+const Map<String, Object?> fusedJsonSchema = {
+  'name': 'sms_classification',
+  'strict': true,
+  'schema': {
+    'type': 'object',
+    'additionalProperties': false,
+    'required': ['category', 'transaction', 'bill'],
+    'properties': {
+      'category': {
+        'type': ['string', 'null'],
+        'enum': ['transaction', 'bill', null],
+      },
+      'transaction': {
+        'type': ['object', 'null'],
+        'additionalProperties': false,
+        'required': [
+          'balance',
+          'amount',
+          'original_amount',
+          'transaction_type',
+          'original_currency',
+        ],
+        'properties': {
+          'balance': {
+            'type': ['number', 'null'],
+          },
+          'amount': {
+            'type': ['number', 'null'],
+          },
+          'original_amount': {
+            'type': ['number', 'null'],
+          },
+          'transaction_type': {
+            'type': ['string', 'null'],
+            'enum': ['income', 'expense', 'transfer', null],
+          },
+          'original_currency': {
+            'type': ['string', 'null'],
+          },
+        },
+      },
+      'bill': {
+        'type': ['object', 'null'],
+        'additionalProperties': false,
+        'required': [
+          'normalized_total_due',
+          'original_amount',
+          'original_currency',
+          'statement_month',
+          'statement_year',
+        ],
+        'properties': {
+          'normalized_total_due': {
+            'type': ['number', 'null'],
+          },
+          'original_amount': {
+            'type': ['number', 'null'],
+          },
+          'original_currency': {
+            'type': ['string', 'null'],
+          },
+          'statement_month': {
+            'type': ['integer', 'null'],
+          },
+          'statement_year': {
+            'type': ['integer', 'null'],
+          },
+        },
+      },
+    },
+  },
+};

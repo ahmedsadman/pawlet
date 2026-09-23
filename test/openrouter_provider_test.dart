@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:meowni/services/llm/llm_provider.dart';
 import 'package:meowni/services/llm/openrouter_provider.dart';
+import 'package:meowni/services/llm/prompts.dart';
 import 'package:mocktail/mocktail.dart';
 
 class _MockClient extends Mock implements http.Client {}
@@ -20,7 +21,7 @@ String _completion(String innerContent) => jsonEncode({
 
 OpenRouterProvider _provider(http.Client client) => OpenRouterProvider(
   apiKey: 'secret-key',
-  model: 'openrouter/free',
+  models: const ['test/model-a', 'test/model-b'],
   client: client,
 );
 
@@ -222,46 +223,49 @@ void main() {
   });
 
   group('request', () {
-    test(
-      'sends model, JSON response_format, bearer key and both messages',
-      () async {
-        _stubOnce(
-          client,
-          http.Response(
-            _completion('{"category":null,"transaction":null,"bill":null}'),
-            200,
-          ),
-        );
-        await _provider(client).classifyAndExtract(
-          content: 'debit 50',
-          sender: 'BRACBANK',
-          currency: 'BDT',
-        );
+    test('sends models array, json_schema response_format, require_parameters, '
+        'bearer key and both messages', () async {
+      _stubOnce(
+        client,
+        http.Response(
+          _completion('{"category":null,"transaction":null,"bill":null}'),
+          200,
+        ),
+      );
+      await _provider(client).classifyAndExtract(
+        content: 'debit 50',
+        sender: 'BRACBANK',
+        currency: 'BDT',
+      );
 
-        final captured = verify(
-          () => client.post(
-            captureAny(),
-            headers: captureAny(named: 'headers'),
-            body: captureAny(named: 'body'),
-          ),
-        ).captured;
-        final uri = captured[0] as Uri;
-        final headers = captured[1] as Map<String, String>;
-        final body = jsonDecode(captured[2] as String) as Map<String, dynamic>;
+      final captured = verify(
+        () => client.post(
+          captureAny(),
+          headers: captureAny(named: 'headers'),
+          body: captureAny(named: 'body'),
+        ),
+      ).captured;
+      final uri = captured[0] as Uri;
+      final headers = captured[1] as Map<String, String>;
+      final body = jsonDecode(captured[2] as String) as Map<String, dynamic>;
 
-        expect(uri.toString(), OpenRouterProvider.endpoint);
-        expect(headers['Authorization'], 'Bearer secret-key');
-        expect(body['model'], 'openrouter/free');
-        expect(body['response_format'], {'type': 'json_object'});
-        final messages = body['messages'] as List;
-        expect(messages.first['role'], 'system');
-        expect(messages.last['role'], 'user');
-        final userContent = messages.last['content'] as String;
-        expect(userContent, contains('BDT'));
-        expect(userContent, contains('BRACBANK'));
-        expect(userContent, contains('debit 50'));
-      },
-    );
+      expect(uri.toString(), OpenRouterProvider.endpoint);
+      expect(headers['Authorization'], 'Bearer secret-key');
+      expect(body['models'], ['test/model-a', 'test/model-b']);
+      expect(body.containsKey('model'), isFalse);
+      expect(body['response_format'], {
+        'type': 'json_schema',
+        'json_schema': fusedJsonSchema,
+      });
+      expect(body['provider'], {'require_parameters': true});
+      final messages = body['messages'] as List;
+      expect(messages.first['role'], 'system');
+      expect(messages.last['role'], 'user');
+      final userContent = messages.last['content'] as String;
+      expect(userContent, contains('BDT'));
+      expect(userContent, contains('BRACBANK'));
+      expect(userContent, contains('debit 50'));
+    });
   });
 
   // The provider makes a SINGLE attempt and does not retry internally; transient
