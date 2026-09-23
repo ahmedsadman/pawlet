@@ -17,6 +17,7 @@ class SettingsRepository {
   static const _kTxSort = 'tx_sort';
   static const _kResolveContacts = 'resolve_contacts';
   static const _kTxTypeHintSeen = 'tx_type_hint_seen';
+  static const _kHistoryHintSeen = 'history_hint_seen';
 
   /// Default OpenRouter model — the free-models router. Hardcoded now (the model
   /// is no longer user-configurable); the pipeline reads it directly.
@@ -62,4 +63,9 @@ class SettingsRepository {
   bool get txTypeHintSeen => _prefs.getBool(_kTxTypeHintSeen) ?? false;
   Future<void> setTxTypeHintSeen(bool value) =>
       _prefs.setBool(_kTxTypeHintSeen, value);
+
+  /// Whether the user has seen the one-time History explainer banner.
+  bool get historyHintSeen => _prefs.getBool(_kHistoryHintSeen) ?? false;
+  Future<void> setHistoryHintSeen(bool value) =>
+      _prefs.setBool(_kHistoryHintSeen, value);
 }

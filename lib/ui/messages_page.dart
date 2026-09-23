@@ -26,6 +26,8 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
   // Debounces the history fetch so typing doesn't refetch on every keystroke.
   Timer? _debounce;
   static const _debounceDelay = Duration(milliseconds: 400);
+  // Seeded from the pref; drives the one-time History explainer banner.
+  late bool _hintSeen;
 
   @override
   void initState() {
@@ -33,6 +35,13 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
     _search = TextEditingController(
       text: ref.read(historyQueryProvider).search,
     );
+    _hintSeen = ref.read(settingsRepositoryProvider).historyHintSeen;
+  }
+
+  void _markHintSeen() {
+    if (_hintSeen) return;
+    setState(() => _hintSeen = true);
+    ref.read(settingsRepositoryProvider).setHistoryHintSeen(true);
   }
 
   @override
@@ -71,6 +80,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
             const SizedBox(height: 8),
             _historyHeader(failedCount),
             _searchField(),
+            if (!_hintSeen) ...[_hintBanner(), const SizedBox(height: 8)],
             _historyBody(history),
           ],
         ),
@@ -134,7 +144,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
             horizontal: 12,
             vertical: 8,
           ),
-          hintText: 'Search by sender',
+          hintText: 'Search by sender or message content',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _search.text.isEmpty
               ? null
@@ -157,6 +167,40 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
             ref.read(historyQueryProvider.notifier).setSearch(value);
           });
         },
+      ),
+    );
+  }
+
+  Widget _hintBanner() {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.lightbulb_outline,
+            size: 16,
+            color: theme.colorScheme.outline,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'History shows your financial messages and any that failed to '
+              "process. Other texts aren't kept.",
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Dismiss',
+            icon: const Icon(Icons.close, size: 16),
+            visualDensity: VisualDensity.compact,
+            onPressed: _markHintSeen,
+          ),
+        ],
       ),
     );
   }

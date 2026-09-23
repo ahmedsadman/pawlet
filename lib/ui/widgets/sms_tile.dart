@@ -38,6 +38,15 @@ class SmsTile extends StatelessWidget {
     return StatusBadge(record.status);
   }
 
+  /// Short, user-facing reason a History row failed. The internal `last_error`
+  /// is never surfaced here (ADB/debug only). Null legacy rows read as the
+  /// generic extraction hint.
+  String get _failureHint => switch (record.failureReason) {
+    FailureReason.retryExhausted => 'Retries exhausted',
+    FailureReason.llmError => 'Extraction error',
+    null => 'Extraction error',
+  };
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -87,6 +96,16 @@ class SmsTile extends StatelessWidget {
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            // History failure rows: show a short hint (never the raw error).
+            if (showCategory && record.status == SmsStatus.failure) ...[
+              const SizedBox(height: 4),
+              Text(
+                _failureHint,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
               ),
             ],
           ],

@@ -8,6 +8,7 @@ SmsRecord _rec({
   SmsStatus status = SmsStatus.queued,
   String? category,
   String? lastError,
+  FailureReason? failureReason,
 }) => SmsRecord(
   id: 1,
   sender: 'BRAC',
@@ -16,6 +17,7 @@ SmsRecord _rec({
   status: status,
   category: category,
   lastError: lastError,
+  failureReason: failureReason,
 );
 
 Future<void> _pump(WidgetTester tester, Widget child) => tester.pumpWidget(
@@ -64,5 +66,59 @@ void main() {
       SmsTile(_rec(status: SmsStatus.queued, lastError: 'rate limited')),
     );
     expect(find.text('rate limited'), findsOneWidget);
+  });
+
+  testWidgets('history failure shows the extraction-error hint', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.failure, failureReason: FailureReason.llmError),
+        showCategory: true,
+      ),
+    );
+    expect(find.text('Extraction error'), findsOneWidget);
+  });
+
+  testWidgets('history failure shows the retries-exhausted hint', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(
+          status: SmsStatus.failure,
+          failureReason: FailureReason.retryExhausted,
+        ),
+        showCategory: true,
+      ),
+    );
+    expect(find.text('Retries exhausted'), findsOneWidget);
+  });
+
+  testWidgets('history failure with no reason falls back to extraction error', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(_rec(status: SmsStatus.failure), showCategory: true),
+    );
+    expect(find.text('Extraction error'), findsOneWidget);
+  });
+
+  testWidgets('history never renders the internal last_error', (tester) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(
+          status: SmsStatus.failure,
+          failureReason: FailureReason.llmError,
+          lastError: 'secret internal detail',
+        ),
+        showCategory: true,
+      ),
+    );
+    expect(find.text('secret internal detail'), findsNothing);
   });
 }
