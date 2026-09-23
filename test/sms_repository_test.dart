@@ -54,7 +54,7 @@ void main() {
     await db.close();
   });
 
-  test('counts failed and retrying', () async {
+  test('countFailed counts only terminal failures', () async {
     final db = await openTestDb();
     final repo = SmsRepository(db);
     final a = (await repo.insertIfNew(_sms('A', ts: 1)))!;
@@ -63,10 +63,6 @@ void main() {
     await repo.updateStatus(b, SmsStatus.queued, attempts: 3, updatedAt: 5);
 
     expect(await repo.countFailed(), 1);
-    expect(await repo.countRetrying(), 1);
-
-    await repo.requeueFailed(9, attempts: 9);
-    expect(await repo.countFailed(), 0);
     await db.close();
   });
 

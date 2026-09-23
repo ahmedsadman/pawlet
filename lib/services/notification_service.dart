@@ -25,7 +25,6 @@ class NotificationService {
       'Alerts when SMS messages cannot be processed';
 
   static const int _failureNotificationId = 1;
-  static const int _retryingNotificationId = 2;
 
   /// Prefix for the persisted per-id last-posted count.
   static const String _lastCountKeyPrefix = 'notif_last_count_';
@@ -85,15 +84,6 @@ class NotificationService {
     title: 'Processing failed',
     count: count,
     body: (noun) => "$count $noun couldn't be processed",
-  );
-
-  /// Shows an early alert when [count] > 0 messages are being retried.
-  Future<void> reconcileRetrying(int count) => _reconcile(
-    id: _retryingNotificationId,
-    title: 'Processing delayed',
-    count: count,
-    body: (noun) =>
-        "$count $noun couldn't be processed yet and are being retried",
   );
 
   Future<void> _reconcile({
