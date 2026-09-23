@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  pull_request:
+    paths:
+      - "lib/**"
+      - "android/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - ".github/workflows/pr.yml"
+      - ".github/workflows/checks.yml"
+
+jobs:
+  changes:
+    name: detect-changes
+    runs-on: ubuntu-latest
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Filter Android-affecting paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            android:
+              - "android/**"
+              - "pubspec.yaml"
+              - "pubspec.lock"
+              - ".github/workflows/pr.yml"
+              - ".github/workflows/checks.yml"
+
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  build:
+    name: build-debug
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.8"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build debug APK
+        run: flutter build apk --debug --dart-define=OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
