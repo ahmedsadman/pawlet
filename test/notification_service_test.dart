@@ -47,19 +47,6 @@ void main() {
   });
 
   test(
-    'failure and retrying notifications track their counts independently',
-    () async {
-      await service.reconcileFailures(9);
-      await service.reconcileRetrying(9);
-      await service.reconcileFailures(9); // unchanged — no re-post
-      await service.reconcileRetrying(9); // unchanged — no re-post
-
-      verify(() => plugin.show(1, any(), any(), any())).called(1);
-      verify(() => plugin.show(2, any(), any(), any())).called(1);
-    },
-  );
-
-  test(
     'does not re-post after a restart when the persisted count is unchanged',
     () async {
       SharedPreferences.setMockInitialValues({});

@@ -35,9 +35,9 @@ class ProcessingService {
   final String Function() currency;
   final int Function() _clock;
 
-  /// Optional hook fired after a pass with the current failed / retrying counts
+  /// Optional hook fired after a pass with the current failed count
   /// (used to reconcile notifications).
-  final Future<void> Function(int failed, int retrying)? onCounts;
+  final Future<void> Function(int failed)? onCounts;
 
   /// Optional hook run after the queue is drained (used to run the deferred
   /// transfer / bill-payment matchers).
@@ -106,10 +106,7 @@ class ProcessingService {
 
       final counts = onCounts;
       if (counts != null) {
-        await counts(
-          await smsRepository.countFailed(),
-          await smsRepository.countRetrying(),
-        );
+        await counts(await smsRepository.countFailed());
       }
 
       // Throttled cleanup (≤1 real prune / 24h across all triggers and both

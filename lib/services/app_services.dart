@@ -67,9 +67,8 @@ class AppServices {
       isOnline: connectivity.isOnline,
       currency: () => settings.currency,
       afterPass: matcher.runPending,
-      onCounts: (failed, retrying) async {
+      onCounts: (failed) async {
         await notifications.reconcileFailures(failed);
-        await notifications.reconcileRetrying(retrying);
       },
       reschedule: (delay) => delay == null
           ? BackgroundWorker.cancelCatchUp()

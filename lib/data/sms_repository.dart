@@ -73,12 +73,6 @@ class SmsRepository {
     return rows.first['soonest'] as int?;
   }
 
-  /// Records that hit at least one real failure and are still retrying.
-  Future<int> countRetrying() => _count('status IN (?, ?) AND attempts >= 1', [
-    SmsStatus.queued.name,
-    SmsStatus.sending.name,
-  ]);
-
   /// Manual retry: returns all failed rows to `queued` for one more attempt.
   /// [attempts] is pre-set (usually maxAttempts - 1) so a single pass tries once.
   Future<void> requeueFailed(int now, {required int attempts}) async {

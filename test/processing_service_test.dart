@@ -54,7 +54,7 @@ void main() {
     _FakeLlm llm, {
     bool online = true,
     Future<bool> Function()? isOnline,
-    Future<void> Function(int failed, int retrying)? onCounts,
+    Future<void> Function(int failed)? onCounts,
     Future<void> Function(Duration? delay)? reschedule,
   }) => ProcessingService(
     smsRepository: sms,
@@ -368,22 +368,14 @@ void main() {
     await db.close();
   });
 
-  test('reports failed/retrying counts via onCounts', () async {
+  test('reports the failed count via onCounts', () async {
     await queue('CHK');
     int? failed;
-    int? retrying;
     final llm = _FakeLlm(
       error: const LlmException('bad key', retryable: false),
     );
-    await service(
-      llm,
-      onCounts: (f, r) async {
-        failed = f;
-        retrying = r;
-      },
-    ).process();
+    await service(llm, onCounts: (f) async => failed = f).process();
     expect(failed, 1);
-    expect(retrying, 0);
     await db.close();
   });
 
