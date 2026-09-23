@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/sms_record.dart';
+import '../../services/processing_service.dart';
 import 'category_label.dart';
 import 'status_badge.dart';
 
@@ -30,6 +31,27 @@ class SmsTile extends StatelessWidget {
     return '${dt.year}-${two(dt.month)}-${two(dt.day)} $hour12:${two(dt.minute)} $period';
   }
 
+  /// Time-only clock in the same 12-hour AM/PM style as [_formatTime].
+  String _formatClock(int millis) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
+    final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final period = dt.hour < 12 ? 'AM' : 'PM';
+    return '$hour12:${dt.minute.toString().padLeft(2, '0')} $period';
+  }
+
+  /// Retry-progress line for a queued row that has already failed at least once.
+  /// Appends the scheduled next-attempt time when one is set for after this
+  /// message was captured (compared to [SmsRecord.timestamp], not the wall
+  /// clock, so it renders deterministically regardless of when it's viewed).
+  String get _retryLine {
+    final base = 'Retry ${record.attempts}/${ProcessingService.maxAttempts}';
+    final next = record.nextAttemptAt;
+    if (next != null && next > record.timestamp) {
+      return '$base · Next attempt at ${_formatClock(next)}';
+    }
+    return base;
+  }
+
   Widget _trailing() {
     final category = record.category;
     if (showCategory && category != null && category != 'ignored') {
@@ -50,7 +72,6 @@ class SmsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final error = record.lastError;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: Padding(
@@ -87,15 +108,29 @@ class SmsTile extends StatelessWidget {
                 color: theme.colorScheme.outline,
               ),
             ),
-            if (!showCategory && error != null && error.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                error,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            // Queue: show retry progress once a row has failed at least once
+            // (a fresh, never-tried row shows only its status badge). The raw
+            // internal error is deliberately not surfaced here — it stays in
+            // the DB for debug only.
+            if (!showCategory && record.attempts >= 1) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(
+                    Icons.schedule,
+                    size: 14,
+                    color: theme.colorScheme.outline,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      _retryLine,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
             // History failure rows: show a short hint (never the raw error).
