@@ -137,10 +137,12 @@ class _RootShellState extends ConsumerState<RootShell>
     const MethodChannel('meowni/debug').setMethodCallHandler((call) async {
       if (call.method == 'injectSms') {
         final args = (call.arguments as Map).cast<String, dynamic>();
-        await ref.read(appServicesProvider).handleIncomingRaw(
-          sender: args['sender'] as String? ?? '',
-          content: args['content'] as String? ?? '',
-        );
+        await ref
+            .read(appServicesProvider)
+            .handleIncomingRaw(
+              sender: args['sender'] as String? ?? '',
+              content: args['content'] as String? ?? '',
+            );
       }
       return null;
     });

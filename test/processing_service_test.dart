@@ -71,12 +71,26 @@ void main() {
   Future<Map<String, Object?>> row(int id) async =>
       (await db.query('sms_records', where: 'id = ?', whereArgs: [id])).first;
 
-  Future<int> queue(String sender, {String content = 'debit 50', int attempts = 0}) async {
+  Future<int> queue(
+    String sender, {
+    String content = 'debit 50',
+    int attempts = 0,
+  }) async {
     final id = (await sms.insertIfNew(
-      SmsRecord(sender: sender, content: content, timestamp: now, updatedAt: now),
+      SmsRecord(
+        sender: sender,
+        content: content,
+        timestamp: now,
+        updatedAt: now,
+      ),
     ))!;
     if (attempts != 0) {
-      await sms.updateStatus(id, SmsStatus.queued, attempts: attempts, updatedAt: now);
+      await sms.updateStatus(
+        id,
+        SmsStatus.queued,
+        attempts: attempts,
+        updatedAt: now,
+      );
     }
     return id;
   }
@@ -134,8 +148,11 @@ void main() {
   test('honors Retry-After when it exceeds the backoff', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(
-      error: const LlmException('rate',
-          retryable: true, retryAfter: Duration(seconds: 120)),
+      error: const LlmException(
+        'rate',
+        retryable: true,
+        retryAfter: Duration(seconds: 120),
+      ),
     );
     await service(llm).process();
 
@@ -147,8 +164,11 @@ void main() {
   test('backoff wins when Retry-After is shorter', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(
-      error: const LlmException('rate',
-          retryable: true, retryAfter: Duration(seconds: 5)),
+      error: const LlmException(
+        'rate',
+        retryable: true,
+        retryAfter: Duration(seconds: 5),
+      ),
     );
     await service(llm).process();
 
@@ -160,8 +180,11 @@ void main() {
   test('clamps an over-long Retry-After to 24h', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(
-      error: const LlmException('rate',
-          retryable: true, retryAfter: Duration(hours: 30)),
+      error: const LlmException(
+        'rate',
+        retryable: true,
+        retryAfter: Duration(hours: 30),
+      ),
     );
     await service(llm).process();
 
@@ -173,8 +196,11 @@ void main() {
   test('honors an absolute X-RateLimit-Reset in the future', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(
-      error: LlmException('rate',
-          retryable: true, resetAtEpochMs: now + 120000),
+      error: LlmException(
+        'rate',
+        retryable: true,
+        resetAtEpochMs: now + 120000,
+      ),
     );
     await service(llm).process();
 
@@ -198,8 +224,11 @@ void main() {
   test('clamps an over-long X-RateLimit-Reset to 24h', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(
-      error: LlmException('rate',
-          retryable: true, resetAtEpochMs: now + Duration(hours: 30).inMilliseconds),
+      error: LlmException(
+        'rate',
+        retryable: true,
+        resetAtEpochMs: now + Duration(hours: 30).inMilliseconds,
+      ),
     );
     await service(llm).process();
 
@@ -211,36 +240,48 @@ void main() {
   test('takes the larger of both hints vs backoff', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(
-      error: LlmException('rate',
-          retryable: true,
-          retryAfter: const Duration(seconds: 120),
-          resetAtEpochMs: now + 300000),
+      error: LlmException(
+        'rate',
+        retryable: true,
+        retryAfter: const Duration(seconds: 120),
+        resetAtEpochMs: now + 300000,
+      ),
     );
     await service(llm).process();
 
     final r = await row(id);
-    expect(r['next_attempt_at'], now + 300000); // reset 300s > retryAfter 120s > backoff
+    expect(
+      r['next_attempt_at'],
+      now + 300000,
+    ); // reset 300s > retryAfter 120s > backoff
     await db.close();
   });
 
   test('Retry-After wins over a smaller X-RateLimit-Reset', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(
-      error: LlmException('rate',
-          retryable: true,
-          retryAfter: const Duration(seconds: 300),
-          resetAtEpochMs: now + 120000),
+      error: LlmException(
+        'rate',
+        retryable: true,
+        retryAfter: const Duration(seconds: 300),
+        resetAtEpochMs: now + 120000,
+      ),
     );
     await service(llm).process();
 
     final r = await row(id);
-    expect(r['next_attempt_at'], now + 300000); // retryAfter 300s > reset 120s (fold symmetric)
+    expect(
+      r['next_attempt_at'],
+      now + 300000,
+    ); // retryAfter 300s > reset 120s (fold symmetric)
     await db.close();
   });
 
   test('fails immediately on a fatal error', () async {
     final id = await queue('CHK');
-    final llm = _FakeLlm(error: const LlmException('bad key', retryable: false));
+    final llm = _FakeLlm(
+      error: const LlmException('bad key', retryable: false),
+    );
     await service(llm).process();
 
     final r = await row(id);
@@ -264,7 +305,9 @@ void main() {
     await queue('CHK');
     int? failed;
     int? retrying;
-    final llm = _FakeLlm(error: const LlmException('bad key', retryable: false));
+    final llm = _FakeLlm(
+      error: const LlmException('bad key', retryable: false),
+    );
     await service(
       llm,
       onCounts: (f, r) async {
@@ -282,10 +325,13 @@ void main() {
     // Online for process()+_processOne checks, offline by the reschedule check.
     var checks = 0;
     final llm = _FakeLlm(error: const LlmException('rate', retryable: true));
-    await service(llm, isOnline: () async {
-      checks++;
-      return checks <= 2;
-    }).process();
+    await service(
+      llm,
+      isOnline: () async {
+        checks++;
+        return checks <= 2;
+      },
+    ).process();
 
     final r = await row(id);
     expect(r['status'], 'queued');
@@ -294,25 +340,34 @@ void main() {
     await db.close();
   });
 
-  test('schedules the next catch-up at the backoff time after a retry', () async {
-    await queue('CHK');
-    Duration? scheduled;
-    var calls = 0;
-    final llm = _FakeLlm(error: const LlmException('rate', retryable: true));
-    await service(llm, reschedule: (d) async {
-      scheduled = d;
-      calls++;
-    }).process();
-    expect(calls, 1);
-    expect(scheduled, const Duration(seconds: 15)); // baseBackoff
-    await db.close();
-  });
+  test(
+    'schedules the next catch-up at the backoff time after a retry',
+    () async {
+      await queue('CHK');
+      Duration? scheduled;
+      var calls = 0;
+      final llm = _FakeLlm(error: const LlmException('rate', retryable: true));
+      await service(
+        llm,
+        reschedule: (d) async {
+          scheduled = d;
+          calls++;
+        },
+      ).process();
+      expect(calls, 1);
+      expect(scheduled, const Duration(seconds: 15)); // baseBackoff
+      await db.close();
+    },
+  );
 
   test('cancels the catch-up when the queue drains', () async {
     await queue('CHK');
     var cancelled = false;
     final llm = _FakeLlm(result: const ClassifyResult.none());
-    await service(llm, reschedule: (d) async => cancelled = d == null).process();
+    await service(
+      llm,
+      reschedule: (d) async => cancelled = d == null,
+    ).process();
     expect(cancelled, isTrue);
     await db.close();
   });
@@ -321,8 +376,11 @@ void main() {
     await queue('CHK'); // due now
     Duration? scheduled;
     final llm = _FakeLlm(result: const ClassifyResult.none());
-    await service(llm, online: false, reschedule: (d) async => scheduled = d)
-        .process();
+    await service(
+      llm,
+      online: false,
+      reschedule: (d) async => scheduled = d,
+    ).process();
     expect(scheduled, Duration.zero);
     await db.close();
   });

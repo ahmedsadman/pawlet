@@ -185,7 +185,10 @@ class _AddBankCta extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Text('Add a bank to get started', style: theme.textTheme.titleMedium),
+            Text(
+              'Add a bank to get started',
+              style: theme.textTheme.titleMedium,
+            ),
             const SizedBox(height: 4),
             Text(
               'Meowni reads your bank SMS on this device and records transactions '

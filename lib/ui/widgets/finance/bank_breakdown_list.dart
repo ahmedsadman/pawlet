@@ -47,9 +47,9 @@ class BankBreakdownList extends StatelessWidget {
         SizedBox(
           width: double.infinity,
           child: TextButton.icon(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BanksPage()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const BanksPage())),
             icon: const Icon(Icons.account_balance_outlined, size: 18),
             label: const Text('Manage Banks & Cards'),
           ),

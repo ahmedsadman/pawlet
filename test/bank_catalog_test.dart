@@ -9,8 +9,14 @@ void main() {
     expect(ebl, isNotNull);
     expect(ebl!.matchers, ['ebl', 'eastern bank limited']);
     expect(bankCatalogByLabel('MTB')!.matchers, ['mtb']);
-    expect(bankCatalogByLabel('StanChart (SCB)')!.matchers, ['scb', 'stanchart']);
-    expect(bankCatalogByLabel('Eastern Bank Limited'), isNull); // old label gone
+    expect(bankCatalogByLabel('StanChart (SCB)')!.matchers, [
+      'scb',
+      'stanchart',
+    ]);
+    expect(
+      bankCatalogByLabel('Eastern Bank Limited'),
+      isNull,
+    ); // old label gone
     expect(bankCatalogByLabel('Not A Bank'), isNull);
   });
 

@@ -85,9 +85,7 @@ class ProcessingService {
         return;
       }
 
-      await smsRepository.reclaimStale(
-        _clock() - staleAfter.inMilliseconds,
-      );
+      await smsRepository.reclaimStale(_clock() - staleAfter.inMilliseconds);
 
       final banks = await banksRepository.list();
       final cur = currency();
@@ -225,7 +223,9 @@ class ProcessingService {
     var hint = Duration.zero;
     if (retryAfter != null && retryAfter > hint) hint = retryAfter;
     if (resetAtEpochMs != null) {
-      final d = Duration(milliseconds: resetAtEpochMs - now); // absolute → delay
+      final d = Duration(
+        milliseconds: resetAtEpochMs - now,
+      ); // absolute → delay
       if (d > hint) hint = d; // past/negative delta stays below zero → ignored
     }
     if (hint > maxRetryAfter) hint = maxRetryAfter; // clamp skew / ms-misparse

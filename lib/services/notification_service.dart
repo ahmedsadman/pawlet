@@ -51,7 +51,8 @@ class NotificationService {
     id: _retryingNotificationId,
     title: 'Processing delayed',
     count: count,
-    body: (noun) => "$count $noun couldn't be processed yet and are being retried",
+    body: (noun) =>
+        "$count $noun couldn't be processed yet and are being retried",
   );
 
   Future<void> _reconcile({

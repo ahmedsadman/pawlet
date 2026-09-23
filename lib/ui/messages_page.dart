@@ -98,8 +98,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
                 )
               : null,
         ),
-        if (_queueExpanded && count > 0)
-          ...records.map((r) => SmsTile(r)),
+        if (_queueExpanded && count > 0) ...records.map((r) => SmsTile(r)),
       ],
     );
   }

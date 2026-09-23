@@ -134,7 +134,8 @@ class FinanceRepository {
     final dir = query.sortDir == 'asc' ? 'ASC' : 'DESC';
     final offset = (query.page - 1) * query.pageSize;
 
-    final rows = await _db.rawQuery('''
+    final rows = await _db.rawQuery(
+      '''
       SELECT t.id, t.message_id, t.bank_id,
              b.name AS bank_name, b.account_type AS bank_account_type,
              s.sender AS sender,
@@ -150,7 +151,9 @@ class FinanceRepository {
       $filterClause
       ORDER BY $orderCol $dir, t.id DESC
       LIMIT ? OFFSET ?
-    ''', [...filterArgs, query.pageSize, offset]);
+    ''',
+      [...filterArgs, query.pageSize, offset],
+    );
 
     final items = rows.map(_txFromRow).toList();
     return _ok(
@@ -190,7 +193,8 @@ class FinanceRepository {
     final total = (countRows.first['c'] as int?) ?? 0;
 
     final offset = (page - 1) * pageSize;
-    final rows = await _db.rawQuery('''
+    final rows = await _db.rawQuery(
+      '''
       SELECT bl.id, bl.message_id, s.sender AS sender, s.timestamp AS received_at,
              bl.bank_id, b.name AS bank_name,
              bl.normalized_total_due, bl.normalized_currency,
@@ -202,7 +206,9 @@ class FinanceRepository {
       WHERE bl.bank_id = ?
       ORDER BY s.timestamp DESC, bl.id DESC
       LIMIT ? OFFSET ?
-    ''', [bankId, pageSize, offset]);
+    ''',
+      [bankId, pageSize, offset],
+    );
 
     final billIds = rows.map((r) => r['id'] as int).toList();
     final links = <int, List<int>>{for (final id in billIds) id: []};
@@ -274,8 +280,22 @@ class FinanceRepository {
       Trends(
         windowMonths: _windowMonths,
         sparkMonths: sparkWindow.map(_monthIndexToDate).toList(),
-        income: _amountMetric(0, recentWindow, priorWindow, sparkWindow, totals, firstMonth),
-        spend: _amountMetric(1, recentWindow, priorWindow, sparkWindow, totals, firstMonth),
+        income: _amountMetric(
+          0,
+          recentWindow,
+          priorWindow,
+          sparkWindow,
+          totals,
+          firstMonth,
+        ),
+        spend: _amountMetric(
+          1,
+          recentWindow,
+          priorWindow,
+          sparkWindow,
+          totals,
+          firstMonth,
+        ),
         savingsRate: _savingsRateTrend(
           recentWindow,
           priorWindow,
@@ -299,9 +319,11 @@ class FinanceRepository {
     final prior = _windowAverage(idx, priorWindow, totals, firstMonth);
     String? changePct;
     if (prior.n >= 2 && prior.value != Decimal.zero) {
-      changePct =
-          _divide((recent.value - prior.value) * _hundred, prior.value, 1)
-              .toString();
+      changePct = _divide(
+        (recent.value - prior.value) * _hundred,
+        prior.value,
+        1,
+      ).toString();
     }
     return TrendMetric(
       recentAvg: recent.value.toString(),
@@ -325,8 +347,10 @@ class FinanceRepository {
     final prior = _windowRate(priorWindow, totals, firstMonth);
     String? changePp;
     if (prior.value != null && recent.value != null && prior.n >= 2) {
-      changePp = _quantize((recent.value! - prior.value!) * _hundred, 1)
-          .toString();
+      changePp = _quantize(
+        (recent.value! - prior.value!) * _hundred,
+        1,
+      ).toString();
     }
     final spark = <String?>[];
     for (final m in sparkWindow) {
@@ -478,27 +502,27 @@ class FinanceRepository {
     billId: row['bill_id'] as int?,
   );
 
-  Bill _billFromRow(Map<String, Object?> row, List<int> linkedTransactionIds) =>
-      Bill(
-        id: row['id'] as int,
-        messageId: row['message_id'] as int,
-        sender: row['sender'] as String,
-        receivedAt: DateTime.fromMillisecondsSinceEpoch(
-          row['received_at'] as int,
-        ),
-        bankId: row['bank_id'] as int?,
-        bankName: row['bank_name'] as String?,
-        normalizedTotalDue: row['normalized_total_due'] as String,
-        normalizedCurrency: row['normalized_currency'] as String,
-        originalAmount: row['original_amount'] as String?,
-        originalCurrency: row['original_currency'] as String?,
-        statementPeriod: row['statement_period'] == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(row['statement_period'] as int),
-        paidAt: row['paid_at'] == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(row['paid_at'] as int),
-        linkedTransactionIds: linkedTransactionIds,
-        createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),
-      );
+  Bill _billFromRow(
+    Map<String, Object?> row,
+    List<int> linkedTransactionIds,
+  ) => Bill(
+    id: row['id'] as int,
+    messageId: row['message_id'] as int,
+    sender: row['sender'] as String,
+    receivedAt: DateTime.fromMillisecondsSinceEpoch(row['received_at'] as int),
+    bankId: row['bank_id'] as int?,
+    bankName: row['bank_name'] as String?,
+    normalizedTotalDue: row['normalized_total_due'] as String,
+    normalizedCurrency: row['normalized_currency'] as String,
+    originalAmount: row['original_amount'] as String?,
+    originalCurrency: row['original_currency'] as String?,
+    statementPeriod: row['statement_period'] == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(row['statement_period'] as int),
+    paidAt: row['paid_at'] == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(row['paid_at'] as int),
+    linkedTransactionIds: linkedTransactionIds,
+    createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),
+  );
 }

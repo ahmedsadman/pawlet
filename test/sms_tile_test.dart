@@ -19,7 +19,10 @@ SmsRecord _rec({
 );
 
 Future<void> _pump(WidgetTester tester, Widget child) => tester.pumpWidget(
-  MaterialApp(theme: AppTheme.theme, home: Scaffold(body: child)),
+  MaterialApp(
+    theme: AppTheme.theme,
+    home: Scaffold(body: child),
+  ),
 );
 
 void main() {
@@ -30,7 +33,9 @@ void main() {
     expect(find.text('Queued'), findsOneWidget);
   });
 
-  testWidgets('history tile shows the read-only category label', (tester) async {
+  testWidgets('history tile shows the read-only category label', (
+    tester,
+  ) async {
     await _pump(
       tester,
       SmsTile(

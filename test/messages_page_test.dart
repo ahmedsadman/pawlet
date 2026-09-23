@@ -7,14 +7,15 @@ import 'package:meowni/state/messages_providers.dart';
 import 'package:meowni/theme/catppuccin_theme.dart';
 import 'package:meowni/ui/messages_page.dart';
 
-SmsRecord _sms(String sender, SmsStatus status, {String? category}) => SmsRecord(
-  id: sender.hashCode,
-  sender: sender,
-  content: 'msg from $sender',
-  timestamp: DateTime(2026, 1, 1).millisecondsSinceEpoch,
-  status: status,
-  category: category,
-);
+SmsRecord _sms(String sender, SmsStatus status, {String? category}) =>
+    SmsRecord(
+      id: sender.hashCode,
+      sender: sender,
+      content: 'msg from $sender',
+      timestamp: DateTime(2026, 1, 1).millisecondsSinceEpoch,
+      status: status,
+      category: category,
+    );
 
 const _emptyHistory = HistoryPage(records: [], total: 0, page: 1, pageSize: 20);
 
@@ -46,7 +47,10 @@ void main() {
     await _pump(
       tester,
       _overrides(
-        queued: [_sms('BankA', SmsStatus.queued), _sms('BankB', SmsStatus.queued)],
+        queued: [
+          _sms('BankA', SmsStatus.queued),
+          _sms('BankB', SmsStatus.queued),
+        ],
       ),
     );
 
@@ -88,8 +92,9 @@ void main() {
     );
   });
 
-  testWidgets('typing in search updates the history query after the debounce',
-      (tester) async {
+  testWidgets('typing in search updates the history query after the debounce', (
+    tester,
+  ) async {
     await _pump(tester, _overrides());
     await tester.enterText(find.byType(TextField), 'brac');
     await tester.pump();
@@ -130,7 +135,9 @@ void main() {
     expect(find.text('0'), findsOneWidget);
   });
 
-  testWidgets('refetches history when the search query changes', (tester) async {
+  testWidgets('refetches history when the search query changes', (
+    tester,
+  ) async {
     final match = HistoryPage(
       records: [_sms('BRAC', SmsStatus.success, category: 'transaction')],
       total: 1,
@@ -154,7 +161,9 @@ void main() {
     expect(find.text('Transaction'), findsOneWidget);
   });
 
-  testWidgets('prev is disabled on the first page, next enabled', (tester) async {
+  testWidgets('prev is disabled on the first page, next enabled', (
+    tester,
+  ) async {
     final page = HistoryPage(
       records: [_sms('BRAC', SmsStatus.success, category: 'transaction')],
       total: 40,

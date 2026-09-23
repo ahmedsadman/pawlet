@@ -60,7 +60,8 @@ List<Override> financeOverrides({
     ),
   ),
   billsProvider.overrideWith(
-    (ref, bankId) async =>
-        const CachedResult(data: BillsPage(bills: [], total: 0, page: 1, pageSize: 20)),
+    (ref, bankId) async => const CachedResult(
+      data: BillsPage(bills: [], total: 0, page: 1, pageSize: 20),
+    ),
   ),
 ];
