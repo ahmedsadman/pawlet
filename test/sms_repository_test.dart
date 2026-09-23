@@ -66,6 +66,45 @@ void main() {
     await db.close();
   });
 
+  test('requeueOne returns exactly the one failed row to the queue', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final a = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    final b = (await repo.insertIfNew(_sms('B', ts: 2)))!;
+    await repo.updateStatus(a, SmsStatus.failure, attempts: 10, updatedAt: 5);
+    await repo.updateStatus(b, SmsStatus.failure, attempts: 10, updatedAt: 5);
+
+    await repo.requeueOne(a, 9, attempts: 9);
+
+    expect(await repo.countFailed(), 1); // only B remains failed
+    final rowA = (await db.query(
+      'sms_records',
+      where: 'id = ?',
+      whereArgs: [a],
+    )).first;
+    expect(rowA['status'], SmsStatus.queued.name);
+    expect(rowA['attempts'], 9);
+    expect(rowA['next_attempt_at'], isNull);
+    await db.close();
+  });
+
+  test('requeueOne ignores a row that is not currently failed', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    await repo.updateStatus(id, SmsStatus.queued, attempts: 3, updatedAt: 5);
+
+    await repo.requeueOne(id, 9, attempts: 9);
+
+    final row = (await db.query(
+      'sms_records',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).first;
+    expect(row['attempts'], 3); // untouched — was not a failure
+    await db.close();
+  });
+
   group('history', () {
     Future<SmsRepository> seed() async {
       final db = await openTestDb();
