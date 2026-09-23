@@ -54,6 +54,12 @@ class AppTheme {
         elevation: 0,
         centerTitle: false,
       ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        // Accent FAB: M3 defaults to primaryContainer (neutral surface1 here),
+        // so set the primary accent explicitly. Crust icon for contrast.
+        backgroundColor: f.mauve,
+        foregroundColor: f.crust,
+      ),
       cardTheme: CardThemeData(
         color: f.surface0,
         elevation: 0,
