@@ -17,8 +17,6 @@ class AppTheme {
 
   static ThemeData get theme {
     final f = _flavor;
-    final accentContainer =
-        Color.alphaBlend(f.mauve.withValues(alpha: 0.35), f.surface0);
     final scheme = ColorScheme.dark(
       surface: f.base,
       onSurface: f.text,
@@ -26,11 +24,16 @@ class AppTheme {
       surfaceContainerHigh: f.mantle,
       primary: f.mauve,
       onPrimary: f.crust,
-      primaryContainer: accentContainer,
+      // Containers use pure palette surfaces (no accent blend) — idiomatic
+      // Catppuccin: surface1/surface2 are the elevated "Surface Elements".
+      primaryContainer: f.surface1,
       onPrimaryContainer: f.text,
       secondary: f.blue,
       onSecondary: f.crust,
-      secondaryContainer: accentContainer,
+      // Catppuccin's recommended selection background: overlay2 at ~25%
+      // opacity. Translucent, so it composites to a muted tint over whatever
+      // surface it sits on (e.g. selected SegmentedButton segments).
+      secondaryContainer: f.overlay2.withValues(alpha: 0.25),
       onSecondaryContainer: f.text,
       tertiary: f.teal,
       onTertiary: f.crust,
