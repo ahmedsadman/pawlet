@@ -84,7 +84,8 @@ class LlmException implements Exception {
   final int? resetAtEpochMs;
 
   @override
-  String toString() => 'LlmException($message, retryable=$retryable)';
+  String toString() => 'LlmException($message, retryable=$retryable, '
+      'retryAfter=$retryAfter, resetAtEpochMs=$resetAtEpochMs)';
 }
 
 /// Provider-agnostic SMS classifier + extractor. Implementations perform one

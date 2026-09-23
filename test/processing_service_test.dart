@@ -223,6 +223,21 @@ void main() {
     await db.close();
   });
 
+  test('Retry-After wins over a smaller X-RateLimit-Reset', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(
+      error: LlmException('rate',
+          retryable: true,
+          retryAfter: const Duration(seconds: 300),
+          resetAtEpochMs: now + 120000),
+    );
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['next_attempt_at'], now + 300000); // retryAfter 300s > reset 120s (fold symmetric)
+    await db.close();
+  });
+
   test('fails immediately on a fatal error', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(error: const LlmException('bad key', retryable: false));
