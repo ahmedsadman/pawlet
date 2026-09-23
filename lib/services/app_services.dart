@@ -130,6 +130,17 @@ class AppServices {
     await processingService.process();
   }
 
+  /// Manual per-message retry: returns one failed message to the queue for a
+  /// single re-process attempt, then runs the queue.
+  Future<void> retryMessage(int id) async {
+    await smsRepository.requeueOne(
+      id,
+      DateTime.now().millisecondsSinceEpoch,
+      attempts: ProcessingService.maxAttempts - 1,
+    );
+    await processingService.process();
+  }
+
   /// Persists an incoming SMS (deduped) and runs the processing queue.
   Future<void> handleIncomingSms(SmsMessage message) => handleIncomingRaw(
     sender: message.address ?? '',
