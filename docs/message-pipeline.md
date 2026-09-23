@@ -129,7 +129,7 @@ call while one is running is ignored) and, before touching anything, requeues st
    `ignore_reason`.
 
 After the queue drains, deferred **relationship matchers** run once (transfer pairing,
-credit-card-payment ↔ bill), then failure/retry **counts** are reconciled into
+credit-card-payment ↔ bill), then the terminal-failure **count** is reconciled into
 notifications, a **throttled prune** runs (§9), and the next background catch-up is
 (re)scheduled (§6).
 
