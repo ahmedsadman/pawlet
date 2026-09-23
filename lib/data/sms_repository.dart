@@ -89,6 +89,24 @@ class SmsRepository {
     );
   }
 
+  /// Manual single-message retry: returns one `failure` row to `queued`, due
+  /// now. [attempts] is pre-set (usually maxAttempts - 1) so a single pass tries
+  /// once more before failing again. Guarded on `status = failure` so a
+  /// double-tap or a row already re-queued elsewhere is a safe no-op.
+  Future<void> requeueOne(int id, int now, {required int attempts}) async {
+    await _db.update(
+      _table,
+      {
+        'status': SmsStatus.queued.name,
+        'attempts': attempts,
+        'next_attempt_at': null,
+        'updated_at': now,
+      },
+      where: 'id = ? AND status = ?',
+      whereArgs: [id, SmsStatus.failure.name],
+    );
+  }
+
   /// Processed History (financial rows + failures), most recent first,
   /// paginated. [query] is a multi-word substring filter over sender, contact
   /// name, and content (each term must match one of them; terms are ANDed).
