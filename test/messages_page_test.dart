@@ -3,11 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meowni/models/sms_record.dart';
+import 'package:meowni/services/app_services.dart';
 import 'package:meowni/state/messages_providers.dart';
 import 'package:meowni/state/providers.dart';
 import 'package:meowni/theme/catppuccin_theme.dart';
 import 'package:meowni/ui/messages_page.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class _FakeAppServices extends Mock implements AppServices {}
 
 SmsRecord _sms(String sender, SmsStatus status, {String? category}) =>
     SmsRecord(
@@ -154,6 +158,32 @@ void main() {
     await _pump(tester, _overrides(history: page));
     expect(find.byIcon(Icons.refresh), findsNothing);
   });
+
+  testWidgets(
+    'tapping a failed row retry icon calls retryMessage with its id',
+    (tester) async {
+      final fake = _FakeAppServices();
+      when(() => fake.retryMessage(any())).thenAnswer((_) async {});
+
+      final failed = _sms('BRAC', SmsStatus.failure);
+      final page = HistoryPage(
+        records: [failed],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      );
+      await _pump(tester, [
+        ..._overrides(history: page),
+        appServicesProvider.overrideWithValue(fake),
+      ]);
+
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump(); // let the async _retry run
+      await tester.pump(const Duration(milliseconds: 50));
+
+      verify(() => fake.retryMessage(failed.id!)).called(1);
+    },
+  );
 
   testWidgets('empty queue still shows a zero count badge', (tester) async {
     await _pump(tester, _overrides(queued: const []));
