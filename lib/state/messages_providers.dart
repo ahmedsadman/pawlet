@@ -25,14 +25,6 @@ final queuedProvider = StreamProvider.autoDispose<List<SmsRecord>>((ref) {
       : Stream.fromFuture(repo.queued()); // one snapshot, no background polling
 });
 
-/// Number of records that exhausted their retries (drives the retry affordance).
-final failedCountProvider = StreamProvider.autoDispose<int>((ref) {
-  final repo = ref.watch(smsRepositoryProvider);
-  return _messagesActive(ref)
-      ? _poll(repo.countFailed)
-      : Stream.fromFuture(repo.countFailed());
-});
-
 /// Immutable History query: page (1-based) + sender search text.
 class HistoryQuery {
   const HistoryQuery({this.page = 1, this.search = ''});
