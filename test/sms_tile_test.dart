@@ -89,7 +89,7 @@ void main() {
     expect(find.textContaining('Next attempt'), findsNothing);
   });
 
-  testWidgets('queue tile shows the next-attempt time when scheduled', (
+  testWidgets('queue tile shows the next-attempt time when it is upcoming', (
     tester,
   ) async {
     final future = DateTime(2026, 1, 2, 15, 45).millisecondsSinceEpoch;
@@ -97,9 +97,25 @@ void main() {
       tester,
       SmsTile(
         _rec(status: SmsStatus.queued, attempts: 2, nextAttemptAt: future),
+        now: () => DateTime(2026, 1, 2, 15, 30).millisecondsSinceEpoch,
       ),
     );
     expect(find.textContaining('Next attempt at 3:45 PM'), findsOneWidget);
+  });
+
+  testWidgets('queue tile hides the next-attempt time once it is overdue', (
+    tester,
+  ) async {
+    final scheduled = DateTime(2026, 1, 2, 15, 45).millisecondsSinceEpoch;
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.queued, attempts: 2, nextAttemptAt: scheduled),
+        now: () => DateTime(2026, 1, 2, 16, 0).millisecondsSinceEpoch,
+      ),
+    );
+    expect(find.textContaining('Retry 2/10'), findsOneWidget);
+    expect(find.textContaining('Next attempt'), findsNothing);
   });
 
   testWidgets('history failure shows the extraction-error hint', (
