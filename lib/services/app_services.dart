@@ -107,11 +107,18 @@ class AppServices {
   /// app-wide (owned by the provider scope) and must NOT be closed here.
   void dispose() => llmProvider.close();
 
-  /// Background-isolate dispose: this bundle opened its own DB + client via
-  /// [bootstrap], so close both.
+  /// Background-isolate dispose: closes only the isolate-local LLM http client.
+  ///
+  /// The database is deliberately NOT closed. sqflite's default
+  /// `singleInstance: true` shares a single native connection across every
+  /// isolate in the process, so a background isolate (WorkManager catch-up,
+  /// background SMS handler) closing it would close the live UI isolate's
+  /// database too — every later query then throws
+  /// `DatabaseException(database_closed)` and the UI hangs on a loading skeleton
+  /// until the app is restarted. The shared connection is released when the
+  /// process dies.
   Future<void> disposeStandalone() async {
     llmProvider.close();
-    await database.close();
   }
 
   /// Manual retry entry point: returns every failed message to the queue for a
