@@ -5,16 +5,27 @@ import '../../services/processing_service.dart';
 import 'category_label.dart';
 import 'status_badge.dart';
 
+int _defaultNow() => DateTime.now().millisecondsSinceEpoch;
+
 /// A single SMS row used in both the Queue and History lists. In the Queue it
 /// shows the processing status; in History it shows the read-only classification
 /// label (Transaction / Bill).
 class SmsTile extends StatelessWidget {
-  const SmsTile(this.record, {this.showCategory = false, super.key});
+  const SmsTile(
+    this.record, {
+    this.showCategory = false,
+    this.now = _defaultNow,
+    super.key,
+  });
 
   final SmsRecord record;
 
   /// When true, render the category label instead of the status badge.
   final bool showCategory;
+
+  /// Injectable clock (epoch ms) for deciding whether a scheduled next-attempt
+  /// time is still upcoming. Defaults to the wall clock; overridden in tests.
+  final int Function() now;
 
   String get _title {
     final name = record.contactName;
@@ -40,13 +51,12 @@ class SmsTile extends StatelessWidget {
   }
 
   /// Retry-progress line for a queued row that has already failed at least once.
-  /// Appends the scheduled next-attempt time when one is set for after this
-  /// message was captured (compared to [SmsRecord.timestamp], not the wall
-  /// clock, so it renders deterministically regardless of when it's viewed).
+  /// Appends the scheduled next-attempt time only while it is still upcoming
+  /// (compared to [now]); an overdue/just-due row shows only the counter.
   String get _retryLine {
     final base = 'Retry ${record.attempts}/${ProcessingService.maxAttempts}';
     final next = record.nextAttemptAt;
-    if (next != null && next > record.timestamp) {
+    if (next != null && next > now()) {
       return '$base · Next attempt at ${_formatClock(next)}';
     }
     return base;
