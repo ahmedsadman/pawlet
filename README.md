@@ -77,19 +77,35 @@ the original app (trends over rolling windows, monthly summaries, balances, spen
 
 ## Building
 
-The only secret is the OpenRouter API key. It is **not** entered in the app; it is injected at
-build time and then persisted to encrypted storage (`flutter_secure_storage`) on first launch, so
-subsequent runs work even without the define. Copy the example, fill in your key, and pass it:
+The only secret is the OpenRouter API key. There is **no in-app field for it** — the key is baked
+in at **build time** via a `--dart-define` (a compiler flag), so whoever builds passes it and people
+who install the app pass nothing. On first launch the app persists it to encrypted storage.
+
+Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys), then copy the example to
+`dart_define.json` (gitignored) and fill it in `{"OPENROUTER_API_KEY": "sk-or-..."}`:
 
 ```bash
-cp dart_define.example.json dart_define.json   # dart_define.json is gitignored
-# edit dart_define.json → {"OPENROUTER_API_KEY": "sk-or-..."}
+cp dart_define.example.json dart_define.json
+```
+
+**Local development** — pass the file to `flutter run` (needed only on first launch per install;
+harmless to always pass, since a stored key takes precedence):
+
+```bash
 flutter run --dart-define-from-file=dart_define.json
 ```
 
-No key baked into a client binary is truly secret — a determined attacker can extract it. Keeping
-it out of source control and out of plaintext prefs is the right pragmatic call for a serverless
-app; a backend proxy is the only real fix and can be a later step.
+**Release** — build once with the flag; the key is compiled in for every user. In CI, pass a
+pipeline secret inline instead of committing the file:
+
+```bash
+flutter build appbundle --dart-define-from-file=dart_define.json               # local
+flutter build appbundle --dart-define=OPENROUTER_API_KEY="$OPENROUTER_API_KEY" # CI
+```
+
+No key in a client binary is truly secret, and a single baked-in key means every user shares one
+OpenRouter account (its rate limits and billing) — fine for a personal/sideloaded build, but for a
+public release run a backend proxy that holds the key, or add a per-user "bring your own key" flow.
 
 ## Debug SMS injector
 
