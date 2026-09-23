@@ -16,7 +16,10 @@ class AppDatabase {
   static const String transactionsTable = 'transactions';
   static const String billsTable = 'bills';
 
-  static const int _version = 2;
+  /// Key/value store for small operational metadata (e.g. the last prune time).
+  static const String metaTable = 'app_meta';
+
+  static const int _version = 3;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), fileName);
@@ -43,13 +46,23 @@ class AppDatabase {
         updated_at INTEGER NOT NULL DEFAULT 0,
         next_attempt_at INTEGER,
         category TEXT,
-        processed_at INTEGER
+        processed_at INTEGER,
+        ignore_reason TEXT,
+        failure_reason TEXT
       )
     ''');
     // Dedupe overlapping foreground / background / cold-start reads of one SMS.
     await db.execute('''
       CREATE UNIQUE INDEX idx_sms_unique
       ON $smsTable (sender, timestamp, content)
+    ''');
+    await _createSmsOpsIndexes(db);
+
+    await db.execute('''
+      CREATE TABLE $metaTable (
+        key TEXT PRIMARY KEY,
+        value INTEGER NOT NULL
+      )
     ''');
 
     await db.execute('''
@@ -122,6 +135,21 @@ class AppDatabase {
     ''');
   }
 
+  /// Composite indexes on the almost-always status-filtered `sms_records`.
+  /// `(status, updated_at)` serves History ordering, the ignored-prune delete,
+  /// reclaimStale and counts; `(status, next_attempt_at)` serves the hot
+  /// processing path (dueForDelivery + soonestQueuedAttempt).
+  static Future<void> _createSmsOpsIndexes(Database db) async {
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sms_status_updated
+      ON $smsTable (status, updated_at)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sms_status_next
+      ON $smsTable (status, next_attempt_at)
+    ''');
+  }
+
   /// Applies incremental migrations. Each version's delta is additive so future
   /// upgrades can be appended below.
   static Future<void> onUpgrade(
@@ -158,6 +186,24 @@ class AppDatabase {
         "UPDATE $banksTable SET name = 'StanChart (SCB)' "
         "WHERE name = 'Standard Chartered Bank (SCB)'",
       );
+    }
+
+    // v2 -> v3: retention model reboot. Schema-only — the app is pre-release, so
+    // existing test devices get wiped and no data backfill is needed. Kept for
+    // robustness on any non-wiped install: pre-v3 rows keep their old shape
+    // (old category='ignored' success rows stay hidden; null failure_reason
+    // reads back as the generic hint). Gated on the target [newVersion] so a
+    // partial upgrade (e.g. straight to v2) doesn't apply a later delta.
+    if (oldVersion < 3 && newVersion >= 3) {
+      await db.execute('ALTER TABLE $smsTable ADD COLUMN ignore_reason TEXT');
+      await db.execute('ALTER TABLE $smsTable ADD COLUMN failure_reason TEXT');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $metaTable (
+          key TEXT PRIMARY KEY,
+          value INTEGER NOT NULL
+        )
+      ''');
+      await _createSmsOpsIndexes(db);
     }
   }
 }

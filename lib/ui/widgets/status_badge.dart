@@ -15,6 +15,9 @@ class StatusBadge extends StatelessWidget {
       SmsStatus.queued => (AppTheme.flavor.peach, 'Queued'),
       SmsStatus.sending => (AppTheme.flavor.blue, 'Processing'),
       SmsStatus.success => (AppTheme.flavor.green, 'Done'),
+      // Ignored rows are never rendered (not in Queue or History); this case
+      // only keeps the switch exhaustive.
+      SmsStatus.ignored => (AppTheme.flavor.overlay0, 'Ignored'),
       SmsStatus.failure => (AppTheme.flavor.red, 'Failed'),
     };
 
