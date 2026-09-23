@@ -4,9 +4,22 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/db_test_helpers.dart';
 
-Future<Set<String>> _indexNames(Database db) async {
+Future<Set<String>> _indexNames(Database db, [String table = 'banks']) async {
   final rows = await db.rawQuery(
-    "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='banks'",
+    "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=?",
+    [table],
+  );
+  return rows.map((r) => r['name'] as String).toSet();
+}
+
+Future<Set<String>> _columnNames(Database db, String table) async {
+  final rows = await db.rawQuery('PRAGMA table_info($table)');
+  return rows.map((r) => r['name'] as String).toSet();
+}
+
+Future<Set<String>> _tableNames(Database db) async {
+  final rows = await db.rawQuery(
+    "SELECT name FROM sqlite_master WHERE type='table'",
   );
   return rows.map((r) => r['name'] as String).toSet();
 }
@@ -91,6 +104,88 @@ void main() {
         await db.close();
       },
     );
+  });
+
+  group('sms_records retention schema (v3)', () {
+    test('fresh schema carries the reason columns', () async {
+      final db = await openTestDb();
+      final cols = await _columnNames(db, 'sms_records');
+      expect(cols, containsAll(['ignore_reason', 'failure_reason']));
+      await db.close();
+    });
+
+    test('fresh schema creates app_meta', () async {
+      final db = await openTestDb();
+      expect(await _tableNames(db), contains('app_meta'));
+      // Its PK/value shape lets pruneIfDue upsert an integer timestamp.
+      await db.insert('app_meta', {'key': 'last_prune_at', 'value': 42});
+      final rows = await db.query(
+        'app_meta',
+        where: 'key = ?',
+        whereArgs: ['last_prune_at'],
+      );
+      expect(rows.single['value'], 42);
+      await db.close();
+    });
+
+    test('fresh schema carries the two operational indexes', () async {
+      final db = await openTestDb();
+      final names = await _indexNames(db, 'sms_records');
+      expect(
+        names,
+        containsAll(['idx_sms_status_updated', 'idx_sms_status_next']),
+      );
+      await db.close();
+    });
+
+    test('onUpgrade v2->v3 adds columns, app_meta, and indexes', () async {
+      // Build a v2 sms_records table by hand, then run the real migration.
+      final db = await databaseFactory.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(singleInstance: false),
+      );
+      await db.execute('''
+        CREATE TABLE sms_records (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sender TEXT NOT NULL,
+          contact_name TEXT,
+          content TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          updated_at INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at INTEGER,
+          category TEXT,
+          processed_at INTEGER
+        )
+      ''');
+      // A pre-v3 row must survive the additive migration untouched.
+      await db.insert('sms_records', {
+        'sender': 'CHK',
+        'content': 'x',
+        'timestamp': 1,
+        'status': 'success',
+        'updated_at': 1,
+      });
+
+      await AppDatabase.onUpgrade(db, 2, 3);
+
+      final cols = await _columnNames(db, 'sms_records');
+      expect(cols, containsAll(['ignore_reason', 'failure_reason']));
+      expect(await _tableNames(db), contains('app_meta'));
+      final indexes = await _indexNames(db, 'sms_records');
+      expect(
+        indexes,
+        containsAll(['idx_sms_status_updated', 'idx_sms_status_next']),
+      );
+      // Existing row preserved, new columns default to null.
+      final row = (await db.query('sms_records')).single;
+      expect(row['sender'], 'CHK');
+      expect(row['ignore_reason'], isNull);
+      expect(row['failure_reason'], isNull);
+      await db.close();
+    });
   });
 
   test(

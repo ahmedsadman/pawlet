@@ -6,8 +6,12 @@ enum SmsStatus {
   /// Currently being processed (Layer-1 gate + LLM call in flight).
   sending,
 
-  /// Processed — categorized and written (or deliberately ignored).
+  /// Processed — categorized and written to a finance record.
   success,
+
+  /// Processed, deliberately not a financial record; pruned after a short
+  /// retention. Invisible in History (tagged with an internal [IgnoreReason]).
+  ignored,
 
   /// Gave up after the maximum number of attempts (or a fatal error).
   failure;
@@ -16,6 +20,50 @@ enum SmsStatus {
     (s) => s.name == value,
     orElse: () => SmsStatus.queued,
   );
+}
+
+/// Why a processed SMS was ignored (internal only — never shown in the UI,
+/// read via ADB/debug). DB stores the snake_case [value].
+enum IgnoreReason {
+  /// Layer-1 sender/card gate rejected it; the LLM never ran.
+  gated('gated'),
+
+  /// The LLM ran and classified it as not financial.
+  llmNone('llm_none'),
+
+  /// The LLM classified it as financial but no finance row was written
+  /// (missing metadata, unmatched card, or a duplicate).
+  noRecord('no_record');
+
+  const IgnoreReason(this.value);
+  final String value;
+
+  static IgnoreReason? fromValue(String? v) {
+    for (final r in IgnoreReason.values) {
+      if (r.value == v) return r;
+    }
+    return null;
+  }
+}
+
+/// Why a processing attempt failed permanently, surfaced as a short History
+/// hint. DB stores the snake_case [value].
+enum FailureReason {
+  /// Exhausted the retry budget on a retryable error.
+  retryExhausted('retry_exhausted'),
+
+  /// A fatal (non-retryable) LLM error.
+  llmError('llm_error');
+
+  const FailureReason(this.value);
+  final String value;
+
+  static FailureReason? fromValue(String? v) {
+    for (final r in FailureReason.values) {
+      if (r.value == v) return r;
+    }
+    return null;
+  }
 }
 
 /// A single captured SMS and its processing state. `sms_records` doubles as the
@@ -34,6 +82,8 @@ class SmsRecord {
     this.nextAttemptAt,
     this.category,
     this.processedAt,
+    this.ignoreReason,
+    this.failureReason,
   });
 
   /// Local DB primary key (null before insert).
@@ -67,6 +117,12 @@ class SmsRecord {
   /// Epoch milliseconds when processing completed, or null.
   final int? processedAt;
 
+  /// Internal debugging tag for [SmsStatus.ignored] rows (not user-facing).
+  final IgnoreReason? ignoreReason;
+
+  /// Why a [SmsStatus.failure] row failed (drives the short History hint).
+  final FailureReason? failureReason;
+
   bool get isQueued =>
       status == SmsStatus.queued || status == SmsStatus.sending;
 
@@ -79,6 +135,8 @@ class SmsRecord {
     int? nextAttemptAt,
     String? category,
     int? processedAt,
+    IgnoreReason? ignoreReason,
+    FailureReason? failureReason,
   }) {
     return SmsRecord(
       id: id ?? this.id,
@@ -93,6 +151,8 @@ class SmsRecord {
       nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
       category: category ?? this.category,
       processedAt: processedAt ?? this.processedAt,
+      ignoreReason: ignoreReason ?? this.ignoreReason,
+      failureReason: failureReason ?? this.failureReason,
     );
   }
 
@@ -109,6 +169,8 @@ class SmsRecord {
     'next_attempt_at': nextAttemptAt,
     'category': category,
     'processed_at': processedAt,
+    'ignore_reason': ignoreReason?.value,
+    'failure_reason': failureReason?.value,
   };
 
   factory SmsRecord.fromDbMap(Map<String, Object?> map) => SmsRecord(
@@ -124,5 +186,7 @@ class SmsRecord {
     nextAttemptAt: map['next_attempt_at'] as int?,
     category: map['category'] as String?,
     processedAt: map['processed_at'] as int?,
+    ignoreReason: IgnoreReason.fromValue(map['ignore_reason'] as String?),
+    failureReason: FailureReason.fromValue(map['failure_reason'] as String?),
   );
 }
