@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meowni/models/sms_record.dart';
 import 'package:meowni/state/messages_providers.dart';
+import 'package:meowni/state/providers.dart';
 import 'package:meowni/theme/catppuccin_theme.dart';
 import 'package:meowni/ui/messages_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 SmsRecord _sms(String sender, SmsStatus status, {String? category}) =>
     SmsRecord(
@@ -29,10 +31,19 @@ List<Override> _overrides({
   historyProvider.overrideWith((ref, q) async => history),
 ];
 
-Future<void> _pump(WidgetTester tester, List<Override> overrides) async {
+Future<void> _pump(
+  WidgetTester tester,
+  List<Override> overrides, {
+  Map<String, Object> prefs = const {},
+}) async {
+  SharedPreferences.setMockInitialValues(prefs);
+  final sp = await SharedPreferences.getInstance();
   await tester.pumpWidget(
     ProviderScope(
-      overrides: overrides,
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(sp),
+        ...overrides,
+      ],
       child: MaterialApp(theme: AppTheme.theme, home: const MessagesPage()),
     ),
   );
@@ -159,6 +170,20 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200)); // resolve the fetch
     expect(find.text('BRAC'), findsOneWidget);
     expect(find.text('Transaction'), findsOneWidget);
+  });
+
+  testWidgets('shows the one-time History banner, dismissible', (tester) async {
+    await _pump(tester, _overrides());
+    expect(find.textContaining('failed to process'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pump();
+    expect(find.textContaining('failed to process'), findsNothing);
+  });
+
+  testWidgets('History banner stays hidden once seen', (tester) async {
+    await _pump(tester, _overrides(), prefs: {'history_hint_seen': true});
+    expect(find.textContaining('failed to process'), findsNothing);
   });
 
   testWidgets('prev is disabled on the first page, next enabled', (

@@ -22,6 +22,13 @@ void main() {
     expect(r.txTypeHintSeen, isTrue);
   });
 
+  test('historyHintSeen defaults false and persists', () async {
+    final r = await repo();
+    expect(r.historyHintSeen, isFalse);
+    await r.setHistoryHintSeen(true);
+    expect(r.historyHintSeen, isTrue);
+  });
+
   test('defaultLlmModel is the free router', () {
     expect(SettingsRepository.defaultLlmModel, 'openrouter/free');
   });
