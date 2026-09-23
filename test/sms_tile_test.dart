@@ -9,6 +9,8 @@ SmsRecord _rec({
   String? category,
   String? lastError,
   FailureReason? failureReason,
+  int attempts = 0,
+  int? nextAttemptAt,
 }) => SmsRecord(
   id: 1,
   sender: 'BRAC',
@@ -18,6 +20,8 @@ SmsRecord _rec({
   category: category,
   lastError: lastError,
   failureReason: failureReason,
+  attempts: attempts,
+  nextAttemptAt: nextAttemptAt,
 );
 
 Future<void> _pump(WidgetTester tester, Widget child) => tester.pumpWidget(
@@ -60,12 +64,42 @@ void main() {
     expect(find.text('Bill'), findsOneWidget);
   });
 
-  testWidgets('shows the last error in queue mode', (tester) async {
+  testWidgets('queue mode does not show the raw internal error', (
+    tester,
+  ) async {
     await _pump(
       tester,
-      SmsTile(_rec(status: SmsStatus.queued, lastError: 'rate limited')),
+      SmsTile(
+        _rec(status: SmsStatus.queued, attempts: 1, lastError: 'rate limited'),
+      ),
     );
-    expect(find.text('rate limited'), findsOneWidget);
+    expect(find.text('rate limited'), findsNothing);
+  });
+
+  testWidgets('queue tile shows the retry counter after a failed attempt', (
+    tester,
+  ) async {
+    await _pump(tester, SmsTile(_rec(status: SmsStatus.queued, attempts: 2)));
+    expect(find.textContaining('Retry 2/10'), findsOneWidget);
+  });
+
+  testWidgets('fresh queued tile shows no retry line', (tester) async {
+    await _pump(tester, SmsTile(_rec(status: SmsStatus.queued, attempts: 0)));
+    expect(find.textContaining('Retry'), findsNothing);
+    expect(find.textContaining('Next attempt'), findsNothing);
+  });
+
+  testWidgets('queue tile shows the next-attempt time when scheduled', (
+    tester,
+  ) async {
+    final future = DateTime(2026, 1, 2, 15, 45).millisecondsSinceEpoch;
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.queued, attempts: 2, nextAttemptAt: future),
+      ),
+    );
+    expect(find.textContaining('Next attempt at 3:45 PM'), findsOneWidget);
   });
 
   testWidgets('history failure shows the extraction-error hint', (
