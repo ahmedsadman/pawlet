@@ -73,22 +73,6 @@ class SmsRepository {
     return rows.first['soonest'] as int?;
   }
 
-  /// Manual retry: returns all failed rows to `queued` for one more attempt.
-  /// [attempts] is pre-set (usually maxAttempts - 1) so a single pass tries once.
-  Future<void> requeueFailed(int now, {required int attempts}) async {
-    await _db.update(
-      _table,
-      {
-        'status': SmsStatus.queued.name,
-        'attempts': attempts,
-        'next_attempt_at': null,
-        'updated_at': now,
-      },
-      where: 'status = ?',
-      whereArgs: [SmsStatus.failure.name],
-    );
-  }
-
   /// Manual single-message retry: returns one `failure` row to `queued`, due
   /// now. [attempts] is pre-set (usually maxAttempts - 1) so a single pass tries
   /// once more before failing again. Guarded on `status = failure` so a
