@@ -89,7 +89,7 @@ final historyProvider = FutureProvider.autoDispose
     .family<HistoryPage, HistoryQuery>((ref, query) async {
       final repo = ref.watch(smsRepositoryProvider);
       final search = query.search.isEmpty ? null : query.search;
-      final total = await repo.historyCount(senderQuery: search);
+      final total = await repo.historyCount(query: search);
       // Clamp the requested page so a shrunk result set can't render a
       // false-empty page beyond the last one.
       final lastPage = total == 0 ? 1 : ((total - 1) ~/ kHistoryPageSize) + 1;
@@ -97,7 +97,7 @@ final historyProvider = FutureProvider.autoDispose
       final records = await repo.history(
         limit: kHistoryPageSize,
         offset: (page - 1) * kHistoryPageSize,
-        senderQuery: search,
+        query: search,
       );
       return HistoryPage(
         records: records,

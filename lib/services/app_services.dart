@@ -163,11 +163,8 @@ class AppServices {
       ),
     );
 
+    // Processing now owns cleanup: process() calls a throttled pruneIfDue, so
+    // there is no separate post-ingest prune here.
     await processingService.process();
-
-    // Cleanup runs last so it never delays capture/processing of the SMS.
-    await smsRepository.prune(
-      failureCutoff: now - kFailureRetention.inMilliseconds,
-    );
   }
 }

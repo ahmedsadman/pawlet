@@ -6,10 +6,17 @@ import 'database.dart';
 /// Default page size for History.
 const int kHistoryPageSize = 20;
 
-/// How long failed records are retained before [SmsRepository.prune] deletes them.
-const Duration kFailureRetention = Duration(days: 30);
+/// How long `ignored` records are retained before [SmsRepository.pruneIfDue]
+/// deletes them. Success and failure rows are permanent.
+const Duration kIgnoredRetention = Duration(days: 7);
 
-/// Labels that appear in History (ignored messages are not shown).
+/// Minimum wall-clock gap between two real prunes (DB-backed throttle).
+const Duration kPruneMinGap = Duration(hours: 24);
+
+/// `app_meta` key holding the epoch-ms time of the last real prune.
+const String kLastPruneAtKey = 'last_prune_at';
+
+/// Financial categories that appear in History (alongside failures).
 const List<String> kHistoryCategories = ['transaction', 'bill'];
 
 /// CRUD + queue/history queries for captured SMS.
@@ -88,14 +95,15 @@ class SmsRepository {
     );
   }
 
-  /// Processed History (Transaction/Bill only), most recent first, paginated.
-  /// [senderQuery] filters by sender or resolved contact name (case-insensitive).
+  /// Processed History (financial rows + failures), most recent first,
+  /// paginated. [query] is a multi-word substring filter over sender, contact
+  /// name, and content (each term must match one of them; terms are ANDed).
   Future<List<SmsRecord>> history({
     int limit = kHistoryPageSize,
     int offset = 0,
-    String? senderQuery,
+    String? query,
   }) async {
-    final (where, args) = _historyWhere(senderQuery);
+    final (where, args) = _historyWhere(query);
     final rows = await _db.query(
       _table,
       where: where,
@@ -107,42 +115,81 @@ class SmsRepository {
     return rows.map(SmsRecord.fromDbMap).toList();
   }
 
-  /// Total History rows matching [senderQuery] (for pagination).
-  Future<int> historyCount({String? senderQuery}) async {
-    final (where, args) = _historyWhere(senderQuery);
+  /// Total History rows matching [query] (for pagination).
+  Future<int> historyCount({String? query}) async {
+    final (where, args) = _historyWhere(query);
     return _count(where, args);
   }
 
-  (String, List<Object?>) _historyWhere(String? senderQuery) {
+  (String, List<Object?>) _historyWhere(String? query) {
     final placeholders = kHistoryCategories.map((_) => '?').join(', ');
-    final where = StringBuffer('status = ? AND category IN ($placeholders)');
-    final args = <Object?>[SmsStatus.success.name, ...kHistoryCategories];
-    final q = senderQuery?.trim();
+    // Financial (success + transaction/bill) rows and failures are shown;
+    // ignored rows never are.
+    final where = StringBuffer(
+      '((status = ? AND category IN ($placeholders)) OR status = ?)',
+    );
+    final args = <Object?>[
+      SmsStatus.success.name,
+      ...kHistoryCategories,
+      SmsStatus.failure.name,
+    ];
+    final q = query?.trim();
     if (q != null && q.isNotEmpty) {
-      where.write(' AND (sender LIKE ? OR contact_name LIKE ?)');
-      args
-        ..add('%$q%')
-        ..add('%$q%');
+      for (final term in q.split(RegExp(r'\s+'))) {
+        final like = '%${_escapeLike(term)}%';
+        where.write(
+          " AND (sender LIKE ? ESCAPE '\\' OR contact_name LIKE ? ESCAPE '\\' "
+          "OR content LIKE ? ESCAPE '\\')",
+        );
+        args
+          ..add(like)
+          ..add(like)
+          ..add(like);
+      }
     }
     return (where.toString(), args);
   }
 
-  /// Bounds local storage: keeps only in-flight rows + the newest processed rows
-  /// and deletes failures older than [failureCutoff] (epoch ms).
-  Future<void> prune({
-    int keepProcessed = 500,
-    required int failureCutoff,
+  /// Escapes LIKE wildcards so a user's `%`/`_` are matched literally (paired
+  /// with `ESCAPE '\'`). Backslash is escaped first so it doesn't double-escape.
+  String _escapeLike(String s) =>
+      s.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
+
+  /// Bounds local storage by deleting aged `ignored` rows, at most once per
+  /// [minGap] (a DB-backed throttle so all triggers and both isolates share one
+  /// budget). Success and failure rows are permanent. Deletes ignored rows whose
+  /// `updated_at` predates `now - ignoredRetention`.
+  Future<void> pruneIfDue({
+    required int now,
+    Duration minGap = kPruneMinGap,
+    Duration ignoredRetention = kIgnoredRetention,
   }) async {
-    await _db.rawDelete(
-      'DELETE FROM $_table WHERE status = ? AND id NOT IN '
-      '(SELECT id FROM $_table WHERE status = ? '
-      ' ORDER BY updated_at DESC LIMIT ?)',
-      [SmsStatus.success.name, SmsStatus.success.name, keepProcessed],
-    );
+    final last = await _metaGetInt(kLastPruneAtKey);
+    if (last != null && now - last < minGap.inMilliseconds) return;
+
     await _db.rawDelete(
       'DELETE FROM $_table WHERE status = ? AND updated_at < ?',
-      [SmsStatus.failure.name, failureCutoff],
+      [SmsStatus.ignored.name, now - ignoredRetention.inMilliseconds],
     );
+    await _metaSetInt(kLastPruneAtKey, now);
+  }
+
+  Future<int?> _metaGetInt(String key) async {
+    final rows = await _db.query(
+      AppDatabase.metaTable,
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['value'] as int?;
+  }
+
+  Future<void> _metaSetInt(String key, int value) async {
+    await _db.insert(AppDatabase.metaTable, {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> updateStatus(
@@ -154,6 +201,8 @@ class SmsRepository {
     int? nextAttemptAt,
     String? category,
     int? processedAt,
+    IgnoreReason? ignoreReason,
+    FailureReason? failureReason,
   }) async {
     await _db.update(
       _table,
@@ -169,6 +218,9 @@ class SmsRepository {
         // Null-aware: only set on a terminal processed result.
         'category': ?category,
         'processed_at': ?processedAt,
+        // Null-aware: only stamped on the matching terminal state.
+        'ignore_reason': ?ignoreReason?.value,
+        'failure_reason': ?failureReason?.value,
       },
       where: 'id = ?',
       whereArgs: [id],

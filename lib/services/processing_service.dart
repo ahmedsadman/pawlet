@@ -112,6 +112,10 @@ class ProcessingService {
         );
       }
 
+      // Throttled cleanup (≤1 real prune / 24h across all triggers and both
+      // isolates, via a single DB row) — deletes only aged ignored rows.
+      await smsRepository.pruneIfDue(now: _clock());
+
       await _rescheduleNext();
     } catch (_) {
       // Best-effort background drain: per-record failures are already handled
@@ -142,21 +146,47 @@ class ProcessingService {
         banks: banks,
         currency: cur,
       );
-      final category = await financeWriter.apply(
+      final label = await financeWriter.apply(
         record: record,
         outcome: outcome,
         banks: banks,
         currency: cur,
       );
-      await smsRepository.updateStatus(
-        id,
-        SmsStatus.success,
-        attempts: record.attempts,
-        updatedAt: _clock(),
-        nextAttemptAt: null,
-        category: category,
-        processedAt: _clock(),
-      );
+      if (label == 'ignored') {
+        // Terminal ignored: no category, tagged with an internal reason.
+        // - gate rejected it (LLM never ran)              → gated
+        // - LLM ran and said "not financial"             → llmNone
+        // - LLM said financial but no row was written     → noRecord
+        //   (missing metadata, unmatched card, or a dupe — FinanceWriter
+        //   returns a bare 'ignored' without saying which; lumped here).
+        final IgnoreReason reason;
+        if (!outcome.llmInvoked) {
+          reason = IgnoreReason.gated;
+        } else if (outcome.category == SmsCategory.none) {
+          reason = IgnoreReason.llmNone;
+        } else {
+          reason = IgnoreReason.noRecord;
+        }
+        await smsRepository.updateStatus(
+          id,
+          SmsStatus.ignored,
+          attempts: record.attempts,
+          updatedAt: _clock(),
+          nextAttemptAt: null,
+          ignoreReason: reason,
+          processedAt: _clock(),
+        );
+      } else {
+        await smsRepository.updateStatus(
+          id,
+          SmsStatus.success,
+          attempts: record.attempts,
+          updatedAt: _clock(),
+          nextAttemptAt: null,
+          category: label,
+          processedAt: _clock(),
+        );
+      }
       return true;
     } on LlmException catch (e) {
       if (!e.retryable) {
@@ -165,7 +195,8 @@ class ProcessingService {
           id,
           SmsStatus.failure,
           attempts: record.attempts + 1,
-          lastError: e.message,
+          failureReason: FailureReason.llmError,
+          lastError: _truncate(e.message),
           updatedAt: _clock(),
           nextAttemptAt: null,
         );
@@ -209,7 +240,8 @@ class ProcessingService {
         id,
         SmsStatus.failure,
         attempts: attempts,
-        lastError: error,
+        failureReason: FailureReason.retryExhausted,
+        lastError: _truncate(error),
         updatedAt: _clock(),
         nextAttemptAt: null,
       );
@@ -257,6 +289,11 @@ class ProcessingService {
     final delayMs = soonest - _clock();
     await cb(Duration(milliseconds: delayMs < 0 ? 0 : delayMs));
   }
+
+  /// Trims a terminal-failure error string to fit the internal `last_error`
+  /// column (read via ADB/debug only, never shown in the UI).
+  String _truncate(String s, [int max = 100]) =>
+      s.length <= max ? s : s.substring(0, max);
 
   /// Capped exponential backoff. [attempt] is the already-incremented count, so
   /// attempt 1 -> 15s, 2 -> 1m, 3 -> 4m, ... capped at [maxBackoff].
