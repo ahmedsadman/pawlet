@@ -17,6 +17,8 @@ class AppTheme {
 
   static ThemeData get theme {
     final f = _flavor;
+    final accentContainer =
+        Color.alphaBlend(f.mauve.withValues(alpha: 0.35), f.surface0);
     final scheme = ColorScheme.dark(
       surface: f.base,
       onSurface: f.text,
@@ -24,8 +26,12 @@ class AppTheme {
       surfaceContainerHigh: f.mantle,
       primary: f.mauve,
       onPrimary: f.crust,
+      primaryContainer: accentContainer,
+      onPrimaryContainer: f.text,
       secondary: f.blue,
       onSecondary: f.crust,
+      secondaryContainer: accentContainer,
+      onSecondaryContainer: f.text,
       tertiary: f.teal,
       onTertiary: f.crust,
       error: f.red,
