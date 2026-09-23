@@ -129,15 +129,31 @@ void main() {
     expect(c.read(historyQueryProvider).search, 'brac');
   });
 
-  testWidgets('retry affordance appears when there are failures', (
+  testWidgets('a failed history row exposes a per-row retry icon', (
     tester,
   ) async {
-    await _pump(tester, _overrides(failed: 2));
+    final page = HistoryPage(
+      records: [_sms('BRAC', SmsStatus.failure)],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    );
+    await _pump(tester, _overrides(history: page));
     expect(find.byIcon(Icons.refresh), findsOneWidget);
   });
 
-  testWidgets('no retry affordance when there are no failures', (tester) async {
-    await _pump(tester, _overrides(failed: 0));
+  testWidgets('the History header no longer has a global retry button', (
+    tester,
+  ) async {
+    // Only financial rows in history -> no failure row -> no refresh icon at all,
+    // even when there are failures counted elsewhere.
+    final page = HistoryPage(
+      records: [_sms('BRAC', SmsStatus.success, category: 'transaction')],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    );
+    await _pump(tester, _overrides(failed: 5, history: page));
     expect(find.byIcon(Icons.refresh), findsNothing);
   });
 

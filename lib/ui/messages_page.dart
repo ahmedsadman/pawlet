@@ -44,6 +44,13 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
     ref.read(settingsRepositoryProvider).setHistoryHintSeen(true);
   }
 
+  Future<void> _retry(int id) async {
+    await ref.read(appServicesProvider).retryMessage(id);
+    // The row leaves History (failure) for the Queue; refresh both views.
+    ref.invalidate(historyProvider);
+    ref.invalidate(queuedProvider);
+  }
+
   @override
   void dispose() {
     _debounce?.cancel();
@@ -59,7 +66,6 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
     });
 
     final queued = ref.watch(queuedProvider);
-    final failedCount = ref.watch(failedCountProvider).value ?? 0;
     final query = ref.watch(historyQueryProvider);
     final history = ref.watch(historyProvider(query));
     final queuedRecords = queued.value ?? const <SmsRecord>[];
@@ -78,7 +84,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
           children: [
             _queueSection(queuedRecords),
             const SizedBox(height: 8),
-            _historyHeader(failedCount),
+            _historyHeader(),
             _searchField(),
             if (!_hintSeen) ...[_hintBanner(), const SizedBox(height: 8)],
             _historyBody(history),
@@ -113,24 +119,8 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
     );
   }
 
-  Widget _historyHeader(int failedCount) {
-    return SectionHeader(
-      'History',
-      action: failedCount > 0
-          ? IconButton(
-              tooltip: 'Retry failed',
-              icon: const Icon(Icons.refresh),
-              onPressed: () async {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Retrying failed messages')),
-                );
-                await ref.read(appServicesProvider).requeueFailed();
-                ref.invalidate(historyProvider);
-                ref.invalidate(failedCountProvider);
-              },
-            )
-          : null,
-    );
+  Widget _historyHeader() {
+    return const SectionHeader('History');
   }
 
   Widget _searchField() {
@@ -216,7 +206,15 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ...page.records.map((r) => SmsTile(r, showCategory: true)),
+            ...page.records.map(
+              (r) => SmsTile(
+                r,
+                showCategory: true,
+                onRetry: r.status == SmsStatus.failure
+                    ? () => _retry(r.id!)
+                    : null,
+              ),
+            ),
             if (page.totalPages > 1) _pagination(page),
           ],
         );
