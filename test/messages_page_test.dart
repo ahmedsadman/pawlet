@@ -23,11 +23,9 @@ const _emptyHistory = HistoryPage(records: [], total: 0, page: 1, pageSize: 20);
 
 List<Override> _overrides({
   List<SmsRecord> queued = const [],
-  int failed = 0,
   HistoryPage history = _emptyHistory,
 }) => [
   queuedProvider.overrideWith((ref) => Stream.value(queued)),
-  failedCountProvider.overrideWith((ref) => Stream.value(failed)),
   historyProvider.overrideWith((ref, q) async => history),
 ];
 
@@ -153,7 +151,7 @@ void main() {
       page: 1,
       pageSize: 20,
     );
-    await _pump(tester, _overrides(failed: 5, history: page));
+    await _pump(tester, _overrides(history: page));
     expect(find.byIcon(Icons.refresh), findsNothing);
   });
 
@@ -173,7 +171,6 @@ void main() {
     );
     await _pump(tester, [
       queuedProvider.overrideWith((ref) => Stream.value(const <SmsRecord>[])),
-      failedCountProvider.overrideWith((ref) => Stream.value(0)),
       historyProvider.overrideWith(
         (ref, q) async => q.search == 'brac' ? match : _emptyHistory,
       ),

@@ -46,6 +46,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
 
   Future<void> _retry(int id) async {
     await ref.read(appServicesProvider).retryMessage(id);
+    if (!mounted) return;
     // The row leaves History (failure) for the Queue; refresh both views.
     ref.invalidate(historyProvider);
     ref.invalidate(queuedProvider);
@@ -75,7 +76,6 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
       body: RefreshIndicator(
         onRefresh: () async {
           ref.invalidate(queuedProvider);
-          ref.invalidate(failedCountProvider);
           ref.invalidate(historyProvider);
           await ref.read(processingServiceProvider).process();
         },
