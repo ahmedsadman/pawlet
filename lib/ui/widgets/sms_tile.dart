@@ -15,6 +15,7 @@ class SmsTile extends StatelessWidget {
     this.record, {
     this.showCategory = false,
     this.now = _defaultNow,
+    this.onRetry,
     super.key,
   });
 
@@ -26,6 +27,9 @@ class SmsTile extends StatelessWidget {
   /// Injectable clock (epoch ms) for deciding whether a scheduled next-attempt
   /// time is still upcoming. Defaults to the wall clock; overridden in tests.
   final int Function() now;
+
+  /// Tapped by the per-row retry icon on a Failed history row. Null hides it.
+  final VoidCallback? onRetry;
 
   String get _title {
     final name = record.contactName;
@@ -143,14 +147,28 @@ class SmsTile extends StatelessWidget {
                 ],
               ),
             ],
-            // History failure rows: show a short hint (never the raw error).
+            // History failure rows: short hint (never the raw error) + an
+            // optional per-message retry affordance.
             if (showCategory && record.status == SmsStatus.failure) ...[
               const SizedBox(height: 4),
-              Text(
-                _failureHint,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _failureHint,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                  ),
+                  if (onRetry != null)
+                    IconButton(
+                      icon: const Icon(Icons.refresh, size: 18),
+                      tooltip: 'Retry',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: onRetry,
+                    ),
+                ],
               ),
             ],
           ],
