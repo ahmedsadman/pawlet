@@ -17,14 +17,8 @@ class BankCatalogEntry {
 const List<BankCatalogEntry> kBankCatalog = [
   BankCatalogEntry(label: 'City Bank', matchers: ['city bank']),
   BankCatalogEntry(label: 'MTB', matchers: ['mtb']),
-  BankCatalogEntry(
-    label: 'EBL',
-    matchers: ['ebl', 'eastern bank limited'],
-  ),
-  BankCatalogEntry(
-    label: 'StanChart (SCB)',
-    matchers: ['scb', 'stanchart'],
-  ),
+  BankCatalogEntry(label: 'EBL', matchers: ['ebl', 'eastern bank limited']),
+  BankCatalogEntry(label: 'StanChart (SCB)', matchers: ['scb', 'stanchart']),
 ];
 
 /// Looks up a catalog entry by its exact label, or null if unknown.

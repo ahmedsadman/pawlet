@@ -12,20 +12,24 @@ class _FakeStore extends SecureStore {
 }
 
 void main() {
-  test('resolveApiKey returns the stored key and does not overwrite it',
-      () async {
-    final s = _FakeStore()..key = 'sk-stored';
-    expect(await s.resolveApiKey(), 'sk-stored');
-    expect(s.key, 'sk-stored'); // untouched
-  });
+  test(
+    'resolveApiKey returns the stored key and does not overwrite it',
+    () async {
+      final s = _FakeStore()..key = 'sk-stored';
+      expect(await s.resolveApiKey(), 'sk-stored');
+      expect(s.key, 'sk-stored'); // untouched
+    },
+  );
 
-  test('resolveApiKey returns empty when nothing stored and no --dart-define',
-      () async {
-    // Tests run without --dart-define=OPENROUTER_API_KEY, so the fallback is ''.
-    // The injected→persisted branch is only reachable with a compile-time
-    // define, so it cannot be exercised from unit tests (harness limitation).
-    final s = _FakeStore();
-    expect(await s.resolveApiKey(), '');
-    expect(s.key, ''); // nothing persisted
-  });
+  test(
+    'resolveApiKey returns empty when nothing stored and no --dart-define',
+    () async {
+      // Tests run without --dart-define=OPENROUTER_API_KEY, so the fallback is ''.
+      // The injected→persisted branch is only reachable with a compile-time
+      // define, so it cannot be exercised from unit tests (harness limitation).
+      final s = _FakeStore();
+      expect(await s.resolveApiKey(), '');
+      expect(s.key, ''); // nothing persisted
+    },
+  );
 }

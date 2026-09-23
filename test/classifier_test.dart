@@ -49,12 +49,9 @@ void main() {
     _FakeLlm llm,
     String sender,
     String content,
-  ) => Classifier(llm).classify(
-    sender: sender,
-    content: content,
-    banks: banks,
-    currency: 'BDT',
-  );
+  ) => Classifier(
+    llm,
+  ).classify(sender: sender, content: content, banks: banks, currency: 'BDT');
 
   test('Layer-1 miss → ignored, no LLM call', () async {
     final llm = _FakeLlm(const ClassifyResult.none());

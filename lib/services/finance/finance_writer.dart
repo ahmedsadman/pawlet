@@ -172,11 +172,7 @@ class FinanceWriter {
 
   // ---- helpers ------------------------------------------------------------
 
-  Future<bool> _exists(
-    DatabaseExecutor db,
-    String table,
-    int messageId,
-  ) async {
+  Future<bool> _exists(DatabaseExecutor db, String table, int messageId) async {
     final rows = await db.query(
       table,
       columns: ['id'],

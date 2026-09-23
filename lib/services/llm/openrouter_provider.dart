@@ -237,7 +237,9 @@ class OpenRouterProvider implements LlmProvider {
 
   String? _currency(Object? value) {
     if (value is! String) return null;
-    return RegExp(r'^[A-Za-z]{3}$').hasMatch(value) ? value.toUpperCase() : null;
+    return RegExp(r'^[A-Za-z]{3}$').hasMatch(value)
+        ? value.toUpperCase()
+        : null;
   }
 
   String? _txType(Object? value) {

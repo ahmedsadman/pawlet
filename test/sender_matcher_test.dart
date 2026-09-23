@@ -46,7 +46,10 @@ void main() {
 
   group('contentMatchesCardDigits', () {
     test('matches masked and spaced card numbers within the window', () {
-      expect(contentMatchesCardDigits('bill 4238****3241 due', '4238|3241'), isTrue);
+      expect(
+        contentMatchesCardDigits('bill 4238****3241 due', '4238|3241'),
+        isTrue,
+      );
       expect(contentMatchesCardDigits('4238 12 3241', '4238|3241'), isTrue);
       expect(contentMatchesCardDigits('42383241', '4238|3241'), isTrue);
     });
@@ -85,11 +88,14 @@ void main() {
       expect(gateBanks('AD-MTB', 'anything', [mtb, ebl]), [mtb]);
     });
 
-    test('gates in a credit card by digits in content even if sender differs', () {
-      final gated = gateBanks('RANDOM', 'stmt 4238****3241', [mtb, ebl]);
-      expect(gated, [ebl]);
-      expect(matchCreditCardInContent('stmt 4238****3241', [mtb, ebl]), ebl);
-    });
+    test(
+      'gates in a credit card by digits in content even if sender differs',
+      () {
+        final gated = gateBanks('RANDOM', 'stmt 4238****3241', [mtb, ebl]);
+        expect(gated, [ebl]);
+        expect(matchCreditCardInContent('stmt 4238****3241', [mtb, ebl]), ebl);
+      },
+    );
 
     test('gates out when nothing matches', () {
       expect(gateBanks('Daraz', 'win a prize', [mtb, ebl]), isEmpty);
@@ -110,7 +116,10 @@ void main() {
         'Odd Deposit',
         cardDigits: '4238|3241', // deposit type → card fallback must not apply
       );
-      expect(matchCreditCardInContent('4238****3241', [depositWithDigits]), isNull);
+      expect(
+        matchCreditCardInContent('4238****3241', [depositWithDigits]),
+        isNull,
+      );
       expect(gateBanks('RANDOM', '4238****3241', [depositWithDigits]), isEmpty);
     });
   });

@@ -117,8 +117,9 @@ void main() {
     expect(find.text('Page 2 of 3'), findsOneWidget);
   });
 
-  testWidgets('long-press opens the change-type sheet, current type checked',
-      (tester) async {
+  testWidgets('long-press opens the change-type sheet, current type checked', (
+    tester,
+  ) async {
     await _pump(tester);
     await tester.longPress(find.text('ACME-1'));
     await tester.pumpAndSettle();
@@ -138,8 +139,9 @@ void main() {
     );
   });
 
-  testWidgets('shows the one-time long-press hint until dismissed',
-      (tester) async {
+  testWidgets('shows the one-time long-press hint until dismissed', (
+    tester,
+  ) async {
     await _pump(tester);
     expect(find.textContaining('long-press a transaction'), findsOneWidget);
 

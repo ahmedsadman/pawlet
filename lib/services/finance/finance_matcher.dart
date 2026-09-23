@@ -176,8 +176,11 @@ Future<int?> findAndLinkBillForPayment(
   });
   final top = candidates.first;
   final tied = candidates
-      .where((r) =>
-          billBefore(r) == billBefore(top) && diff(r).abs() == diff(top).abs())
+      .where(
+        (r) =>
+            billBefore(r) == billBefore(top) &&
+            diff(r).abs() == diff(top).abs(),
+      )
       .toList();
   if (tied.length > 1) return null;
 
@@ -215,9 +218,11 @@ Future<int?> findAndLinkPaymentForBill(DatabaseExecutor db, int billId) async {
   });
   final top = candidates.first;
   final tied = candidates
-      .where((r) =>
-          paymentBefore(r) == paymentBefore(top) &&
-          diff(r).abs() == diff(top).abs())
+      .where(
+        (r) =>
+            paymentBefore(r) == paymentBefore(top) &&
+            diff(r).abs() == diff(top).abs(),
+      )
       .toList();
   if (tied.length > 1) return null;
 

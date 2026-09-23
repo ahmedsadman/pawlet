@@ -30,7 +30,9 @@ Future<void> _pump(WidgetTester tester, Widget home, List<Override> o) async {
 void main() {
   testWidgets('shows the empty state when there are no banks', (tester) async {
     await _pump(tester, const BanksPage(), [
-      banksProvider.overrideWith((ref) async => const CachedResult(data: <Bank>[])),
+      banksProvider.overrideWith(
+        (ref) async => const CachedResult(data: <Bank>[]),
+      ),
     ]);
     expect(find.text('No banks yet'), findsOneWidget);
   });

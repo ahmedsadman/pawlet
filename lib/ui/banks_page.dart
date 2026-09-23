@@ -13,7 +13,11 @@ import '../theme/catppuccin_theme.dart';
 class BanksPage extends ConsumerWidget {
   const BanksPage({super.key});
 
-  Future<void> _openForm(BuildContext context, WidgetRef ref, {Bank? bank}) async {
+  Future<void> _openForm(
+    BuildContext context,
+    WidgetRef ref, {
+    Bank? bank,
+  }) async {
     final saved = await Navigator.of(
       context,
     ).push<bool>(MaterialPageRoute(builder: (_) => BankFormPage(bank: bank)));
@@ -292,7 +296,10 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
               decoration: const InputDecoration(labelText: 'Bank'),
               items: [
                 for (final entry in kBankCatalog)
-                  DropdownMenuItem(value: entry.label, child: Text(entry.label)),
+                  DropdownMenuItem(
+                    value: entry.label,
+                    child: Text(entry.label),
+                  ),
               ],
               onChanged: (v) => setState(() => _selectedBank = v),
               validator: (v) => v == null ? 'Please select your bank' : null,
@@ -313,8 +320,7 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
                 ButtonSegment(value: 'credit', label: Text('Credit card')),
               ],
               selected: {_accountType},
-              onSelectionChanged: (s) =>
-                  setState(() => _accountType = s.first),
+              onSelectionChanged: (s) => setState(() => _accountType = s.first),
             ),
             if (isCredit) ...[
               const SizedBox(height: 16),

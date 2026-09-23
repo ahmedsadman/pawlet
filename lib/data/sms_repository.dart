@@ -38,8 +38,10 @@ class SmsRepository {
     orderBy: 'timestamp ASC',
   );
 
-  Future<int> countQueued() =>
-      _count('status IN (?, ?)', [SmsStatus.queued.name, SmsStatus.sending.name]);
+  Future<int> countQueued() => _count('status IN (?, ?)', [
+    SmsStatus.queued.name,
+    SmsStatus.sending.name,
+  ]);
 
   /// Queued records eligible for processing now, oldest first. Rows whose
   /// `next_attempt_at` is still in the future are skipped; `sending` rows are
@@ -50,8 +52,7 @@ class SmsRepository {
     orderBy: 'timestamp ASC',
   );
 
-  Future<int> countFailed() =>
-      _count('status = ?', [SmsStatus.failure.name]);
+  Future<int> countFailed() => _count('status = ?', [SmsStatus.failure.name]);
 
   /// The soonest time any queued row wants to run (epoch ms), treating a null
   /// `next_attempt_at` as "due now" (0). Returns null when nothing is queued —
@@ -66,10 +67,10 @@ class SmsRepository {
   }
 
   /// Records that hit at least one real failure and are still retrying.
-  Future<int> countRetrying() => _count(
-    'status IN (?, ?) AND attempts >= 1',
-    [SmsStatus.queued.name, SmsStatus.sending.name],
-  );
+  Future<int> countRetrying() => _count('status IN (?, ?) AND attempts >= 1', [
+    SmsStatus.queued.name,
+    SmsStatus.sending.name,
+  ]);
 
   /// Manual retry: returns all failed rows to `queued` for one more attempt.
   /// [attempts] is pre-set (usually maxAttempts - 1) so a single pass tries once.
@@ -114,14 +115,14 @@ class SmsRepository {
 
   (String, List<Object?>) _historyWhere(String? senderQuery) {
     final placeholders = kHistoryCategories.map((_) => '?').join(', ');
-    final where = StringBuffer(
-      'status = ? AND category IN ($placeholders)',
-    );
+    final where = StringBuffer('status = ? AND category IN ($placeholders)');
     final args = <Object?>[SmsStatus.success.name, ...kHistoryCategories];
     final q = senderQuery?.trim();
     if (q != null && q.isNotEmpty) {
       where.write(' AND (sender LIKE ? OR contact_name LIKE ?)');
-      args..add('%$q%')..add('%$q%');
+      args
+        ..add('%$q%')
+        ..add('%$q%');
     }
     return (where.toString(), args);
   }

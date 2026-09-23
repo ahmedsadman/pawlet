@@ -29,7 +29,12 @@ void main() {
     final a = (await repo.insertIfNew(_sms('A', ts: 1)))!;
     final b = (await repo.insertIfNew(_sms('B', ts: 2)))!;
     // b backs off into the future.
-    await repo.updateStatus(b, SmsStatus.queued, updatedAt: 5, nextAttemptAt: 10_000);
+    await repo.updateStatus(
+      b,
+      SmsStatus.queued,
+      updatedAt: 5,
+      nextAttemptAt: 10_000,
+    );
 
     final due = await repo.dueForDelivery(1000);
     expect(due.map((r) => r.id), [a]);
