@@ -171,4 +171,47 @@ void main() {
     );
     expect(find.text('secret internal detail'), findsNothing);
   });
+
+  testWidgets('failed history row shows a retry icon that fires onRetry', (
+    tester,
+  ) async {
+    var tapped = 0;
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.failure, failureReason: FailureReason.llmError),
+        showCategory: true,
+        onRetry: () => tapped++,
+      ),
+    );
+    expect(find.byIcon(Icons.refresh), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.refresh));
+    await tester.pump();
+    expect(tapped, 1);
+  });
+
+  testWidgets('failed history row without onRetry shows no retry icon', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.failure, failureReason: FailureReason.llmError),
+        showCategory: true,
+      ),
+    );
+    expect(find.byIcon(Icons.refresh), findsNothing);
+  });
+
+  testWidgets('successful history row shows no retry icon', (tester) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.success, category: 'transaction'),
+        showCategory: true,
+        onRetry: () {},
+      ),
+    );
+    expect(find.byIcon(Icons.refresh), findsNothing);
+  });
 }
