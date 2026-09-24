@@ -39,18 +39,27 @@ Or use Google Colab (free GPU) — upload `data/` + `src/`, `pip install -r requ
 
 ```bash
 python -m src.split              # build train/val/test  -> data/splits/
-python -m src.train_classifier   # -> models/classifier, prints per-class test report
+python -m src.train_classifier   # seed-sweep, keep best-by-val -> models/classifier
 python -m src.train_ner          # -> models/ner, prints per-entity test report
+python -m src.evaluate           # score a trained split (default test) -> report
 python -m src.export_onnx        # -> models/*_int8/ (ship these in the app)
 ```
+
+`evaluate` runs the already-trained models over a split (no retraining) and prints
+per-class + per-entity reports plus a per-record table (gold vs pred, classifier
+confidence, NER weakest-span confidence). `python -m src.evaluate val` for val.
+`python -m src.predict "..."` runs a single SMS.
 
 ## Config
 
 `src/config.py`:
 - `BACKBONE` — encoder (default `google/mobilebert-uncased`; alternatives listed).
-- `REAL_IN_TRAIN_FRACTION` — divert some real rows into train (default `0.0`,
-  keeps eval fully real).
+- `EVAL_REAL_PER_CLASS` — real rows per class reserved for eval (val+test),
+  split 50/50; the rest of real + all augmented go to train.
 - `MAX_LEN`, `SEED`, label sets.
+
+`train_classifier` sweeps seeds (env `SEEDS`, default `42,1,7,13,123`) and keeps
+the run with the best validation macro-F1. `SEEDS=7` reproduces just the winner.
 
 ## Notes / gotchas
 
@@ -61,3 +70,6 @@ python -m src.export_onnx        # -> models/*_int8/ (ship these in the app)
   preprocessing used here, or accuracy drops. Simplest: run tokenization inside
   the ONNX graph via ONNX Runtime Extensions.
 - **750 is a v1.** Expect to keep adding real data.
+- **Pinning regression cases.** A dataset row can carry `_split: "test"` (or
+  `"val"`/`"train"`) to force it into that split, bypassing the reserve logic —
+  use it to permanently evaluate real SMS a past model got wrong.
