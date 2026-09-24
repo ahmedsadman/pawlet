@@ -7,6 +7,10 @@ Policy (see config.EVAL_REAL_PER_CLASS):
 Real is partitioned (no row in two splits); content is already globally deduped,
 so there is no train/eval leakage.
 
+A row may carry an explicit `_split` ("train" | "val" | "test") to pin it to that
+split, bypassing the reserve logic. Use for regression cases you always want
+evaluated (e.g. real SMS a past model got wrong).
+
 Run:  python -m src.split
 """
 import json
@@ -21,11 +25,18 @@ def main():
     rows = [json.loads(l) for l in open(DATASET, encoding="utf-8") if l.strip()]
     rng = random.Random(SEED)
 
-    aug = [r for r in rows if r.get("_source") == "augmented"]
-    real = [r for r in rows if r.get("_source") != "augmented"]
+    # explicit per-row overrides win over the reserve logic below
+    pinned = {"train": [], "val": [], "test": []}
+    auto = []
+    for r in rows:
+        dst = r.get("_split")
+        (pinned[dst] if dst in pinned else auto).append(r)
 
-    train = list(aug)
-    val, test = [], []
+    aug = [r for r in auto if r.get("_source") == "augmented"]
+    real = [r for r in auto if r.get("_source") != "augmented"]
+
+    train = list(aug) + pinned["train"]
+    val, test = list(pinned["val"]), list(pinned["test"])
 
     by = defaultdict(list)
     for r in real:
