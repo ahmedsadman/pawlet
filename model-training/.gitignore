@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# training outputs / checkpoints (big) — ship only the exported int8 artifact
+models/
+
+# generated splits (reproducible from split.py)
+data/splits/

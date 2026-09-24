@@ -1,0 +1,19 @@
+# HuggingFace training stack
+torch>=2.2
+transformers>=4.46  # Trainer(processing_class=...) replaces the removed tokenizer= arg
+datasets>=2.20
+tokenizers>=0.19
+accelerate>=0.33
+
+# metrics
+evaluate>=0.4
+seqeval>=1.2
+scikit-learn>=1.3
+
+# ONNX export + int8 quantization
+optimum[onnxruntime]>=1.21
+onnx>=1.16
+onnxruntime>=1.18
+
+numpy
+pandas
