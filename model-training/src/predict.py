@@ -40,31 +40,43 @@ def classify(text, tok, model):
 
 
 def extract(text, tok, model):
+    """Return entity spans, each with a confidence:
+      conf = weakest token's softmax prob in the span (the weakest link — flags
+             shaky boundaries / fragmentation that a mean would hide).
+    """
     enc = tok(text, truncation=True, max_length=MAX_LEN,
               return_offsets_mapping=True, return_tensors="pt")
     offsets = enc.pop("offset_mapping")[0].tolist()
     with torch.no_grad():
-        preds = model(**enc).logits[0].argmax(-1).tolist()
+        logits = model(**enc).logits[0]
+    probs = torch.softmax(logits, dim=-1)
+    preds = logits.argmax(-1).tolist()
+    tconf = probs.max(-1).values.tolist()  # prob of the chosen label per token
     id2label = model.config.id2label
 
+    def close(c):
+        c["conf"] = min(c["_p"])  # weakest token = span confidence
+        del c["_p"]
+        spans.append(c)
+
     spans, cur = [], None
-    for (st, en), pid in zip(offsets, preds):
+    for (st, en), pid, p in zip(offsets, preds, tconf):
         if st == en:  # special token
             continue
         lab = id2label[int(pid)]
         if lab == "O":
             if cur:
-                spans.append(cur); cur = None
+                close(cur); cur = None
             continue
         pre, ent = lab.split("-", 1)
         if pre == "B" or cur is None or cur["ent"] != ent:
             if cur:
-                spans.append(cur)
-            cur = {"ent": ent, "start": st, "end": en}
+                close(cur)
+            cur = {"ent": ent, "start": st, "end": en, "_p": [p]}
         else:
-            cur["end"] = en
+            cur["end"] = en; cur["_p"].append(p)
     if cur:
-        spans.append(cur)
+        close(cur)
     for s in spans:
         s["text"] = text[s["start"]:s["end"]]
     return spans
@@ -97,7 +109,7 @@ def predict(text, models):
                 c = sniff_currency(text, s)
                 if c:
                     extra = f"   [currency ~ {c}]"
-            print(f"       {s['ent']:<8} {s['text']!r}{extra}")
+            print(f"       {s['ent']:<8} {s['text']!r}  (conf {s['conf']:.2f}){extra}")
     else:
         print("  -> fields: (none)")
 
