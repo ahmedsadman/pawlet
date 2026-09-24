@@ -374,6 +374,10 @@ def gen_txn(kind):
             # formal styles (real inboxes phrase debits this way)
             [f"Dear Sir, your account {ctx['an']} got debited by ", P_amt, f" on {ctx['d']}."] + ([" Balance: ", P_bal, "."] if has_bal else []),
             [f"Dear Customer, your account {ctx['an']} has been debited by ", P_amt, "."] + ([" Available Balance: ", P_bal, "."] if has_bal else []),
+            # terse ledger style: the Withdrawal/Purchased keyword is the ONLY
+            # cue vs an income Deposit — teaches the debit/credit boundary.
+            [f"{ctx['d']} POS TXN ", P_amt, " Purchased ", P_bal, f" Balance A/C: {ctx['an']}"],
+            [f"{ctx['d']} ATM TXN ", P_amt, " Withdrawal ", P_bal, f" Balance A/C: {ctx['an']}"],
         ]
     elif kind == "income":
         tpls = [
@@ -387,6 +391,10 @@ def gen_txn(kind):
             # formal styles (real inboxes phrase credits this way)
             [f"Dear Sir, your account {ctx['an']} got credited by ", P_amt, f" on {ctx['d']}."] + ([" Balance: ", P_bal, "."] if has_bal else []),
             [f"Dear Customer, your account {ctx['an']} has been credited by ", P_amt, "."] + ([" Available Balance: ", P_bal, "."] if has_bal else []),
+            # terse ledger style: the Deposit keyword is the ONLY cue vs an
+            # expense Withdrawal — teaches the credit/debit boundary.
+            [f"{ctx['d']} FUND TXN ", P_amt, " Deposit ", P_bal, f" Balance A/C: {ctx['an']}"],
+            [f"{ctx['d']} CASH TXN ", P_amt, " Deposit ", P_bal, f" Balance A/C: {ctx['an']}"],
         ]
     else:  # transfer = credit-card bill payment received by the issuer
         tpls = [
@@ -454,6 +462,11 @@ def gen_bill():
         ["Statement ", P_per, ": outstanding ", P_due, "."] + ([" Minimum payment ", P_min, f" due {ctx['d']}."] if has_min else []),
         ["Dear customer, your ", P_per, " card bill is ", P_due, "."] + ([" Minimum ", P_min, "."] if has_min else []),
         [f"Card {ctx['c']}: ", P_due, " total due for ", P_per, "."] + ([" ", P_min, f" min due by {ctx['d']}."] if has_min else []),
+        # "is <due> ... for the month of <period>" family: due introduced by "is"
+        # (reads like a transaction AMOUNT otherwise), plus a "MIN DUE:" distractor.
+        [f"Your bill for card {ctx['c']} is ", P_due, " for the month of ", P_per, "."] + ([" MIN DUE: ", P_min, "."] if has_min else []),
+        [f"Dear customer, your card {ctx['c']} bill for the month of ", P_per, " is ", P_due, "."] + ([" Min due ", P_min, "."] if has_min else []),
+        ["Bill for the month of ", P_per, f" on card {ctx['c']} is ", P_due, "."] + ([" MIN DUE ", P_min, "."] if has_min else []),
     ]
 
     parts = random.choice(tpls)
