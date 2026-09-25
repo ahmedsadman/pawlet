@@ -52,4 +52,6 @@ mobile-app/android/key.properties
 **/*.jks
 
 # Ephemeral agent-generated implementation plans (superpowers) — not product docs
-mobile-app/docs/superpowers/
+mobile-app/docs/superpowers
+model-training/docs/superpowers
+docs/superpowers
