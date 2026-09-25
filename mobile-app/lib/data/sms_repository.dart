@@ -19,6 +19,11 @@ const Duration kPruneMinGap = Duration(hours: 24);
 /// `app_meta` key holding the epoch-ms time of the last real prune.
 const String kLastPruneAtKey = 'last_prune_at';
 
+/// `app_meta` key holding a monotonic counter bumped whenever the pipeline
+/// commits a data change (in ANY isolate). The UI polls it to detect writes made
+/// by background isolates it can't otherwise observe. See [SmsRepository.dataRevision].
+const String kDataRevKey = 'data_rev';
+
 /// Financial categories that appear in History (alongside failures).
 const List<String> kHistoryCategories = ['transaction', 'bill'];
 
@@ -186,6 +191,23 @@ class SmsRepository {
       [SmsStatus.ignored.name, now - ignoredRetention.inMilliseconds],
     );
     await _metaSetInt(kLastPruneAtKey, now);
+  }
+
+  /// The current data-change token (0 when never bumped). A single primary-key
+  /// lookup on `app_meta` — cheap enough to poll from the UI every couple of
+  /// seconds to detect writes made by background isolates (WorkManager / the
+  /// background-SMS handler) that can't signal the UI isolate directly.
+  Future<int> dataRevision() async => await _metaGetInt(kDataRevKey) ?? 0;
+
+  /// Atomically increments the data-change token. Called by the pipeline after a
+  /// pass commits changes, from whichever isolate ran it; the `ON CONFLICT`
+  /// upsert keeps concurrent increments from different isolates consistent.
+  Future<void> bumpDataRevision() async {
+    await _db.rawInsert(
+      'INSERT INTO ${AppDatabase.metaTable} (key, value) VALUES (?, 1) '
+      'ON CONFLICT(key) DO UPDATE SET value = value + 1',
+      [kDataRevKey],
+    );
   }
 
   Future<int?> _metaGetInt(String key) async {
