@@ -8,6 +8,19 @@ import 'classification/classifier.dart';
 import 'finance/finance_writer.dart';
 import 'llm/llm_provider.dart';
 
+/// Outcome of processing one record, telling the drain loop whether to continue.
+enum _PassStep {
+  /// Reached a terminal state or was rescheduled; the slot is free — continue.
+  processed,
+
+  /// Device went offline; the row is left due — stop the pass.
+  offline,
+
+  /// Couldn't claim: the single global in-flight slot is held elsewhere (or the
+  /// row was taken by another isolate) — stop and let that isolate drain.
+  contended,
+}
+
 /// Drains the SMS queue, processing each due record atomically: Layer-1 gate +
 /// single fused LLM call + finance write. Failures are rescheduled with a
 /// capped-exponential backoff persisted in `next_attempt_at`; the existing
@@ -96,17 +109,28 @@ class ProcessingService {
       final cur = currency();
 
       final due = await smsRepository.dueForDelivery(_clock());
+      var processedAny = false;
       for (final record in due) {
-        final proceeded = await _processOne(record, banks, cur);
-        if (!proceeded) break; // went offline — resume later
+        final step = await _processOne(record, banks, cur);
+        if (step == _PassStep.processed) {
+          processedAny = true;
+          continue;
+        }
+        // Offline (resume later) or contended — another isolate holds the single
+        // global slot, so back off and let that isolate drain the queue.
+        break;
       }
 
-      final after = afterPass;
-      if (after != null) {
-        try {
-          await after();
-        } catch (_) {
-          // A matcher error must not skip the counts reconcile below.
+      // Only the isolate that actually processed something runs the deferred
+      // matchers and later signals the UI; a fully contended pass does neither.
+      if (processedAny) {
+        final after = afterPass;
+        if (after != null) {
+          try {
+            await after();
+          } catch (_) {
+            // A matcher error must not skip the counts reconcile below.
+          }
         }
       }
 
@@ -126,7 +150,7 @@ class ProcessingService {
 
       // A pass that touched records likely changed queue/history/finance state;
       // signal the UI isolate to re-read. Cheap no-op in background isolates.
-      if (due.isNotEmpty) onChanged?.call();
+      if (processedAny) onChanged?.call();
 
       await _rescheduleNext();
     } catch (_) {
@@ -138,18 +162,21 @@ class ProcessingService {
     }
   }
 
-  /// Processes [record] once. Returns false only when abandoned because the
-  /// device went offline (left queued and due); true once it reached a terminal
-  /// state, was rescheduled, was claimed by another isolate, or was skipped.
-  Future<bool> _processOne(
+  /// Processes [record] once, returning how the pass should proceed:
+  /// - [_PassStep.offline]: went offline (row left queued and due) — stop.
+  /// - [_PassStep.contended]: couldn't claim — the single global slot is held by
+  ///   another isolate (or the row was taken) — stop and let that isolate drain.
+  /// - [_PassStep.processed]: reached a terminal state or was rescheduled —
+  ///   the slot is free again, so the caller may continue to the next record.
+  Future<_PassStep> _processOne(
     SmsRecord record,
     List<Bank> banks,
     String cur,
   ) async {
-    if (!await isOnline()) return false;
+    if (!await isOnline()) return _PassStep.offline;
 
     final id = record.id!;
-    if (!await smsRepository.claim(id, _clock())) return true; // lost the claim
+    if (!await smsRepository.claim(id, _clock())) return _PassStep.contended;
 
     try {
       final outcome = await classifier.classify(
@@ -199,7 +226,7 @@ class ProcessingService {
           processedAt: _clock(),
         );
       }
-      return true;
+      return _PassStep.processed;
     } on LlmException catch (e) {
       if (!e.retryable) {
         // Fatal (bad key / bad request): fail immediately with a clear error.
@@ -212,9 +239,9 @@ class ProcessingService {
           updatedAt: _clock(),
           nextAttemptAt: null,
         );
-        return true;
+        return _PassStep.processed;
       }
-      return _reschedule(
+      return _rescheduleStep(
         record,
         e.message,
         retryAfter: e.retryAfter,
@@ -222,8 +249,26 @@ class ProcessingService {
       );
     } catch (e) {
       // Unexpected (e.g. a DB error): treat as transient and back off.
-      return _reschedule(record, e.toString());
+      return _rescheduleStep(record, e.toString());
     }
+  }
+
+  /// Wraps [_reschedule] into a [_PassStep]: a reschedule while offline leaves the
+  /// row due and stops the pass; otherwise the row backed off and the pass may
+  /// continue to the next record.
+  Future<_PassStep> _rescheduleStep(
+    SmsRecord record,
+    String error, {
+    Duration? retryAfter,
+    int? resetAtEpochMs,
+  }) async {
+    final rescheduled = await _reschedule(
+      record,
+      error,
+      retryAfter: retryAfter,
+      resetAtEpochMs: resetAtEpochMs,
+    );
+    return rescheduled ? _PassStep.processed : _PassStep.offline;
   }
 
   Future<bool> _reschedule(

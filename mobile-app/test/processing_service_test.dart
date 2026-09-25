@@ -30,6 +30,30 @@ class _FakeLlm implements LlmProvider {
   }
 }
 
+/// Fake LLM that runs a caller-supplied handler per call (keyed off content), so
+/// a test can route different messages to success/failure or observe overlap.
+class _FnLlm implements LlmProvider {
+  _FnLlm(this.handler);
+  final Future<ClassifyResult> Function(String content) handler;
+
+  @override
+  Future<ClassifyResult> classifyAndExtract({
+    required String content,
+    required String sender,
+    required String currency,
+  }) => handler(content);
+}
+
+ClassifyResult _expense() => const ClassifyResult(
+  category: SmsCategory.transaction,
+  transaction: MetadataResult(
+    amount: '50',
+    originalAmount: '50',
+    transactionType: 'expense',
+    originalCurrency: 'BDT',
+  ),
+);
+
 void main() {
   setUpAll(() {
     sqfliteFfiInit();
@@ -51,7 +75,7 @@ void main() {
   });
 
   ProcessingService service(
-    _FakeLlm llm, {
+    LlmProvider llm, {
     bool online = true,
     Future<bool> Function()? isOnline,
     Future<void> Function(int failed)? onCounts,
@@ -168,6 +192,82 @@ void main() {
     expect(changed, 0);
     await db.close();
   });
+
+  test(
+    'never runs more than one LLM call at once across two isolates',
+    () async {
+      for (var i = 0; i < 3; i++) {
+        await queue('CHK', content: 'debit $i');
+      }
+      var active = 0, maxActive = 0;
+      final llm = _FnLlm((_) async {
+        active++;
+        if (active > maxActive) maxActive = active;
+        await Future<void>.delayed(const Duration(milliseconds: 15));
+        active--;
+        return _expense();
+      });
+      // Two ProcessingService instances over the same shared DB stand in for two
+      // isolates; the single-slot claim must serialize them.
+      await Future.wait([service(llm).process(), service(llm).process()]);
+      expect(maxActive, 1);
+      expect(
+        (await db.query('sms_records', where: "status = 'success'")).length,
+        3,
+      );
+      await db.close();
+    },
+  );
+
+  test(
+    'a failing head item does not block later items; it retries later',
+    () async {
+      final first = await queue('CHK', content: 'first');
+      final second = await queue('CHK', content: 'second');
+      final llm = _FnLlm((content) async {
+        if (content.contains('first')) {
+          throw const LlmException('transient', retryable: true);
+        }
+        return _expense();
+      });
+      await service(llm).process();
+
+      final r1 = await row(first);
+      final r2 = await row(second);
+      // The failed head is rescheduled to a future backoff (not stuck sending)...
+      expect(r1['status'], 'queued');
+      expect(r1['next_attempt_at'], isNotNull);
+      // ...and the next item was still processed in the same pass.
+      expect(r2['status'], 'success');
+      await db.close();
+    },
+  );
+
+  test(
+    'a fully contended pass skips afterPass and the change signal',
+    () async {
+      final held = await queue('CHK', content: 'held');
+      await sms.claim(held, now); // occupy the single global slot
+      await queue('CHK', content: 'waiting'); // due, but the slot is busy
+      var afterPassRuns = 0, changedRuns = 0;
+      final llm = _FnLlm((_) async => _expense());
+      await ProcessingService(
+        smsRepository: sms,
+        banksRepository: banks,
+        classifier: Classifier(llm),
+        financeWriter: FinanceWriter(db, nowMs: () => now),
+        isOnline: () async => true,
+        currency: () => 'BDT',
+        clock: () => now,
+        afterPass: () async => afterPassRuns++,
+        onChanged: () => changedRuns++,
+      ).process();
+      // Claimed nothing, so no matcher run and no UI refresh signal.
+      expect(afterPassRuns, 0);
+      expect(changedRuns, 0);
+      await db.close();
+    },
+  );
 
   test('gates out an unregistered sender as ignored/gated, no LLM', () async {
     final id = await queue('DARAZ', content: 'win a prize');
