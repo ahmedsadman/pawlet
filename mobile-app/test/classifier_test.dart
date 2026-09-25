@@ -131,12 +131,10 @@ void main() {
         spans: [_lspan('AMOUNT', '50', 0.97, content.indexOf('50'))],
       ),
     );
-    final outcome = await Classifier(llm, local: local).classify(
-      sender: 'MTB',
-      content: content,
-      banks: banks,
-      currency: 'BDT',
-    );
+    final outcome = await Classifier(
+      llm,
+      local: local,
+    ).classify(sender: 'MTB', content: content, banks: banks, currency: 'BDT');
     expect(local.calls, 1);
     expect(llm.calls, 0);
     expect(outcome.llmInvoked, isFalse);

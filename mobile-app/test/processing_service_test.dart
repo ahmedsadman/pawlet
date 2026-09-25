@@ -322,68 +322,78 @@ void main() {
     await db.close();
   });
 
-  test('stores parse_source=local when the on-device model parsed it', () async {
-    final id = await queue('CHK', content: 'debit 50 BDT');
-    // LLM would throw if called; the confident local model must handle it.
-    final llm = _FakeLlm(error: const LlmException('should not run', retryable: false));
-    final local = _FakeLocal(
-      const LocalPrediction(
-        classLabel: 'expense',
-        classConfidence: 0.97,
-        spans: [
-          LocalSpan(
-            entity: 'AMOUNT',
-            text: '50',
-            confidence: 0.96,
-            start: 6,
-            end: 8,
-          ),
-        ],
-      ),
-    );
-    await ProcessingService(
-      smsRepository: sms,
-      banksRepository: banks,
-      classifier: Classifier(llm, local: local),
-      financeWriter: FinanceWriter(db, nowMs: () => now),
-      isOnline: () async => true,
-      currency: () => 'BDT',
-      clock: () => now,
-    ).process();
+  test(
+    'stores parse_source=local when the on-device model parsed it',
+    () async {
+      final id = await queue('CHK', content: 'debit 50 BDT');
+      // LLM would throw if called; the confident local model must handle it.
+      final llm = _FakeLlm(
+        error: const LlmException('should not run', retryable: false),
+      );
+      final local = _FakeLocal(
+        const LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.97,
+          spans: [
+            LocalSpan(
+              entity: 'AMOUNT',
+              text: '50',
+              confidence: 0.96,
+              start: 6,
+              end: 8,
+            ),
+          ],
+        ),
+      );
+      await ProcessingService(
+        smsRepository: sms,
+        banksRepository: banks,
+        classifier: Classifier(llm, local: local),
+        financeWriter: FinanceWriter(db, nowMs: () => now),
+        isOnline: () async => true,
+        currency: () => 'BDT',
+        clock: () => now,
+      ).process();
 
-    final r = await row(id);
-    expect(r['status'], 'success');
-    expect(r['category'], 'transaction');
-    expect(r['parse_source'], ParseSource.local.value);
-    await db.close();
-  });
+      final r = await row(id);
+      expect(r['status'], 'success');
+      expect(r['category'], 'transaction');
+      expect(r['parse_source'], ParseSource.local.value);
+      await db.close();
+    },
+  );
 
-  test('confident local null marks the row ignored/local_none, no LLM', () async {
-    final id = await queue('CHK', content: 'Your OTP is 1234');
-    final llm = _FakeLlm(error: const LlmException('should not run', retryable: false));
-    final local = _FakeLocal(
-      const LocalPrediction(
-        classLabel: 'null',
-        classConfidence: 0.98,
-        spans: [],
-      ),
-    );
-    await ProcessingService(
-      smsRepository: sms,
-      banksRepository: banks,
-      classifier: Classifier(llm, local: local),
-      financeWriter: FinanceWriter(db, nowMs: () => now),
-      isOnline: () async => true,
-      currency: () => 'BDT',
-      clock: () => now,
-    ).process();
+  test(
+    'confident local null marks the row ignored/local_none, no LLM',
+    () async {
+      final id = await queue('CHK', content: 'Your OTP is 1234');
+      final llm = _FakeLlm(
+        error: const LlmException('should not run', retryable: false),
+      );
+      final local = _FakeLocal(
+        const LocalPrediction(
+          classLabel: 'null',
+          classConfidence: 0.98,
+          spans: [],
+        ),
+      );
+      await ProcessingService(
+        smsRepository: sms,
+        banksRepository: banks,
+        classifier: Classifier(llm, local: local),
+        financeWriter: FinanceWriter(db, nowMs: () => now),
+        isOnline: () async => true,
+        currency: () => 'BDT',
+        clock: () => now,
+      ).process();
 
-    final r = await row(id);
-    expect(r['status'], 'ignored');
-    expect(r['ignore_reason'], IgnoreReason.localNone.value);
-    expect(r['parse_source'], ParseSource.local.value);
-    await db.close();
-  });
+      final r = await row(id);
+      expect(r['status'], 'ignored');
+      expect(r['ignore_reason'], IgnoreReason.localNone.value);
+      expect(r['parse_source'], ParseSource.local.value);
+      await db.close();
+    },
+  );
 
   test('LLM "none" marks the row ignored/llm_none', () async {
     final id = await queue('CHK', content: 'hello');

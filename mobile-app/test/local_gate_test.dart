@@ -82,26 +82,29 @@ void main() {
     expect(r.accepted, isFalse);
   });
 
-  test('bill: spurious low-conf span drops NERc and rejects (issue example)', () {
-    // Mirrors the plan's [224] example: NERc = 0.76 < 0.90.
-    const content =
-        'Monthly bill 423800******3241 AUG2026; Total Due: BDT 4924.35, '
-        'Min Due: BDT 4833.35';
-    final r = decideLocal(
-      LocalPrediction(
-        classLabel: 'bill',
-        classConfidence: 0.99,
-        spans: [
-          _span('BALANCE', '4833', 0.76, start: content.indexOf('4833')),
-          _span('DUE', '4924.35', 1.00, start: content.indexOf('4924.35')),
-          _span('PERIOD', 'AUG2026', 1.00, start: content.indexOf('AUG2026')),
-        ],
-      ),
-      currency: bdt,
-      content: content,
-    );
-    expect(r.accepted, isFalse);
-  });
+  test(
+    'bill: spurious low-conf span drops NERc and rejects (issue example)',
+    () {
+      // Mirrors the plan's [224] example: NERc = 0.76 < 0.90.
+      const content =
+          'Monthly bill 423800******3241 AUG2026; Total Due: BDT 4924.35, '
+          'Min Due: BDT 4833.35';
+      final r = decideLocal(
+        LocalPrediction(
+          classLabel: 'bill',
+          classConfidence: 0.99,
+          spans: [
+            _span('BALANCE', '4833', 0.76, start: content.indexOf('4833')),
+            _span('DUE', '4924.35', 1.00, start: content.indexOf('4924.35')),
+            _span('PERIOD', 'AUG2026', 1.00, start: content.indexOf('AUG2026')),
+          ],
+        ),
+        currency: bdt,
+        content: content,
+      );
+      expect(r.accepted, isFalse);
+    },
+  );
 
   test('bill: multiple DUE spans -> highest confidence wins', () {
     const content = 'Total Due: BDT 4924.35 AUG2026';
@@ -165,7 +168,9 @@ void main() {
       LocalPrediction(
         classLabel: 'bill',
         classConfidence: 0.99,
-        spans: [_span('PERIOD', 'AUG2026', 0.99, start: content.indexOf('AUG'))],
+        spans: [
+          _span('PERIOD', 'AUG2026', 0.99, start: content.indexOf('AUG')),
+        ],
       ),
       currency: bdt,
       content: content,
