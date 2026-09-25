@@ -9,34 +9,40 @@ import 'package:flutter_test/flutter_test.dart';
 /// model-training/scripts/gen_parity_fixtures.py). This is the train/serve parity
 /// guard — a drift here silently corrupts on-device predictions.
 void main() {
-  test('Dart tokenizer matches HF input_ids and offsets on golden fixtures', () {
-    final tokenizer = WordPieceTokenizer.fromTokenizerJsonSync(
-      'assets/model/tokenizer.json',
-    );
-    final fixtures =
-        jsonDecode(
-              File('test/fixtures/local_model_parity.json').readAsStringSync(),
-            )
-            as List;
+  test(
+    'Dart tokenizer matches HF input_ids and offsets on golden fixtures',
+    () {
+      final tokenizer = WordPieceTokenizer.fromTokenizerJsonSync(
+        'assets/model/tokenizer.json',
+      );
+      final fixtures =
+          jsonDecode(
+                File(
+                  'test/fixtures/local_model_parity.json',
+                ).readAsStringSync(),
+              )
+              as List;
 
-    for (final f in fixtures.cast<Map<String, dynamic>>()) {
-      final text = f['text'] as String;
-      final expectedIds = (f['input_ids'] as List).cast<int>();
-      final expectedOffsets = (f['offsets'] as List)
-          .map((o) => (o as List).cast<int>())
-          .toList();
+      for (final f in fixtures.cast<Map<String, dynamic>>()) {
+        final text = f['text'] as String;
+        final expectedIds = (f['input_ids'] as List).cast<int>();
+        final expectedOffsets = (f['offsets'] as List)
+            .map((o) => (o as List).cast<int>())
+            .toList();
 
-      final enc = tokenizer.encode(text);
-      final ids = enc.ids.take(expectedIds.length).toList();
-      expect(ids, expectedIds, reason: 'input_ids mismatch for: $text');
+        final enc = tokenizer.encode(text);
+        final ids = enc.ids.take(expectedIds.length).toList();
+        expect(ids, expectedIds, reason: 'input_ids mismatch for: $text');
 
-      for (var i = 0; i < expectedIds.length; i++) {
-        final (start, end) = enc.offsets[i];
-        expect([
-          start,
-          end,
-        ], expectedOffsets[i], reason: 'offset mismatch at token $i for: $text');
+        for (var i = 0; i < expectedIds.length; i++) {
+          final (start, end) = enc.offsets[i];
+          expect(
+            [start, end],
+            expectedOffsets[i],
+            reason: 'offset mismatch at token $i for: $text',
+          );
+        }
       }
-    }
-  });
+    },
+  );
 }

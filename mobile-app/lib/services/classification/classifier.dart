@@ -39,6 +39,7 @@ class ClassificationOutcome {
 /// the single fused classify+extract LLM call. Throws [LlmException] straight
 /// through so the processing queue can apply its retry/backoff policy.
 class Classifier {
+  // ignore: prefer_initializing_formals — a named param can't be private (_local).
   Classifier(this._llm, {LocalClassifier? local}) : _local = local;
 
   final LlmProvider _llm;
