@@ -80,7 +80,6 @@ void main() {
     Future<bool> Function()? isOnline,
     Future<void> Function(int failed)? onCounts,
     Future<void> Function(Duration? delay)? reschedule,
-    void Function()? onChanged,
   }) => ProcessingService(
     smsRepository: sms,
     banksRepository: banks,
@@ -91,7 +90,6 @@ void main() {
     clock: () => now,
     onCounts: onCounts,
     reschedule: reschedule,
-    onChanged: onChanged,
   );
 
   Future<Map<String, Object?>> row(int id) async =>
@@ -144,7 +142,7 @@ void main() {
     await db.close();
   });
 
-  test('onChanged fires after a pass that processed a due record', () async {
+  test('bumps the data revision after a pass that processed a record', () async {
     await queue('CHK');
     final llm = _FakeLlm(
       result: const ClassifyResult(
@@ -157,39 +155,35 @@ void main() {
         ),
       ),
     );
-    var changed = 0;
-    await service(llm, onChanged: () => changed++).process();
-    expect(changed, 1);
+    expect(await sms.dataRevision(), 0);
+    await service(llm).process();
+    expect(await sms.dataRevision(), 1);
     await db.close();
   });
 
-  test('onChanged does not fire when the queue is empty', () async {
+  test('does not bump the data revision when the queue is empty', () async {
     final llm = _FakeLlm(result: const ClassifyResult.none());
-    var changed = 0;
-    await service(llm, onChanged: () => changed++).process();
-    expect(changed, 0);
+    await service(llm).process();
+    expect(await sms.dataRevision(), 0);
     await db.close();
   });
 
-  test('onChanged still fires when onCounts throws', () async {
+  test('still bumps the data revision when onCounts throws', () async {
     await queue('DARAZ', content: 'win a prize'); // gated, offline-safe
     final llm = _FakeLlm(result: const ClassifyResult.none());
-    var changed = 0;
     await service(
       llm,
       onCounts: (_) async => throw StateError('notifications down'),
-      onChanged: () => changed++,
     ).process();
-    expect(changed, 1);
+    expect(await sms.dataRevision(), 1);
     await db.close();
   });
 
-  test('onChanged does not fire when offline (pass bails early)', () async {
+  test('does not bump the data revision when offline (pass bails)', () async {
     await queue('CHK');
     final llm = _FakeLlm(result: const ClassifyResult.none());
-    var changed = 0;
-    await service(llm, online: false, onChanged: () => changed++).process();
-    expect(changed, 0);
+    await service(llm, online: false).process();
+    expect(await sms.dataRevision(), 0);
     await db.close();
   });
 
@@ -249,7 +243,7 @@ void main() {
       final held = await queue('CHK', content: 'held');
       await sms.claim(held, now); // occupy the single global slot
       await queue('CHK', content: 'waiting'); // due, but the slot is busy
-      var afterPassRuns = 0, changedRuns = 0;
+      var afterPassRuns = 0;
       final llm = _FnLlm((_) async => _expense());
       await ProcessingService(
         smsRepository: sms,
@@ -260,11 +254,10 @@ void main() {
         currency: () => 'BDT',
         clock: () => now,
         afterPass: () async => afterPassRuns++,
-        onChanged: () => changedRuns++,
       ).process();
-      // Claimed nothing, so no matcher run and no UI refresh signal.
+      // Claimed nothing, so no matcher run and no data-change bump.
       expect(afterPassRuns, 0);
-      expect(changedRuns, 0);
+      expect(await sms.dataRevision(), 0);
       await db.close();
     },
   );

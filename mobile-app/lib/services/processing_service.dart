@@ -38,7 +38,6 @@ class ProcessingService {
     this.onCounts,
     this.afterPass,
     this.reschedule,
-    this.onChanged,
   }) : _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final SmsRepository smsRepository;
@@ -61,10 +60,6 @@ class ProcessingService {
   /// every pass with the delay until the soonest pending retry, or null when
   /// nothing is queued (so the background job can be cancelled — no idle wakes).
   final Future<void> Function(Duration? delay)? reschedule;
-
-  /// Optional hook fired once after a pass that attempted at least one record,
-  /// so the UI isolate can refresh views. Null in background isolates.
-  final void Function()? onChanged;
 
   /// Max attempts before a record is marked failed.
   static const int maxAttempts = 10;
@@ -148,9 +143,11 @@ class ProcessingService {
       // isolates, via a single DB row) — deletes only aged ignored rows.
       await smsRepository.pruneIfDue(now: _clock());
 
-      // A pass that touched records likely changed queue/history/finance state;
-      // signal the UI isolate to re-read. Cheap no-op in background isolates.
-      if (processedAny) onChanged?.call();
+      // A pass that touched records likely changed queue/history/finance state.
+      // Bump the DB change-token so the UI (which polls it) re-reads — this works
+      // from ANY isolate, including the WorkManager / background-SMS isolates the
+      // UI can't otherwise hear from.
+      if (processedAny) await smsRepository.bumpDataRevision();
 
       await _rescheduleNext();
     } catch (_) {
