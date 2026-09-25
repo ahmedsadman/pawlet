@@ -5,7 +5,6 @@ import 'package:pawlet/data/sms_repository.dart';
 import 'package:pawlet/models/sms_record.dart';
 import 'package:pawlet/state/providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/db_test_helpers.dart';
@@ -52,7 +51,7 @@ void main() {
     );
     addTearDown(container.dispose);
     // Keep the counter alive so its state survives across reads.
-    final sub = container.listen(dataRevisionProvider, (_, __) {});
+    final sub = container.listen(dataRevisionProvider, (_, _) {});
     addTearDown(sub.close);
 
     final sms = SmsRepository(db);
