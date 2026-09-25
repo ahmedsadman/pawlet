@@ -3,13 +3,7 @@ import 'package:pawlet/services/classification/local_model.dart';
 
 void main() {
   test('label maps match the trained fused model order', () {
-    expect(kClassLabels, [
-      'expense',
-      'income',
-      'transfer',
-      'bill',
-      'null',
-    ]);
+    expect(kClassLabels, ['expense', 'income', 'transfer', 'bill', 'null']);
     expect(kNerLabels, [
       'O',
       'B-AMOUNT',
