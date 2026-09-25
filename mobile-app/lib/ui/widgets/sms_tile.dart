@@ -69,6 +69,16 @@ class SmsTile extends StatelessWidget {
   Widget _trailing() {
     final category = record.category;
     if (showCategory && category != null && category != 'ignored') {
+      if (record.parseSource == ParseSource.llm) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _LlmBadge(),
+            const SizedBox(width: 6),
+            CategoryLabel(category),
+          ],
+        );
+      }
       return CategoryLabel(category);
     }
     return StatusBadge(record.status);
@@ -173,6 +183,26 @@ class SmsTile extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Muted, low-emphasis marker shown on History rows that fell back to the LLM
+/// (the on-device model was not confident enough). Intentionally subtle.
+class _LlmBadge extends StatelessWidget {
+  const _LlmBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      'LLM',
+      style: theme.textTheme.labelSmall?.copyWith(
+        color: theme.colorScheme.outline,
+        fontSize: 10,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.5,
       ),
     );
   }
