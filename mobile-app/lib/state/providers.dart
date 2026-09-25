@@ -68,7 +68,6 @@ final appServicesProvider = Provider<AppServices>((ref) {
     database: ref.watch(databaseProvider),
     prefs: ref.watch(sharedPreferencesProvider),
     apiKey: ref.watch(apiKeyProvider),
-    onDataChanged: () => ref.read(dataRevisionProvider.notifier).bump(),
   );
   ref.onDispose(services.dispose);
   return services;
