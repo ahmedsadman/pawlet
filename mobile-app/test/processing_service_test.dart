@@ -142,24 +142,27 @@ void main() {
     await db.close();
   });
 
-  test('bumps the data revision after a pass that processed a record', () async {
-    await queue('CHK');
-    final llm = _FakeLlm(
-      result: const ClassifyResult(
-        category: SmsCategory.transaction,
-        transaction: MetadataResult(
-          amount: '50',
-          originalAmount: '50',
-          transactionType: 'expense',
-          originalCurrency: 'BDT',
+  test(
+    'bumps the data revision after a pass that processed a record',
+    () async {
+      await queue('CHK');
+      final llm = _FakeLlm(
+        result: const ClassifyResult(
+          category: SmsCategory.transaction,
+          transaction: MetadataResult(
+            amount: '50',
+            originalAmount: '50',
+            transactionType: 'expense',
+            originalCurrency: 'BDT',
+          ),
         ),
-      ),
-    );
-    expect(await sms.dataRevision(), 0);
-    await service(llm).process();
-    expect(await sms.dataRevision(), 1);
-    await db.close();
-  });
+      );
+      expect(await sms.dataRevision(), 0);
+      await service(llm).process();
+      expect(await sms.dataRevision(), 1);
+      await db.close();
+    },
+  );
 
   test('does not bump the data revision when the queue is empty', () async {
     final llm = _FakeLlm(result: const ClassifyResult.none());
@@ -258,6 +261,28 @@ void main() {
       // Claimed nothing, so no matcher run and no data-change bump.
       expect(afterPassRuns, 0);
       expect(await sms.dataRevision(), 0);
+      await db.close();
+    },
+  );
+
+  test(
+    'schedules a reclaim catch-up when only an orphaned sending row remains',
+    () async {
+      final held = await queue('CHK', content: 'held');
+      await sms.claim(held, now); // sending; no queued rows remain
+      Duration? scheduled;
+      var calls = 0;
+      await service(
+        _FakeLlm(result: const ClassifyResult.none()),
+        reschedule: (d) async {
+          scheduled = d;
+          calls++;
+        },
+      ).process();
+      // A sole in-flight row must NOT cancel the catch-up; it schedules a wake at
+      // ~staleAfter so a later pass can reclaim it if its holder died.
+      expect(calls, 1);
+      expect(scheduled, ProcessingService.staleAfter);
       await db.close();
     },
   );

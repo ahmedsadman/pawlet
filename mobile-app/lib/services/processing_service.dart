@@ -329,18 +329,36 @@ class ProcessingService {
     return true;
   }
 
-  /// Computes the next background catch-up from the queue state and hands it to
-  /// [reschedule]: a delay until the soonest pending retry, or null (cancel) when
-  /// nothing is queued. Due-now rows (or an offline backlog) yield zero delay.
+  /// Computes the next background catch-up and hands it to [reschedule]: a delay
+  /// until the soonest thing that needs a pass, or null (cancel) when nothing is
+  /// pending. Two sources feed the wake time:
+  /// - the soonest queued retry (`next_attempt_at`), and
+  /// - the stale-reclaim time of any in-flight row (`updated_at + staleAfter`).
+  ///
+  /// The second source is essential under the single global slot: an orphaned
+  /// `sending` row (holder isolate died) blocks *every* other message, and if no
+  /// queued rows remain there'd otherwise be nothing scheduled to run
+  /// [SmsRepository.reclaimStale] — the whole queue would stall until the user
+  /// manually reopened the app. Due-now rows (or an offline backlog) yield zero.
   Future<void> _rescheduleNext() async {
     final cb = reschedule;
     if (cb == null) return;
-    final soonest = await smsRepository.soonestQueuedAttempt();
-    if (soonest == null) {
+    final now = _clock();
+
+    final wakeTimes = <int>[];
+    final soonestQueued = await smsRepository.soonestQueuedAttempt();
+    if (soonestQueued != null) wakeTimes.add(soonestQueued);
+    final oldestSending = await smsRepository.oldestSendingAt();
+    if (oldestSending != null) {
+      wakeTimes.add(oldestSending + staleAfter.inMilliseconds);
+    }
+
+    if (wakeTimes.isEmpty) {
       await cb(null);
       return;
     }
-    final delayMs = soonest - _clock();
+    final wake = wakeTimes.reduce((a, b) => a < b ? a : b);
+    final delayMs = wake - now;
     await cb(Duration(milliseconds: delayMs < 0 ? 0 : delayMs));
   }
 
