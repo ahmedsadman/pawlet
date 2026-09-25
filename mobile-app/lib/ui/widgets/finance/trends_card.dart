@@ -97,6 +97,7 @@ class _TrendsCardState extends ConsumerState<TrendsCard> {
               ),
               const SizedBox(height: 16),
               async.when(
+                skipLoadingOnReload: true,
                 loading: () => const _TrendsSkeleton(),
                 error: (_, _) => const FinanceError('Could not load trends.'),
                 data: (result) => _tiles(result.data, currency, hidden),

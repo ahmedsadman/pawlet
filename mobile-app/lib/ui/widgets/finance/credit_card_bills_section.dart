@@ -68,6 +68,7 @@ class _BankBillsState extends ConsumerState<_BankBills> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: async.when(
+        skipLoadingOnReload: true,
         loading: () =>
             _header(theme, trailing: const Skeleton(width: 56, height: 12)),
         error: (_, _) => _header(theme, subtitle: 'Could not load bills.'),
