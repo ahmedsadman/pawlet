@@ -28,6 +28,8 @@ update these docs to provide the latest and accurate info
 
 - [Message pipeline](message-pipeline.md) — how an SMS is received, queued, processed,
   and retried, including offline, reconnect, and backoff behavior.
+- [Backup & Restore](backup-restore.md) — exporting all local data to a JSON file and
+  restoring it (replace-all, IDs preserved), including the expected file format.
 
 ## RED FLAGS - STOP
 
