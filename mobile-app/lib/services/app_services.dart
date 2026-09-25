@@ -48,6 +48,7 @@ class AppServices {
     required Database database,
     required SharedPreferences prefs,
     required String apiKey,
+    void Function()? onDataChanged,
   }) {
     final smsRepository = SmsRepository(database);
     final banksRepository = BanksRepository(database);
@@ -73,6 +74,7 @@ class AppServices {
       reschedule: (delay) => delay == null
           ? BackgroundWorker.cancelCatchUp()
           : BackgroundWorker.scheduleCatchUp(delay),
+      onChanged: onDataChanged,
     );
     return AppServices(
       database: database,
