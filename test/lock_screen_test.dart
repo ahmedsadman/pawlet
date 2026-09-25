@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:meowni/state/auth_providers.dart';
-import 'package:meowni/theme/catppuccin_theme.dart';
-import 'package:meowni/ui/security/lock_screen.dart';
+import 'package:pawlet/state/auth_providers.dart';
+import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/security/lock_screen.dart';
 
 import 'support/auth_test_overrides.dart';
 

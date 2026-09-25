@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/models/sms_record.dart';
-import 'package:meowni/services/app_services.dart';
-import 'package:meowni/state/messages_providers.dart';
-import 'package:meowni/state/providers.dart';
-import 'package:meowni/theme/catppuccin_theme.dart';
-import 'package:meowni/ui/messages_page.dart';
+import 'package:pawlet/models/sms_record.dart';
+import 'package:pawlet/services/app_services.dart';
+import 'package:pawlet/state/messages_providers.dart';
+import 'package:pawlet/state/providers.dart';
+import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/messages_page.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

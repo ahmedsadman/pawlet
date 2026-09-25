@@ -8,7 +8,7 @@ import '../state/finance_providers.dart';
 import '../state/providers.dart';
 import '../theme/catppuccin_theme.dart';
 
-/// Bank management: list, add, edit and delete the accounts whose SMS Meowni
+/// Bank management: list, add, edit and delete the accounts whose SMS Pawlet
 /// watches. Built from the same components/theme as the Finance tab.
 class BanksPage extends ConsumerWidget {
   const BanksPage({super.key});
@@ -112,7 +112,7 @@ class _EmptyBanks extends StatelessWidget {
             Text('No banks yet', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(
-              'Add a bank so Meowni can recognize its SMS.',
+              'Add a bank so Pawlet can recognize its SMS.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.outline,
@@ -306,7 +306,7 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Pick your bank from the list — Meowni recognizes its SMS '
+              'Pick your bank from the list — Pawlet recognizes its SMS '
               'automatically, no sender names to type. Missing a bank? Let us '
               'know and it will be added.',
               style: theme.textTheme.bodySmall?.copyWith(

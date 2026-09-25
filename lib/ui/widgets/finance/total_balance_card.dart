@@ -12,7 +12,7 @@ import 'bank_breakdown_list.dart';
 
 /// Total deposit balance across accounts. Tapping toggles a per-bank breakdown
 /// (hidden by default). When the user has no banks yet, the card becomes an
-/// "Add Bank" call-to-action (Meowni's first-run entry point).
+/// "Add Bank" call-to-action (Pawlet's first-run entry point).
 class TotalBalanceCard extends ConsumerStatefulWidget {
   const TotalBalanceCard({super.key});
 
@@ -191,7 +191,7 @@ class _AddBankCta extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Meowni reads your bank SMS on this device and records transactions '
+              'Pawlet reads your bank SMS on this device and records transactions '
               'and bills. Add a bank so it knows which senders to watch.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: AppTheme.flavor.subtext0,

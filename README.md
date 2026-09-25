@@ -1,6 +1,6 @@
-# Meowni
+# Pawlet
 
-Meowni is an on-device Android app that turns your bank SMS into a personal-finance
+Pawlet is an on-device Android app that turns your bank SMS into a personal-finance
 dashboard — transactions, bills, balances, spending trends. It runs with **no backend**:
 everything happens on the phone. The only network calls are to a large language model
 (OpenRouter's free models) to read each message.
@@ -8,7 +8,7 @@ everything happens on the phone. The only network calls are to a large language 
 ## What it does
 
 The phone receives bank SMS all the time — debits, credits, credit-card statements, OTPs,
-promotions. Meowni watches those messages, works out which ones describe real money movements,
+promotions. Pawlet watches those messages, works out which ones describe real money movements,
 pulls the numbers out of them, and keeps a running picture of your finances. All of the storage,
 matching, and aggregation happens locally in an on-device database.
 
@@ -20,7 +20,7 @@ time so nothing is lost if the phone is offline or the model is rate-limited.
 1. **Capture** — an incoming SMS is persisted immediately into a local queue. Capture and
    processing are separate, so a message is never dropped just because processing failed.
 
-2. **Sender gate (local, free)** — before spending any LLM call, Meowni checks whether the
+2. **Sender gate (local, free)** — before spending any LLM call, Pawlet checks whether the
    message could plausibly be from one of *your* banks. You add banks from a curated catalog;
    each bank carries a set of internal matcher strings. A message passes the gate if one of
    those matchers appears in the sender, or if the message body contains one of your registered
@@ -35,7 +35,7 @@ time so nothing is lost if the phone is offline or the model is rate-limited.
    fully-parsed response.
 
 4. **Assign the bank deterministically** — the model is **not** asked which bank the message is
-   from. Because the sender/card matchers are exact, Meowni assigns the bank itself: a
+   from. Because the sender/card matchers are exact, Pawlet assigns the bank itself: a
    credit-card number in the body wins; otherwise the single bank whose matcher hit the sender.
    An ambiguous sender is left unlinked rather than guessed. This removes a whole class of
    bugs where the model returned a near-miss bank name that failed to link.
@@ -45,7 +45,7 @@ time so nothing is lost if the phone is offline or the model is rate-limited.
    credit-card number. Deposit-account balances are updated from the message when the currency
    matches and the message is newer than the last known balance.
 
-6. **Link related records** — separately, Meowni looks for relationships between records it
+6. **Link related records** — separately, Pawlet looks for relationships between records it
    already has: a debit on one account paired with a credit on another (a transfer), and a
    credit-card payment matched to the bill it paid. These run opportunistically over a bounded
    recent window, which is what powers the transfer icons and the paid/due status on bills.
@@ -58,7 +58,7 @@ the original app (trends over rolling windows, monthly summaries, balances, spen
 - **Retry with backoff** — free models get rate-limited, so a failed message is requeued with a
   capped exponential backoff and retried later; only a genuinely fatal error (bad key) fails it
   outright. Everything is designed so processing can stop and resume at any point.
-- **Adaptive background wakeups** — instead of waking on a fixed timer, Meowni only schedules a
+- **Adaptive background wakeups** — instead of waking on a fixed timer, Pawlet only schedules a
   background catch-up when there is actually pending work (offline backlog or a retry waiting on
   its backoff), and cancels it when the queue drains. An idle app does no background work.
 - **Incoming messages are handled immediately** while the app is alive; the background scheduling
@@ -116,11 +116,11 @@ incoming SMS would take.
 
 It is compiled in only when `kDebugMode` / `BuildConfig.DEBUG` is true, so it is **never present
 in a release build**. Debug builds also use a `.debug` application-id suffix and the label
-"Meowni Debug", so they install alongside a release build.
+"Pawlet Debug", so they install alongside a release build.
 
 **How it works:** a debug-only broadcast receiver listens for the action
-`com.meowni.meowni.INJECT_SMS`, reads `sender` and `content` string extras, and forwards them
-over the `meowni/debug` method channel to the Dart side, which pushes them into the normal
+`com.pastabyte.pawlet.INJECT_SMS`, reads `sender` and `content` string extras, and forwards them
+over the `pawlet/debug` method channel to the Dart side, which pushes them into the normal
 "incoming raw SMS" entry point. From there they queue, gate, get classified, and get written
 exactly like a real message.
 
@@ -135,8 +135,8 @@ exactly like a real message.
 
 ```bash
 adb -s <device> shell "am broadcast \
-  -a com.meowni.meowni.INJECT_SMS \
-  -p com.meowni.meowni.debug \
+  -a com.pastabyte.pawlet.INJECT_SMS \
+  -p com.pastabyte.pawlet.debug \
   --es sender 'EBL' \
   --es content 'Cash withdrawal of BDT 5000.00 from ATM. Available Balance: BDT 152300.00'"
 ```
@@ -151,10 +151,10 @@ receiver silently drops the message.
 There is no sqlite CLI on a stock device, so pull the database and read it on the host:
 
 ```bash
-adb -s <device> exec-out run-as com.meowni.meowni.debug cat databases/meowni.db > /tmp/meowni.db
+adb -s <device> exec-out run-as com.pastabyte.pawlet.debug cat databases/pawlet.db > /tmp/pawlet.db
 python3 - <<'PY'
 import sqlite3
-db = sqlite3.connect('/tmp/meowni.db')
+db = sqlite3.connect('/tmp/pawlet.db')
 for row in db.execute("select id, sender, status, category from sms_records order by id"):
     print(row)
 PY

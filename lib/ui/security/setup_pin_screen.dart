@@ -109,7 +109,7 @@ class _SetupPinScreenState extends ConsumerState<SetupPinScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Use your fingerprint or face to unlock Meowni. '
+                'Use your fingerprint or face to unlock Pawlet. '
                 'You can change this later in Settings.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(

@@ -15,13 +15,13 @@ import 'ui/security/lock_screen.dart';
 import 'ui/security/setup_pin_screen.dart';
 import 'ui/settings_page.dart';
 
-class MeowniApp extends StatelessWidget {
-  const MeowniApp({super.key});
+class PawletApp extends StatelessWidget {
+  const PawletApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Meowni',
+      title: 'Pawlet',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       home: const AuthGate(child: RootShell()),
@@ -131,10 +131,10 @@ class _RootShellState extends ConsumerState<RootShell>
   }
 
   /// Debug-only: lets `adb` inject a fake SMS (see MainActivity's
-  /// com.meowni.meowni.INJECT_SMS receiver) so the pipeline can be exercised
+  /// com.pastabyte.pawlet.INJECT_SMS receiver) so the pipeline can be exercised
   /// without a real message. Never installed in release builds.
   void _installDebugInjector() {
-    const MethodChannel('meowni/debug').setMethodCallHandler((call) async {
+    const MethodChannel('pawlet/debug').setMethodCallHandler((call) async {
       if (call.method == 'injectSms') {
         final args = (call.arguments as Map).cast<String, dynamic>();
         await ref

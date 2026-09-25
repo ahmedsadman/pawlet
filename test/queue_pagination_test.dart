@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/data/sms_repository.dart';
-import 'package:meowni/state/messages_providers.dart';
-import 'package:meowni/state/providers.dart';
+import 'package:pawlet/data/sms_repository.dart';
+import 'package:pawlet/state/messages_providers.dart';
+import 'package:pawlet/state/providers.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/db_test_helpers.dart';

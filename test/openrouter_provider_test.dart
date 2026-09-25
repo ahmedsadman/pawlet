@@ -3,9 +3,9 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:meowni/services/llm/llm_provider.dart';
-import 'package:meowni/services/llm/openrouter_provider.dart';
-import 'package:meowni/services/llm/prompts.dart';
+import 'package:pawlet/services/llm/llm_provider.dart';
+import 'package:pawlet/services/llm/openrouter_provider.dart';
+import 'package:pawlet/services/llm/prompts.dart';
 import 'package:mocktail/mocktail.dart';
 
 class _MockClient extends Mock implements http.Client {}

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/utils/date_range.dart';
+import 'package:pawlet/utils/date_range.dart';
 
 void main() {
   final now = DateTime(2025, 6, 15, 10, 30);

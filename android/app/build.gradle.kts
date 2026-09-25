@@ -17,7 +17,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.meowni.meowni"
+    namespace = "com.pastabyte.pawlet"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -36,7 +36,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.meowni.meowni"
+        applicationId = "com.pastabyte.pawlet"
         // flutter_secure_storage and flutter_contacts require API 24+.
         minSdk = maxOf(24, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
@@ -44,7 +44,7 @@ android {
         versionName = flutter.versionName
         // Default launcher name for release/profile; debug overrides it below.
         // Referenced by the manifest as @string/app_name.
-        resValue("string", "app_name", "Meowni")
+        resValue("string", "app_name", "Pawlet")
     }
 
     signingConfigs {
@@ -72,7 +72,7 @@ android {
             // Install alongside the release app as a separate, isolated package
             // (own data/PIN/cache) so debugging never touches the real install.
             applicationIdSuffix = ".debug"
-            resValue("string", "app_name", "Meowni Debug")
+            resValue("string", "app_name", "Pawlet Debug")
         }
     }
 }

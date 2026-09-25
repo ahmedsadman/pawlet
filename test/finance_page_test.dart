@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/models/finance/bank.dart';
-import 'package:meowni/state/providers.dart';
-import 'package:meowni/theme/catppuccin_theme.dart';
-import 'package:meowni/ui/finance_page.dart';
+import 'package:pawlet/models/finance/bank.dart';
+import 'package:pawlet/state/providers.dart';
+import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/finance_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/finance_overrides.dart';
@@ -37,11 +37,11 @@ Future<void> _pump(WidgetTester tester, List<Bank> banks) async {
 }
 
 void main() {
-  testWidgets('empty database shows the Meowni header and Add Bank CTA', (
+  testWidgets('empty database shows the Pawlet header and Add Bank CTA', (
     tester,
   ) async {
     await _pump(tester, const []);
-    expect(find.widgetWithText(AppBar, 'Meowni'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, 'Pawlet'), findsOneWidget);
     expect(find.text('Add a bank to get started'), findsOneWidget);
   });
 

@@ -35,7 +35,7 @@ Three sources feed the same entry point (`AppServices.handleIncomingRaw`):
   builds its own service bundle from scratch (`AppServices.bootstrap` — own database
   handle, own HTTP client, own plugin registration) and disposes it when done.
 - **Debug injector:** `adb` broadcasts a fake message that arrives over the
-  `meowni/debug` method channel (debug builds only). See the app README.
+  `pawlet/debug` method channel (debug builds only). See the app README.
 
 Capture then does, in order:
 

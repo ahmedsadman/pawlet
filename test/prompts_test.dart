@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/services/llm/prompts.dart';
+import 'package:pawlet/services/llm/prompts.dart';
 
 void main() {
   test('fusedJsonSchema is strict and pins the exact output shape', () {

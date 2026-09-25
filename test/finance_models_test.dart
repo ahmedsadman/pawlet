@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/models/finance/bank.dart';
-import 'package:meowni/models/finance/bill.dart';
-import 'package:meowni/models/finance/sms_message.dart';
-import 'package:meowni/models/finance/summary.dart';
-import 'package:meowni/models/finance/transaction.dart';
-import 'package:meowni/models/finance/transactions_page.dart';
-import 'package:meowni/models/finance/trends.dart';
+import 'package:pawlet/models/finance/bank.dart';
+import 'package:pawlet/models/finance/bill.dart';
+import 'package:pawlet/models/finance/sms_message.dart';
+import 'package:pawlet/models/finance/summary.dart';
+import 'package:pawlet/models/finance/transaction.dart';
+import 'package:pawlet/models/finance/transactions_page.dart';
+import 'package:pawlet/models/finance/trends.dart';
 
 void main() {
   test('Bank parses a deposit account', () {

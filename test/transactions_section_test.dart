@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:meowni/data/finance_repository.dart';
-import 'package:meowni/data/settings_repository.dart';
-import 'package:meowni/models/finance/sms_message.dart';
-import 'package:meowni/models/finance/transaction.dart';
-import 'package:meowni/models/finance/transactions_page.dart';
-import 'package:meowni/state/finance_providers.dart';
-import 'package:meowni/state/providers.dart';
-import 'package:meowni/theme/catppuccin_theme.dart';
-import 'package:meowni/ui/widgets/finance/transactions_section.dart';
+import 'package:pawlet/data/finance_repository.dart';
+import 'package:pawlet/data/settings_repository.dart';
+import 'package:pawlet/models/finance/sms_message.dart';
+import 'package:pawlet/models/finance/transaction.dart';
+import 'package:pawlet/models/finance/transactions_page.dart';
+import 'package:pawlet/state/finance_providers.dart';
+import 'package:pawlet/state/providers.dart';
+import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/widgets/finance/transactions_section.dart';
 
 TransactionItem _tx(int id, TxType type, String amount) => TransactionItem(
   id: id,

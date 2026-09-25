@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/data/database.dart';
-import 'package:meowni/data/settings_repository.dart';
-import 'package:meowni/services/backup_service.dart';
+import 'package:pawlet/data/database.dart';
+import 'package:pawlet/data/settings_repository.dart';
+import 'package:pawlet/services/backup_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -80,7 +80,7 @@ void main() {
   test('rejects an unknown backup version', () async {
     final db = await openTestDb();
     final svc = BackupService(db: db, settings: await settings());
-    final bad = jsonEncode({'meowni_backup_version': 999, 'database': {}});
+    final bad = jsonEncode({'pawlet_backup_version': 999, 'database': {}});
     expect(() => svc.importJson(bad), throwsA(isA<BackupFormatException>()));
     await db.close();
   });
@@ -100,7 +100,7 @@ void main() {
     final svc = BackupService(db: db, settings: await settings());
     // Correct version but the `database` section omits the required tables.
     final bad = jsonEncode({
-      'meowni_backup_version': 1,
+      'pawlet_backup_version': 1,
       'database': {AppDatabase.smsTable: <Object?>[]},
     });
     expect(() => svc.importJson(bad), throwsA(isA<BackupFormatException>()));
@@ -112,7 +112,7 @@ void main() {
     final db = await openTestDb();
     // Well-formed DB payload (all four tables empty) but no `settings` key.
     final json = jsonEncode({
-      'meowni_backup_version': 1,
+      'pawlet_backup_version': 1,
       'database': {
         AppDatabase.smsTable: <Object?>[],
         AppDatabase.banksTable: <Object?>[],

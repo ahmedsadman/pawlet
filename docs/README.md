@@ -1,4 +1,4 @@
-# Meowni docs
+# Pawlet docs
 
 Technical wiki for how the app behaves — written for **humans**, not machines. Although not targeted for
 LLM/Coding Agent usage, these docs will be mostly maintained by LLM/agents for the humans. LLMs can

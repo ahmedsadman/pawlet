@@ -19,7 +19,7 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin;
   final SharedPreferences? _prefs;
 
-  static const String _channelId = 'meowni_failures';
+  static const String _channelId = 'pawlet_failures';
   static const String _channelName = 'Processing failures';
   static const String _channelDescription =
       'Alerts when SMS messages cannot be processed';

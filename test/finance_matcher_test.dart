@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/services/finance/finance_matcher.dart';
+import 'package:pawlet/services/finance/finance_matcher.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/db_test_helpers.dart';

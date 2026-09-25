@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/models/finance/bank.dart';
-import 'package:meowni/services/classification/classifier.dart';
-import 'package:meowni/services/llm/llm_provider.dart';
+import 'package:pawlet/models/finance/bank.dart';
+import 'package:pawlet/services/classification/classifier.dart';
+import 'package:pawlet/services/llm/llm_provider.dart';
 
 /// Records invocations and returns a canned result, so we can assert whether the
 /// LLM was called and how the outcome is routed.

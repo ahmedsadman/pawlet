@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/data/finance_repository.dart';
-import 'package:meowni/models/finance/transaction.dart';
-import 'package:meowni/models/finance/trends.dart';
-import 'package:meowni/models/finance/tx_query.dart';
-import 'package:meowni/utils/date_range.dart';
+import 'package:pawlet/data/finance_repository.dart';
+import 'package:pawlet/models/finance/transaction.dart';
+import 'package:pawlet/models/finance/trends.dart';
+import 'package:pawlet/models/finance/tx_query.dart';
+import 'package:pawlet/utils/date_range.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/db_test_helpers.dart';

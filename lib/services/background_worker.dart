@@ -5,8 +5,8 @@ import 'package:workmanager/workmanager.dart';
 
 import 'app_services.dart';
 
-const String _processTask = 'meowni.process';
-const String _catchUpName = 'meowni.process.catchup';
+const String _processTask = 'pawlet.process';
+const String _catchUpName = 'pawlet.process.catchup';
 
 /// WorkManager entry point. Best-effort catch-up when the app is killed (a
 /// backlog queued while offline, or a message in retry backoff). Must be

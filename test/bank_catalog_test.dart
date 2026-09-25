@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/data/bank_catalog.dart';
+import 'package:pawlet/data/bank_catalog.dart';
 
 void main() {
   test('catalog exposes labels with lowercase matchers', () {

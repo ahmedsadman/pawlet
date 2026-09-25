@@ -25,7 +25,7 @@ class BiometricService {
   Future<bool> authenticate() async {
     try {
       return await _auth.authenticate(
-        localizedReason: 'Unlock Meowni',
+        localizedReason: 'Unlock Pawlet',
         biometricOnly: true,
         persistAcrossBackgrounding: true,
       );

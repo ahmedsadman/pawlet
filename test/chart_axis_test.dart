@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/utils/chart_axis.dart';
+import 'package:pawlet/utils/chart_axis.dart';
 
 void main() {
   test('rounds up to a clean max with headroom above the data', () {

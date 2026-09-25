@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/models/finance/bank.dart';
-import 'package:meowni/services/classification/sender_matcher.dart';
+import 'package:pawlet/models/finance/bank.dart';
+import 'package:pawlet/services/classification/sender_matcher.dart';
 
 Bank _bank(
   String name, {

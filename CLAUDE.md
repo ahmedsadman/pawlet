@@ -1,4 +1,4 @@
-# Meowni - CLAUDE.md
+# Pawlet - CLAUDE.md
 
 # Rules
 
