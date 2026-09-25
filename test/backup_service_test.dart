@@ -94,4 +94,38 @@ void main() {
     );
     await db.close();
   });
+
+  test('rejects a valid-version backup missing a table', () async {
+    final db = await openTestDb();
+    final svc = BackupService(db: db, settings: await settings());
+    // Correct version but the `database` section omits the required tables.
+    final bad = jsonEncode({
+      'meowni_backup_version': 1,
+      'database': {AppDatabase.smsTable: <Object?>[]},
+    });
+    expect(() => svc.importJson(bad), throwsA(isA<BackupFormatException>()));
+    await db.close();
+  });
+
+  test('clears settings when the backup omits the settings section', () async {
+    final prefs = await settings({'currency': 'USD', 'hide_balance': true});
+    final db = await openTestDb();
+    // Well-formed DB payload (all four tables empty) but no `settings` key.
+    final json = jsonEncode({
+      'meowni_backup_version': 1,
+      'database': {
+        AppDatabase.smsTable: <Object?>[],
+        AppDatabase.banksTable: <Object?>[],
+        AppDatabase.transactionsTable: <Object?>[],
+        AppDatabase.billsTable: <Object?>[],
+      },
+    });
+
+    await BackupService(db: db, settings: prefs).importJson(json);
+    // Absent settings section => managed keys reset to their defaults (replace).
+    expect(prefs.currency, 'BDT');
+    expect(prefs.hideBalance, isFalse);
+
+    await db.close();
+  });
 }

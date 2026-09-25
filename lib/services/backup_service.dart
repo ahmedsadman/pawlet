@@ -24,7 +24,9 @@ class BackupFormatException implements Exception {
 /// live in SecureStore and are deliberately excluded. Restore is replace-all:
 /// existing rows are wiped and the backup's rows are re-inserted with their
 /// original ids (so `transactions`/`bills` references stay intact), inside one
-/// DB transaction.
+/// DB transaction. User settings are applied *after* that transaction commits
+/// (SharedPreferences has no shared transaction); they are non-referential, so
+/// a settings write failing after the DB restore leaves the DB intact.
 class BackupService {
   // Named params can't be private, so `this._db`/`this._settings` initializing
   // formals aren't possible here — assign the private fields explicitly.
