@@ -41,6 +41,19 @@ void main() {
     await db.close();
   });
 
+  test('bumpDataRevision atomically increments the change token', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    // Absent token reads as 0.
+    expect(await repo.dataRevision(), 0);
+    await repo.bumpDataRevision();
+    expect(await repo.dataRevision(), 1);
+    await repo.bumpDataRevision();
+    await repo.bumpDataRevision();
+    expect(await repo.dataRevision(), 3);
+    await db.close();
+  });
+
   test('claim is atomic; reclaimStale returns orphaned sending rows', () async {
     final db = await openTestDb();
     final repo = SmsRepository(db);
