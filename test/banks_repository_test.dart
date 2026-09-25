@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/data/banks_repository.dart';
+import 'package:pawlet/data/banks_repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/db_test_helpers.dart';

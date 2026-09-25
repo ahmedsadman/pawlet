@@ -1,6 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Local user settings backed by SharedPreferences. Meowni has no server, so
+/// Local user settings backed by SharedPreferences. Pawlet has no server, so
 /// there is no webhook URL; instead it holds the normalized currency and the
 /// finance-view preferences the UI persists. (LLM API key / model are added in
 /// a later phase.)

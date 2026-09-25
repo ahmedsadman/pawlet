@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/models/finance/transaction.dart';
-import 'package:meowni/theme/catppuccin_theme.dart';
-import 'package:meowni/ui/widgets/finance/amount_text.dart';
+import 'package:pawlet/models/finance/transaction.dart';
+import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/widgets/finance/amount_text.dart';
 
 import 'support/balance_test_overrides.dart';
 

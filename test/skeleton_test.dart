@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/theme/catppuccin_theme.dart';
-import 'package:meowni/ui/widgets/skeleton.dart';
+import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/widgets/skeleton.dart';
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(

@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:meowni/data/settings_repository.dart';
-import 'package:meowni/state/providers.dart';
+import 'package:pawlet/data/settings_repository.dart';
+import 'package:pawlet/state/providers.dart';
 
 void main() {
   ProviderContainer containerFor(SettingsRepository repo) {

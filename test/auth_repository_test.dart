@@ -1,7 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:meowni/data/auth_repository.dart';
+import 'package:pawlet/data/auth_repository.dart';
 
 class _MockStorage extends Mock implements FlutterSecureStorage {}
 

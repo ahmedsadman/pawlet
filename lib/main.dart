@@ -27,7 +27,7 @@ Future<void> main() async {
         databaseProvider.overrideWithValue(database),
         bootstrapApiKeyProvider.overrideWithValue(apiKey),
       ],
-      child: const MeowniApp(),
+      child: const PawletApp(),
     ),
   );
 }

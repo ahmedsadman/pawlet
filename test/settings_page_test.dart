@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/data/finance_repository.dart';
-import 'package:meowni/models/finance/bank.dart';
-import 'package:meowni/state/finance_providers.dart';
-import 'package:meowni/state/providers.dart';
-import 'package:meowni/theme/catppuccin_theme.dart';
-import 'package:meowni/ui/settings_page.dart';
+import 'package:pawlet/data/finance_repository.dart';
+import 'package:pawlet/models/finance/bank.dart';
+import 'package:pawlet/state/finance_providers.dart';
+import 'package:pawlet/state/providers.dart';
+import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/settings_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<(Widget, ProviderContainer)> _app(List<Override> extra) async {

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:meowni/state/auth_providers.dart';
+import 'package:pawlet/state/auth_providers.dart';
 
 import 'support/auth_test_overrides.dart';
 

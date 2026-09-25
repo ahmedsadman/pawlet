@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:mocktail/mocktail.dart';
-import 'package:meowni/data/auth_repository.dart';
-import 'package:meowni/services/biometric_service.dart';
-import 'package:meowni/services/screen_lock_channel.dart';
-import 'package:meowni/state/auth_providers.dart';
+import 'package:pawlet/data/auth_repository.dart';
+import 'package:pawlet/services/biometric_service.dart';
+import 'package:pawlet/services/screen_lock_channel.dart';
+import 'package:pawlet/state/auth_providers.dart';
 
 class MockAuthRepository extends Mock implements AuthRepository {}
 

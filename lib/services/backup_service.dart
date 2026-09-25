@@ -55,7 +55,7 @@ class BackupService {
       database[table] = await _db.query(table);
     }
     return jsonEncode({
-      'meowni_backup_version': backupVersion,
+      'pawlet_backup_version': backupVersion,
       'exported_at': nowMs ?? DateTime.now().millisecondsSinceEpoch,
       'database': database,
       'settings': _settings.exportAll(),
@@ -76,9 +76,9 @@ class BackupService {
       throw BackupFormatException('Backup root must be a JSON object.');
     }
     final root = decoded.cast<String, Object?>();
-    if (root['meowni_backup_version'] != backupVersion) {
+    if (root['pawlet_backup_version'] != backupVersion) {
       throw BackupFormatException(
-        'Unsupported backup version: ${root['meowni_backup_version']}.',
+        'Unsupported backup version: ${root['pawlet_backup_version']}.',
       );
     }
     final database = root['database'];

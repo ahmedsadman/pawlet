@@ -77,7 +77,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     return Scaffold(
       body: PinScreenLayout(
         title: 'Enter PIN',
-        subtitle: 'Unlock Meowni to continue',
+        subtitle: 'Unlock Pawlet to continue',
         error: _error ? 'Incorrect PIN. Try again.' : null,
         dots: PinDots(length: 4, filled: _pin.length, error: _error),
         pad: PinPad(

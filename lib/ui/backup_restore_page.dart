@@ -38,12 +38,12 @@ class _BackupRestorePageState extends ConsumerState<BackupRestorePage> {
       final json = await ref.read(backupServiceProvider).exportJson();
       final dir = await getTemporaryDirectory();
       final stamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File('${dir.path}/meowni-backup-$stamp.json');
+      final file = File('${dir.path}/pawlet-backup-$stamp.json');
       await file.writeAsString(json);
       try {
         await SharePlus.instance.share(
           ShareParams(
-            subject: 'Meowni backup',
+            subject: 'Pawlet backup',
             files: [XFile(file.path, mimeType: 'application/json')],
           ),
         );
@@ -102,7 +102,7 @@ class _BackupRestorePageState extends ConsumerState<BackupRestorePage> {
         builder: (ctx) => AlertDialog(
           title: const Text('Restore complete'),
           content: const Text(
-            'Your data has been restored. Restart Meowni to make sure every '
+            'Your data has been restored. Restart Pawlet to make sure every '
             'screen reflects the change.',
           ),
           actions: [

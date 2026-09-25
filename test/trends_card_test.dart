@@ -4,13 +4,13 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/data/finance_repository.dart';
-import 'package:meowni/models/finance/trends.dart';
-import 'package:meowni/state/finance_providers.dart';
-import 'package:meowni/theme/catppuccin_theme.dart';
-import 'package:meowni/ui/widgets/finance/finance_placeholders.dart';
-import 'package:meowni/ui/widgets/finance/trends_card.dart';
-import 'package:meowni/ui/widgets/skeleton.dart';
+import 'package:pawlet/data/finance_repository.dart';
+import 'package:pawlet/models/finance/trends.dart';
+import 'package:pawlet/state/finance_providers.dart';
+import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/widgets/finance/finance_placeholders.dart';
+import 'package:pawlet/ui/widgets/finance/trends_card.dart';
+import 'package:pawlet/ui/widgets/skeleton.dart';
 
 import 'support/balance_test_overrides.dart';
 

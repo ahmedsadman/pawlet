@@ -78,7 +78,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (!mounted) return;
     _toast(
       granted
-          ? 'Battery optimization disabled for Meowni'
+          ? 'Battery optimization disabled for Pawlet'
           : 'Permission not granted',
     );
   }
@@ -157,7 +157,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Text('Background delivery', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
           Text(
-            'Disable battery optimization so Meowni can keep processing messages '
+            'Disable battery optimization so Pawlet can keep processing messages '
             'in the background.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.outline,
@@ -196,7 +196,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Text('Privacy', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
           Text(
-            'Everything Meowni knows stays on this device — nothing is uploaded '
+            'Everything Pawlet knows stays on this device — nothing is uploaded '
             'or synced. To read a message we send only its text for one-time '
             'metadata extraction, with no name, number, or identifying detail '
             'attached.',

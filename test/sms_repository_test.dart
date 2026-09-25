@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/data/sms_repository.dart';
-import 'package:meowni/models/sms_record.dart';
+import 'package:pawlet/data/sms_repository.dart';
+import 'package:pawlet/models/sms_record.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/db_test_helpers.dart';

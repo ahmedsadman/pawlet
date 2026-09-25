@@ -1,4 +1,4 @@
-import 'package:meowni/data/database.dart';
+import 'package:pawlet/data/database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// Opens a fresh in-memory database with the app schema (ffi-backed for tests).
