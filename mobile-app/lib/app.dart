@@ -168,6 +168,9 @@ class _RootShellState extends ConsumerState<RootShell>
 
   @override
   Widget build(BuildContext context) {
+    // Start the foreground data-change poller (real app only; test mode injects
+    // its own widgets and skips the plugin-backed providers).
+    if (widget.pages == null) ref.watch(dataRevisionSyncProvider);
     final index = ref.watch(selectedTabProvider);
     return Scaffold(
       body: IndexedStack(index: index, children: _pages),

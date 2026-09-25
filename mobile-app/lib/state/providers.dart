@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -114,6 +116,63 @@ class DataRevision extends Notifier<int> {
 final dataRevisionProvider = NotifierProvider<DataRevision, int>(
   DataRevision.new,
 );
+
+/// Foreground bridge for cross-isolate data changes. A processing pass in ANY
+/// isolate (main, WorkManager catch-up, background-SMS) bumps a cheap DB token
+/// ([SmsRepository.dataRevision]); this polls that token on a timer and, when it
+/// moves, bumps [dataRevisionProvider] so History/Finance re-read. It's how the
+/// UI hears about writes made by background isolates it can't be signalled from.
+///
+/// The timer only does work while the app is foreground: when backgrounded the
+/// main isolate is frozen, so it doesn't fire (no idle battery cost). The token
+/// read is a single primary-key lookup on `app_meta` — sub-millisecond — and the
+/// expensive History/Finance reads run only on an actual change.
+class DataRevisionSync {
+  DataRevisionSync(
+    this._readToken,
+    this._bump, {
+    Duration interval = const Duration(seconds: 2),
+  }) {
+    _timer = Timer.periodic(interval, (_) => syncOnce());
+  }
+
+  final Future<int> Function() _readToken;
+  final void Function() _bump;
+
+  Timer? _timer;
+  int _last = -1; // -1 => not yet observed; first read always refreshes once
+  bool _busy = false;
+
+  /// Reads the token; bumps the revision on the first observation (to catch a
+  /// write that landed before polling started) and on every subsequent change.
+  /// Re-entrancy-guarded so a slow read can't overlap the next tick.
+  Future<void> syncOnce() async {
+    if (_busy) return;
+    _busy = true;
+    try {
+      final token = await _readToken();
+      if (token != _last) {
+        _last = token;
+        _bump();
+      }
+    } finally {
+      _busy = false;
+    }
+  }
+
+  void dispose() => _timer?.cancel();
+}
+
+/// Owns the [DataRevisionSync] for the app's lifetime (kept alive by RootShell).
+final dataRevisionSyncProvider = Provider<DataRevisionSync>((ref) {
+  final repo = ref.watch(smsRepositoryProvider);
+  final sync = DataRevisionSync(
+    repo.dataRevision,
+    () => ref.read(dataRevisionProvider.notifier).bump(),
+  );
+  ref.onDispose(sync.dispose);
+  return sync;
+});
 
 /// Whether monetary values are masked across the Finance tab. Persisted locally
 /// so the choice survives restarts.
