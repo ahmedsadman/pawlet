@@ -87,4 +87,22 @@ void main() {
     expect(find.widgetWithText(AppBar, 'Banks & Cards'), findsOneWidget);
     expect(find.text('No banks yet'), findsOneWidget);
   });
+
+  testWidgets('Backup & Restore navigates to the backup page', (tester) async {
+    final (widget, _) = await _app(const []);
+    await tester.pumpWidget(widget);
+    await tester.pump();
+
+    await tester.dragUntilVisible(
+      find.text('Backup & Restore'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.tap(find.text('Backup & Restore'));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(AppBar, 'Backup & Restore'), findsOneWidget);
+    expect(find.text('Back up to file'), findsOneWidget);
+    expect(find.text('Restore from file'), findsOneWidget);
+  });
 }

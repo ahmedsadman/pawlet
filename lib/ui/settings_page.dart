@@ -6,6 +6,7 @@ import '../services/permissions.dart';
 import '../state/auth_providers.dart';
 import '../state/finance_providers.dart';
 import '../state/providers.dart';
+import 'backup_restore_page.dart';
 import 'banks_page.dart';
 import 'security/change_pin_screen.dart';
 
@@ -136,6 +137,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
             value: _resolveContacts,
             onChanged: _setResolveContacts,
+          ),
+          const Divider(height: 32),
+          Text('Data', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.backup_outlined),
+            title: const Text('Backup & Restore'),
+            subtitle: const Text(
+              'Export or import all your data as a JSON file',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BackupRestorePage()),
+            ),
           ),
           const Divider(height: 32),
           Text('Background delivery', style: theme.textTheme.titleMedium),
