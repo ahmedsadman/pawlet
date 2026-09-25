@@ -128,20 +128,32 @@ call while one is running is ignored) and, before touching anything, requeues st
    `success` with its category; an `ignored` label → status `ignored` with the matching
    `ignore_reason`.
 
+Only **one message is processed at a time across the whole app**. The claim
+(`sms_repository.dart`) sets a row `sending` only when no other row is already `sending`,
+so all three isolates (main, background-SMS, WorkManager) share a single global in-flight
+slot — at most one LLM call runs at once. Records are taken oldest-first (FIFO); a
+retryable failure is rescheduled to a future backoff and the pass moves straight on to the
+next record, so a failing message never blocks the ones behind it. An orphaned `sending`
+row (its isolate died) is freed by the stale-reclaim step (§3, *Reclaim stale*), and the
+reschedule always leaves a wake scheduled while any row is `sending` so the slot can't stall
+forever.
+
 After the queue drains, deferred **relationship matchers** run once (transfer pairing,
 credit-card-payment ↔ bill), then the terminal-failure **count** is reconciled into
-notifications, a **throttled prune** runs (§9), a **data-changed signal** fires so the UI
-can refresh (see below), and the next background catch-up is (re)scheduled (§6).
+notifications, a **throttled prune** runs (§9), the **data-change token** is bumped (see
+below), and the next background catch-up is (re)scheduled (§6).
 
-**Keeping the UI fresh.** A pass that touched at least one record calls an `onChanged`
-hook (`lib/services/processing_service.dart`). In the UI isolate that hook bumps an
-in-memory revision counter (`dataRevisionProvider` in `lib/state/providers.dart`); the
-History and Finance providers watch it, so processed records surface — Queue → History
-moves, balances, transactions — with no manual pull-to-refresh. The app bumps the same
-counter on resume (`lib/app.dart`) to pick up anything written while it was backgrounded,
-including work done by the background isolate, which cannot signal the UI directly.
-Pull-to-refresh (§4) still works and is the fallback for the rare case of a
-background-isolate write while the app sits open and idle.
+**Keeping the UI fresh.** Any pass that changed data increments a DB-backed change token
+(`SmsRepository.bumpDataRevision`, an `app_meta` counter) — from *whichever* isolate ran,
+so background work counts too. While the app is foreground, the UI polls that token every
+couple of seconds (`DataRevisionSync` in `lib/state/providers.dart`, kept alive by
+`RootShell`); the read is a single primary-key lookup, and when the token moves it bumps an
+in-memory revision that History and Finance watch, so processed records surface — Queue →
+History moves, balances, transactions — with no manual pull-to-refresh. The token lives in
+the DB precisely because a background isolate can't signal the UI isolate's memory
+directly. On resume the app also bumps the in-memory revision (`lib/app.dart`) for an
+instant refresh after an app switch; a cold reopen reads fresh from the DB anyway.
+Pull-to-refresh (§4) remains as a manual fallback.
 
 ## 4. What triggers a drain
 
