@@ -151,6 +151,10 @@ class _RootShellState extends ConsumerState<RootShell>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Reflect anything written while we were away (possibly by a background
+      // isolate) immediately, then drain the queue — process() bumps again via
+      // onDataChanged once its pass commits.
+      ref.read(dataRevisionProvider.notifier).bump();
       // Fire-and-forget: process() swallows its own pass-level errors.
       unawaited(ref.read(processingServiceProvider).process());
     }
