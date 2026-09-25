@@ -72,7 +72,9 @@ class SmsRepository {
   Future<List<SmsRecord>> dueForDelivery(int now) => _query(
     where: 'status = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)',
     whereArgs: [SmsStatus.queued.name, now],
-    orderBy: 'timestamp ASC',
+    // First-come-first-served, with id as a deterministic tiebreak for rows
+    // sharing a timestamp.
+    orderBy: 'timestamp ASC, id ASC',
   );
 
   Future<int> countFailed() => _count('status = ?', [SmsStatus.failure.name]);
@@ -239,14 +241,23 @@ class SmsRepository {
     );
   }
 
-  /// Atomically claims a queued row for processing (queued -> sending).
-  /// Returns true only if this caller won the claim (multi-isolate safety).
+  /// Atomically claims a queued row for processing (queued -> sending), but only
+  /// when no other row is already `sending`. This enforces a single global
+  /// in-flight message across every isolate (main, background-SMS, WorkManager),
+  /// so at most one LLM call runs at a time — the per-isolate `_running` guard
+  /// alone can't serialize across isolates. Returns true only if this caller won
+  /// the claim: the row was still queued AND the single slot was free. Because
+  /// sqflite shares one native connection process-wide, concurrent claims from
+  /// different isolates serialize, so two can never both win. Orphaned `sending`
+  /// rows (a killed holder) are freed by [reclaimStale].
   Future<bool> claim(int id, int updatedAt) async {
     final count = await _db.update(
       _table,
       {'status': SmsStatus.sending.name, 'updated_at': updatedAt},
-      where: 'id = ? AND status = ?',
-      whereArgs: [id, SmsStatus.queued.name],
+      where:
+          'id = ? AND status = ? '
+          'AND NOT EXISTS (SELECT 1 FROM $_table WHERE status = ?)',
+      whereArgs: [id, SmsStatus.queued.name, SmsStatus.sending.name],
     );
     return count == 1;
   }

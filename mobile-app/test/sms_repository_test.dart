@@ -54,6 +54,33 @@ void main() {
     await db.close();
   });
 
+  test('claim enforces a single global in-flight row', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final a = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    final b = (await repo.insertIfNew(_sms('B', ts: 2)))!;
+
+    // First claim wins the single slot.
+    expect(await repo.claim(a, 100), isTrue);
+    // A different queued row cannot be claimed while one is already sending.
+    expect(await repo.claim(b, 110), isFalse);
+
+    // Free the slot (A reaches a terminal state), then B can claim.
+    await repo.updateStatus(a, SmsStatus.success, updatedAt: 120);
+    expect(await repo.claim(b, 130), isTrue);
+    await db.close();
+  });
+
+  test('dueForDelivery breaks timestamp ties by id ascending', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final a = (await repo.insertIfNew(_sms('A', content: 'a', ts: 5)))!;
+    final b = (await repo.insertIfNew(_sms('B', content: 'b', ts: 5)))!;
+    final due = await repo.dueForDelivery(1000);
+    expect(due.map((r) => r.id).toList(), [a, b]);
+    await db.close();
+  });
+
   test('countFailed counts only terminal failures', () async {
     final db = await openTestDb();
     final repo = SmsRepository(db);
