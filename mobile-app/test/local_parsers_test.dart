@@ -65,7 +65,18 @@ void main() {
       expect(currencyToIso('BDT'), 'BDT');
       expect(currencyToIso('USD'), 'USD');
       expect(currencyToIso(r'$'), 'USD');
-      expect(currencyToIso('EUR'), isNull);
+      expect(currencyToIso('EUR'), 'EUR');
+      expect(currencyToIso('€'), 'EUR');
+      expect(currencyToIso('GBP'), 'GBP');
+      expect(currencyToIso('£'), 'GBP');
+      expect(currencyToIso('INR'), 'INR');
+      expect(currencyToIso('unknownzz'), isNull);
+    });
+
+    test('sniffCurrencyIso detects a non-BDT/USD currency near the amount', () {
+      const text = 'Charged EUR 100 at store';
+      final start = text.indexOf('100');
+      expect(sniffCurrencyIso(text, start, start + 3), 'EUR');
     });
 
     test('sniffCurrencyIso finds the token nearest the amount', () {

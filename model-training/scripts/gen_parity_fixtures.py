@@ -27,9 +27,28 @@ SAMPLES = [
 ]
 
 
+# Label orders the app hardcodes (mobile-app/.../local_model.dart). Asserted
+# against the trained model below so a class/entity reorder can't silently ship.
+APP_CLASS_LABELS = ["expense", "income", "transfer", "bill", "null"]
+APP_NER_LABELS = [
+    "O", "B-AMOUNT", "I-AMOUNT", "B-BALANCE", "I-BALANCE",
+    "B-DUE", "I-DUE", "B-PERIOD", "I-PERIOD",
+]
+
+
+def _assert_label_order(model):
+    got_class = [model._class_id2label[i] for i in range(len(APP_CLASS_LABELS))]
+    got_ner = [model._ner_id2label[i] for i in range(len(APP_NER_LABELS))]
+    assert got_class == APP_CLASS_LABELS, (
+        f"class label order drift vs the app's kClassLabels: {got_class}")
+    assert got_ner == APP_NER_LABELS, (
+        f"ner label order drift vs the app's kNerLabels: {got_ner}")
+
+
 def main():
     tok = AutoTokenizer.from_pretrained(FUSED_INT8)
     models = load()  # (tokenizer, model) for the predict helpers
+    _assert_label_order(models[1])
     records = []
     for text in SAMPLES:
         enc = tok(text, truncation=True, max_length=MAX_LEN,

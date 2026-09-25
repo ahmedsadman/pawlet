@@ -198,4 +198,11 @@ class TfliteLocalClassifier implements LocalClassifier {
     final sum = exps.reduce((a, b) => a + b);
     return [for (final e in exps) e / sum];
   }
+
+  /// Frees the native interpreter. Call from each isolate's dispose so a
+  /// background isolate that loaded the ~model doesn't leak native buffers.
+  void close() {
+    _interpreter?.close();
+    _interpreter = null;
+  }
 }

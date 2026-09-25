@@ -10,7 +10,10 @@ import 'package:decimal/decimal.dart';
 String? parseLocalAmount(String raw) {
   final cleaned = raw.replaceAll(RegExp(r'[^0-9.]'), '');
   if (cleaned.isEmpty) return null;
-  // Keep only the first decimal point; concatenate any later fractional digits.
+  // Keep the first decimal point and concatenate any later fractional digits.
+  // This is intentionally lossy for a malformed multi-dot span (e.g. "1.234.56"
+  // -> "1.23456"): such a span is almost certainly a mis-extraction, but it is
+  // already guarded by the NERc gate, so we coerce rather than add a branch.
   final firstDot = cleaned.indexOf('.');
   var normalized = firstDot == -1
       ? cleaned
@@ -100,9 +103,14 @@ StatementPeriod? parseStatementPeriod(String raw) {
   return null;
 }
 
-/// Maps a currency token found in an SMS to an ISO 4217 code (best-effort,
-/// mirroring the symbols the model's training data uses). Returns null when the
-/// token is unrecognised.
+/// Maps a currency token found in an SMS to an ISO 4217 code (best-effort).
+/// Covers the currencies the app realistically sees plus the common symbols;
+/// returns null for an unrecognised token. Kept in sync with [_currencyToken].
+///
+/// Residual gap: an exotic currency whose token isn't listed here goes
+/// undetected, so such an SMS could be accepted on-device in the wrong currency.
+/// The set below covers the common cases; broaden it (or add server-side FX) as
+/// more currencies appear. Documented in message-pipeline.md.
 String? currencyToIso(String token) {
   final t = token.toUpperCase().replaceAll('.', '');
   switch (t) {
@@ -115,12 +123,32 @@ String? currencyToIso(String token) {
     case r'US$':
     case r'$':
       return 'USD';
+    case 'EUR':
+    case '€':
+      return 'EUR';
+    case 'GBP':
+    case '£':
+      return 'GBP';
+    case 'INR':
+    case '₹':
+      return 'INR';
+    case 'JPY':
+    case '¥':
+      return 'JPY';
+    case 'AUD':
+      return 'AUD';
+    case 'CAD':
+      return 'CAD';
+    case 'SAR':
+      return 'SAR';
+    case 'AED':
+      return 'AED';
   }
   return null;
 }
 
 final RegExp _currencyToken = RegExp(
-  r'US\$|BDT|USD|TAKA|TK\.?|৳|\$',
+  r'US\$|BDT|USD|TAKA|TK\.?|EUR|GBP|INR|JPY|AUD|CAD|SAR|AED|৳|€|£|₹|¥|\$',
   caseSensitive: false,
 );
 

@@ -32,6 +32,7 @@ class AppServices {
     required this.connectivity,
     required this.notifications,
     required this.llmProvider,
+    required this.localClassifier,
     required this.processingService,
   });
 
@@ -43,6 +44,10 @@ class AppServices {
   final ConnectivityService connectivity;
   final NotificationService notifications;
   final OpenRouterProvider llmProvider;
+
+  /// Owned on-device model; closed on dispose so its native interpreter is freed
+  /// (each isolate builds its own bundle).
+  final TfliteLocalClassifier localClassifier;
   final ProcessingService processingService;
 
   factory AppServices.from({
@@ -60,10 +65,11 @@ class AppServices {
       models: SettingsRepository.defaultLlmModels,
     );
     final matcher = FinanceMatcher(database);
+    final localClassifier = TfliteLocalClassifier();
     final processingService = ProcessingService(
       smsRepository: smsRepository,
       banksRepository: banksRepository,
-      classifier: Classifier(llmProvider, local: TfliteLocalClassifier()),
+      classifier: Classifier(llmProvider, local: localClassifier),
       financeWriter: FinanceWriter(database),
       isOnline: connectivity.isOnline,
       currency: () => settings.currency,
@@ -84,6 +90,7 @@ class AppServices {
       connectivity: connectivity,
       notifications: notifications,
       llmProvider: llmProvider,
+      localClassifier: localClassifier,
       processingService: processingService,
     );
   }
@@ -103,11 +110,16 @@ class AppServices {
     return services;
   }
 
-  /// UI-isolate dispose: closes the owned LLM http client only. The database is
-  /// app-wide (owned by the provider scope) and must NOT be closed here.
-  void dispose() => llmProvider.close();
+  /// UI-isolate dispose: closes the owned LLM http client and the on-device
+  /// model's native interpreter. The database is app-wide (owned by the provider
+  /// scope) and must NOT be closed here.
+  void dispose() {
+    llmProvider.close();
+    localClassifier.close();
+  }
 
-  /// Background-isolate dispose: closes only the isolate-local LLM http client.
+  /// Background-isolate dispose: closes the isolate-local LLM http client and the
+  /// on-device model's native interpreter.
   ///
   /// The database is deliberately NOT closed. sqflite's default
   /// `singleInstance: true` shares a single native connection across every
@@ -119,6 +131,7 @@ class AppServices {
   /// process dies.
   Future<void> disposeStandalone() async {
     llmProvider.close();
+    localClassifier.close();
   }
 
   /// Manual per-message retry: returns one failed message to the queue for a
