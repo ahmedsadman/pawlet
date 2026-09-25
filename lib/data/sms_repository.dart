@@ -6,6 +6,9 @@ import 'database.dart';
 /// Default page size for History.
 const int kHistoryPageSize = 20;
 
+/// Default page size for the Queue (mirrors History).
+const int kQueuePageSize = 20;
+
 /// How long `ignored` records are retained before [SmsRepository.pruneIfDue]
 /// deletes them. Success and failure rows are permanent.
 const Duration kIgnoredRetention = Duration(days: 7);
@@ -43,6 +46,19 @@ class SmsRepository {
     where: 'status IN (?, ?)',
     whereArgs: [SmsStatus.queued.name, SmsStatus.sending.name],
     orderBy: 'timestamp ASC',
+  );
+
+  /// One page of queued + in-flight records, oldest first (drives the Queue
+  /// section's pagination). Pair with [countQueued] for the total.
+  Future<List<SmsRecord>> queuedPage({
+    int limit = kQueuePageSize,
+    int offset = 0,
+  }) => _query(
+    where: 'status IN (?, ?)',
+    whereArgs: [SmsStatus.queued.name, SmsStatus.sending.name],
+    orderBy: 'timestamp ASC',
+    limit: limit,
+    offset: offset,
   );
 
   Future<int> countQueued() => _count('status IN (?, ?)', [
@@ -259,6 +275,7 @@ class SmsRepository {
     required List<Object?> whereArgs,
     required String orderBy,
     int? limit,
+    int? offset,
   }) async {
     final rows = await _db.query(
       _table,
@@ -266,6 +283,7 @@ class SmsRepository {
       whereArgs: whereArgs,
       orderBy: orderBy,
       limit: limit,
+      offset: offset,
     );
     return rows.map(SmsRecord.fromDbMap).toList();
   }
