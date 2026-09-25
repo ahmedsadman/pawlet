@@ -34,7 +34,7 @@ void main() {
     }
     final c = await containerWith(SmsRepository(db));
     // Keep the autoDispose provider alive across reads.
-    c.listen(queuedProvider, (_, __) {});
+    c.listen(queuedProvider, (_, _) {});
 
     final page1 = await c.read(queuedProvider.future);
     expect(page1.total, 25);
@@ -55,7 +55,7 @@ void main() {
     final db = await openTestDb();
     await insertSms(db, sender: 'A', ts: 1, status: 'queued');
     final c = await containerWith(SmsRepository(db));
-    c.listen(queuedProvider, (_, __) {});
+    c.listen(queuedProvider, (_, _) {});
 
     c.read(queuePageIndexProvider.notifier).setPage(9);
     final page = await c.read(queuedProvider.future);
