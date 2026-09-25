@@ -6,10 +6,10 @@ on:
     branches:
       - main
     paths:
-      - "lib/**"
-      - "android/**"
-      - "pubspec.yaml"
-      - "pubspec.lock"
+      - "mobile-app/lib/**"
+      - "mobile-app/android/**"
+      - "mobile-app/pubspec.yaml"
+      - "mobile-app/pubspec.lock"
       - ".github/workflows/release.yml"
       - ".github/workflows/checks.yml"
 
@@ -24,6 +24,9 @@ jobs:
     name: build-release
     needs: checks
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -88,9 +91,9 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           files: |
-            build/app/outputs/flutter-apk/Pawlet-arm64-v8a.apk
-            build/app/outputs/flutter-apk/Pawlet-armeabi-v7a.apk
-            build/app/outputs/flutter-apk/Pawlet-x86_64.apk
+            mobile-app/build/app/outputs/flutter-apk/Pawlet-arm64-v8a.apk
+            mobile-app/build/app/outputs/flutter-apk/Pawlet-armeabi-v7a.apk
+            mobile-app/build/app/outputs/flutter-apk/Pawlet-x86_64.apk
 
       - name: Prune old releases (keep newest 5)
         env:

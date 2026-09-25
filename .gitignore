@@ -30,8 +30,8 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
-/coverage/
+/mobile-app/build/
+/mobile-app/coverage/
 
 # Symbolication related
 app.*.symbols
@@ -40,16 +40,16 @@ app.*.symbols
 app.*.map.json
 
 # Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+/mobile-app/android/app/debug
+/mobile-app/android/app/profile
+/mobile-app/android/app/release
 
 # Secrets injected at build time — commit dart_define.example.json, not the real one
 dart_define.json
 
 # Android release signing — never commit the keystore or its passwords
-android/key.properties
+mobile-app/android/key.properties
 **/*.jks
 
 # Ephemeral agent-generated implementation plans (superpowers) — not product docs
-docs/superpowers/
+mobile-app/docs/superpowers/
