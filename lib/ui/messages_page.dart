@@ -69,7 +69,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
     final queued = ref.watch(queuedProvider);
     final query = ref.watch(historyQueryProvider);
     final history = ref.watch(historyProvider(query));
-    final queuedRecords = queued.value ?? const <SmsRecord>[];
+    final queuePage = queued.value;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Messages')),
@@ -82,7 +82,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
         child: ListView(
           padding: const EdgeInsets.all(12),
           children: [
-            _queueSection(queuedRecords),
+            _queueSection(queuePage),
             const SizedBox(height: 8),
             _historyHeader(),
             _searchField(),
@@ -94,8 +94,9 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
     );
   }
 
-  Widget _queueSection(List<SmsRecord> records) {
-    final count = records.length;
+  Widget _queueSection(QueuePage? page) {
+    final count = page?.total ?? 0;
+    final records = page?.records ?? const <SmsRecord>[];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -114,8 +115,38 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
                 )
               : null,
         ),
-        if (_queueExpanded && count > 0) ...records.map((r) => SmsTile(r)),
+        if (_queueExpanded && count > 0) ...[
+          ...records.map((r) => SmsTile(r)),
+          if (page != null && page.totalPages > 1) _queuePagination(page),
+        ],
       ],
+    );
+  }
+
+  Widget _queuePagination(QueuePage page) {
+    final theme = Theme.of(context);
+    void go(int p) => ref.read(queuePageIndexProvider.notifier).setPage(p);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: page.page > 1 ? () => go(page.page - 1) : null,
+          ),
+          Text(
+            'Page ${page.page} of ${page.totalPages}',
+            style: theme.textTheme.bodySmall,
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: page.page < page.totalPages
+                ? () => go(page.page + 1)
+                : null,
+          ),
+        ],
+      ),
     );
   }
 

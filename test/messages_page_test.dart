@@ -24,12 +24,13 @@ SmsRecord _sms(String sender, SmsStatus status, {String? category}) =>
     );
 
 const _emptyHistory = HistoryPage(records: [], total: 0, page: 1, pageSize: 20);
+const _emptyQueue = QueuePage(records: [], total: 0, page: 1, pageSize: 20);
 
 List<Override> _overrides({
-  List<SmsRecord> queued = const [],
+  QueuePage queue = _emptyQueue,
   HistoryPage history = _emptyHistory,
 }) => [
-  queuedProvider.overrideWith((ref) => Stream.value(queued)),
+  queuedProvider.overrideWith((ref) => Stream.value(queue)),
   historyProvider.overrideWith((ref, q) async => history),
 ];
 
@@ -60,10 +61,15 @@ void main() {
     await _pump(
       tester,
       _overrides(
-        queued: [
-          _sms('BankA', SmsStatus.queued),
-          _sms('BankB', SmsStatus.queued),
-        ],
+        queue: QueuePage(
+          records: [
+            _sms('BankA', SmsStatus.queued),
+            _sms('BankB', SmsStatus.queued),
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 20,
+        ),
       ),
     );
 
@@ -77,7 +83,7 @@ void main() {
   });
 
   testWidgets('no expand control when the queue is empty', (tester) async {
-    await _pump(tester, _overrides(queued: const []));
+    await _pump(tester, _overrides());
     expect(find.text('Queue'), findsOneWidget);
     expect(find.byIcon(Icons.expand_more), findsNothing);
     expect(find.byIcon(Icons.expand_less), findsNothing);
@@ -97,7 +103,17 @@ void main() {
   });
 
   testWidgets('Queue section is above History', (tester) async {
-    await _pump(tester, _overrides(queued: [_sms('A', SmsStatus.queued)]));
+    await _pump(
+      tester,
+      _overrides(
+        queue: QueuePage(
+          records: [_sms('A', SmsStatus.queued)],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        ),
+      ),
+    );
     expect(
       tester.getTopLeft(find.text('Queue')).dy <
           tester.getTopLeft(find.text('History')).dy,
@@ -186,8 +202,27 @@ void main() {
   );
 
   testWidgets('empty queue still shows a zero count badge', (tester) async {
-    await _pump(tester, _overrides(queued: const []));
+    await _pump(tester, _overrides());
     expect(find.text('0'), findsOneWidget);
+  });
+
+  testWidgets('queue paginates when expanded and multi-page', (tester) async {
+    await _pump(
+      tester,
+      _overrides(
+        queue: QueuePage(
+          records: [_sms('Q0', SmsStatus.queued)],
+          total: 40,
+          page: 1,
+          pageSize: 20,
+        ),
+      ),
+    );
+    // Expand the queue to reveal its pager (history is empty, so the only
+    // "Page X of Y" on screen belongs to the queue).
+    await tester.tap(find.byIcon(Icons.expand_more));
+    await tester.pump();
+    expect(find.text('Page 1 of 2'), findsOneWidget);
   });
 
   testWidgets('refetches history when the search query changes', (
@@ -200,7 +235,7 @@ void main() {
       pageSize: 20,
     );
     await _pump(tester, [
-      queuedProvider.overrideWith((ref) => Stream.value(const <SmsRecord>[])),
+      queuedProvider.overrideWith((ref) => Stream.value(_emptyQueue)),
       historyProvider.overrideWith(
         (ref, q) async => q.search == 'brac' ? match : _emptyHistory,
       ),
