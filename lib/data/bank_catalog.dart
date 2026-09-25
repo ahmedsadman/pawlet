@@ -19,6 +19,7 @@ const List<BankCatalogEntry> kBankCatalog = [
   BankCatalogEntry(label: 'MTB', matchers: ['mtb']),
   BankCatalogEntry(label: 'EBL', matchers: ['ebl', 'eastern bank limited']),
   BankCatalogEntry(label: 'StanChart (SCB)', matchers: ['scb', 'stanchart']),
+  BankCatalogEntry(label: 'BRAC Bank', matchers: ['brac', 'brac-bank']),
 ];
 
 /// Looks up a catalog entry by its exact label, or null if unknown.
