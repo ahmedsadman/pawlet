@@ -232,6 +232,37 @@ void main() {
     });
   });
 
+  group('queuedPage', () {
+    Future<SmsRepository> seedQueued(int n) async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      for (var i = 0; i < n; i++) {
+        // ts ascending so "oldest first" ordering is deterministic.
+        await repo.insertIfNew(_sms('S$i', content: 'c$i', ts: i));
+      }
+      return repo;
+    }
+
+    test('returns a page of queued rows, oldest first', () async {
+      final repo = await seedQueued(25);
+      final page1 = await repo.queuedPage(limit: 20, offset: 0);
+      final page2 = await repo.queuedPage(limit: 20, offset: 20);
+      expect(page1.length, 20);
+      expect(page1.first.sender, 'S0'); // oldest first
+      expect(page2.length, 5);
+      expect(await repo.countQueued(), 25);
+    });
+
+    test('includes in-flight (sending) rows', () async {
+      final repo = await seedQueued(1);
+      final id = (await repo.queuedPage()).single.id!;
+      await repo.claim(id, 1); // queued -> sending
+      final page = await repo.queuedPage();
+      expect(page.single.status, SmsStatus.sending);
+      expect(await repo.countQueued(), 1);
+    });
+  });
+
   group('updateStatus reasons', () {
     test('writes ignore_reason on an ignored row', () async {
       final db = await openTestDb();
