@@ -2,8 +2,9 @@
 
 Pawlet is an on-device Android app that turns your bank SMS into a personal-finance
 dashboard — transactions, bills, balances, spending trends. It runs with **no backend**:
-everything happens on the phone. The only network calls are to a large language model
-(OpenRouter's free models) to read each message.
+everything happens on the phone. Most messages are read by a bundled on-device model; the
+only network calls are a fallback to a large language model (OpenRouter's free models) for
+the messages the on-device model can't confidently handle.
 
 ## What it does
 
@@ -27,12 +28,17 @@ time so nothing is lost if the phone is offline or the model is rate-limited.
    credit-card numbers. Anything that fails the gate is marked *ignored* and never reaches the
    model. This is what keeps promotions, OTPs, and personal texts from wasting API calls.
 
-3. **Understand (one LLM call)** — a message that passes the gate goes to a single fused
-   model call. In one round-trip the model both **classifies** the message (transaction, bill,
-   or neither) and **extracts** its structured data (amount, balance, direction, currency, and
-   for bills the amount due and statement period). Currency conversion to your normalized
-   currency happens here too. The call is atomic: the message only leaves the queue on a valid,
-   fully-parsed response.
+3. **Understand (on-device first, LLM only if needed)** — a message that passes the gate is
+   first run through a small **on-device model** (a BERT-family encoder bundled with the app and
+   run via TFLite/LiteRT). In one pass it both **classifies** the message (transaction, bill, or
+   neither) and **extracts** its numbers (amount, balance, and for bills the amount due and
+   statement period). When the model is confident, that is the answer — **no network call is
+   made at all**, which is the common case for everyday debits, credits, and statements. Only
+   when the model is *not* confident (or the message is in a different currency, which the
+   on-device model doesn't convert) does Pawlet fall back to a single fused **LLM call** that
+   classifies, extracts, and converts currency in one round-trip. Either way the step is atomic:
+   the message only leaves the queue on a valid, fully-parsed response. In History, messages
+   handled by the LLM carry a small "LLM" marker; on-device ones show nothing.
 
 4. **Assign the bank deterministically** — the model is **not** asked which bank the message is
    from. Because the sender/card matchers are exact, Pawlet assigns the bank itself: a
