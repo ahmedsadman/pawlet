@@ -8,6 +8,7 @@ import '../data/secure_store.dart';
 import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
 import '../services/app_services.dart';
+import '../services/backup_service.dart';
 import '../services/processing_service.dart';
 import '../services/sms_listener.dart';
 
@@ -36,6 +37,13 @@ final financeRepositoryProvider = Provider<FinanceRepository>(
 );
 
 final secureStoreProvider = Provider<SecureStore>((ref) => SecureStore());
+
+final backupServiceProvider = Provider<BackupService>(
+  (ref) => BackupService(
+    db: ref.watch(databaseProvider),
+    settings: ref.watch(settingsRepositoryProvider),
+  ),
+);
 
 /// The API key read from encrypted storage at startup, injected in `main()`.
 final bootstrapApiKeyProvider = Provider<String>(
