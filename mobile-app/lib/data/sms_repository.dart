@@ -250,6 +250,7 @@ class SmsRepository {
     int? processedAt,
     IgnoreReason? ignoreReason,
     FailureReason? failureReason,
+    ParseSource? parseSource,
   }) async {
     await _db.update(
       _table,
@@ -268,6 +269,8 @@ class SmsRepository {
         // Null-aware: only stamped on the matching terminal state.
         'ignore_reason': ?ignoreReason?.value,
         'failure_reason': ?failureReason?.value,
+        // Null-aware: only stamped on a terminal processed result.
+        'parse_source': ?parseSource?.value,
       },
       where: 'id = ?',
       whereArgs: [id],

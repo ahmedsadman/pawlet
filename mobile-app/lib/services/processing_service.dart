@@ -190,16 +190,20 @@ class ProcessingService {
       );
       if (label == 'ignored') {
         // Terminal ignored: no category, tagged with an internal reason.
-        // - gate rejected it (LLM never ran)              → gated
-        // - LLM ran and said "not financial"             → llmNone
-        // - LLM said financial but no row was written     → noRecord
+        // - gate rejected it (no model ran)               → gated
+        // - on-device model said "not financial"          → localNone
+        // - LLM ran and said "not financial"              → llmNone
+        // - classified financial but no row was written   → noRecord
         //   (missing metadata, unmatched card, or a dupe — FinanceWriter
         //   returns a bare 'ignored' without saying which; lumped here).
         final IgnoreReason reason;
-        if (!outcome.llmInvoked) {
+        if (outcome.parseSource == null) {
+          // Layer-1 gate rejected it; no model ran.
           reason = IgnoreReason.gated;
         } else if (outcome.category == SmsCategory.none) {
-          reason = IgnoreReason.llmNone;
+          reason = outcome.parseSource == ParseSource.local
+              ? IgnoreReason.localNone
+              : IgnoreReason.llmNone;
         } else {
           reason = IgnoreReason.noRecord;
         }
@@ -210,6 +214,7 @@ class ProcessingService {
           updatedAt: _clock(),
           nextAttemptAt: null,
           ignoreReason: reason,
+          parseSource: outcome.parseSource,
           processedAt: _clock(),
         );
       } else {
@@ -220,6 +225,7 @@ class ProcessingService {
           updatedAt: _clock(),
           nextAttemptAt: null,
           category: label,
+          parseSource: outcome.parseSource,
           processedAt: _clock(),
         );
       }

@@ -3,6 +3,8 @@ import 'package:pawlet/data/banks_repository.dart';
 import 'package:pawlet/data/sms_repository.dart';
 import 'package:pawlet/models/sms_record.dart';
 import 'package:pawlet/services/classification/classifier.dart';
+import 'package:pawlet/services/classification/local_classifier.dart';
+import 'package:pawlet/services/classification/local_model.dart';
 import 'package:pawlet/services/finance/finance_writer.dart';
 import 'package:pawlet/services/llm/llm_provider.dart';
 import 'package:pawlet/services/llm/openrouter_provider.dart';
@@ -53,6 +55,15 @@ ClassifyResult _expense() => const ClassifyResult(
     originalCurrency: 'BDT',
   ),
 );
+
+/// Fake on-device classifier returning a canned prediction (or null).
+class _FakeLocal implements LocalClassifier {
+  _FakeLocal(this.prediction);
+  final LocalPrediction? prediction;
+
+  @override
+  Future<LocalPrediction?> infer(String content) async => prediction;
+}
 
 void main() {
   setUpAll(() {
@@ -297,6 +308,80 @@ void main() {
     expect(r['category'], isNull);
     expect(r['ignore_reason'], IgnoreReason.gated.value);
     expect(llm.calls, 0);
+    await db.close();
+  });
+
+  test('stores parse_source=llm for an LLM-parsed success row', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(result: _expense());
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['status'], 'success');
+    expect(r['parse_source'], ParseSource.llm.value);
+    await db.close();
+  });
+
+  test('stores parse_source=local when the on-device model parsed it', () async {
+    final id = await queue('CHK', content: 'debit 50 BDT');
+    // LLM would throw if called; the confident local model must handle it.
+    final llm = _FakeLlm(error: const LlmException('should not run', retryable: false));
+    final local = _FakeLocal(
+      const LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.97,
+        spans: [
+          LocalSpan(
+            entity: 'AMOUNT',
+            text: '50',
+            confidence: 0.96,
+            start: 6,
+            end: 8,
+          ),
+        ],
+      ),
+    );
+    await ProcessingService(
+      smsRepository: sms,
+      banksRepository: banks,
+      classifier: Classifier(llm, local: local),
+      financeWriter: FinanceWriter(db, nowMs: () => now),
+      isOnline: () async => true,
+      currency: () => 'BDT',
+      clock: () => now,
+    ).process();
+
+    final r = await row(id);
+    expect(r['status'], 'success');
+    expect(r['category'], 'transaction');
+    expect(r['parse_source'], ParseSource.local.value);
+    await db.close();
+  });
+
+  test('confident local null marks the row ignored/local_none, no LLM', () async {
+    final id = await queue('CHK', content: 'Your OTP is 1234');
+    final llm = _FakeLlm(error: const LlmException('should not run', retryable: false));
+    final local = _FakeLocal(
+      const LocalPrediction(
+        classLabel: 'null',
+        classConfidence: 0.98,
+        spans: [],
+      ),
+    );
+    await ProcessingService(
+      smsRepository: sms,
+      banksRepository: banks,
+      classifier: Classifier(llm, local: local),
+      financeWriter: FinanceWriter(db, nowMs: () => now),
+      isOnline: () async => true,
+      currency: () => 'BDT',
+      clock: () => now,
+    ).process();
+
+    final r = await row(id);
+    expect(r['status'], 'ignored');
+    expect(r['ignore_reason'], IgnoreReason.localNone.value);
+    expect(r['parse_source'], ParseSource.local.value);
     await db.close();
   });
 
