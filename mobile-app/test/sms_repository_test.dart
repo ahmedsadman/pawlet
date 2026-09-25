@@ -67,6 +67,23 @@ void main() {
     await db.close();
   });
 
+  test(
+    'oldestSendingAt returns the oldest in-flight updated_at, or null',
+    () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final a = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+      expect(await repo.oldestSendingAt(), isNull);
+
+      await repo.claim(a, 100); // queued -> sending, updated_at = 100
+      expect(await repo.oldestSendingAt(), 100);
+
+      await repo.updateStatus(a, SmsStatus.success, updatedAt: 200);
+      expect(await repo.oldestSendingAt(), isNull);
+      await db.close();
+    },
+  );
+
   test('claim enforces a single global in-flight row', () async {
     final db = await openTestDb();
     final repo = SmsRepository(db);
