@@ -99,6 +99,22 @@ class SelectedTab extends Notifier<int> {
 
 final selectedTabProvider = NotifierProvider<SelectedTab, int>(SelectedTab.new);
 
+/// A monotonically increasing counter bumped whenever local data changes
+/// (a processing pass committed writes, or the app resumed). Read-once finance
+/// and history providers watch it, so a bump makes them re-read the DB — a
+/// push-based alternative to polling. Lives in the UI isolate; background
+/// isolates cannot (and need not) touch it.
+class DataRevision extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state = state + 1;
+}
+
+final dataRevisionProvider = NotifierProvider<DataRevision, int>(
+  DataRevision.new,
+);
+
 /// Whether monetary values are masked across the Finance tab. Persisted locally
 /// so the choice survives restarts.
 class BalanceHidden extends Notifier<bool> {
