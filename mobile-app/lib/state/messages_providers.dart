@@ -53,6 +53,7 @@ final queuePageIndexProvider = NotifierProvider<QueuePageIndex, int>(
 final queuedProvider = StreamProvider.autoDispose<QueuePage>((ref) {
   final repo = ref.watch(smsRepositoryProvider);
   final requestedPage = ref.watch(queuePageIndexProvider);
+  ref.watch(dataRevisionProvider);
 
   Future<QueuePage> read() async {
     final total = await repo.countQueued();
@@ -132,6 +133,7 @@ final historyQueryProvider =
 final historyProvider = FutureProvider.autoDispose
     .family<HistoryPage, HistoryQuery>((ref, query) async {
       final repo = ref.watch(smsRepositoryProvider);
+      ref.watch(dataRevisionProvider);
       final search = query.search.isEmpty ? null : query.search;
       final total = await repo.historyCount(query: search);
       // Clamp the requested page so a shrunk result set can't render a
