@@ -130,8 +130,18 @@ call while one is running is ignored) and, before touching anything, requeues st
 
 After the queue drains, deferred **relationship matchers** run once (transfer pairing,
 credit-card-payment ↔ bill), then the terminal-failure **count** is reconciled into
-notifications, a **throttled prune** runs (§9), and the next background catch-up is
-(re)scheduled (§6).
+notifications, a **throttled prune** runs (§9), a **data-changed signal** fires so the UI
+can refresh (see below), and the next background catch-up is (re)scheduled (§6).
+
+**Keeping the UI fresh.** A pass that touched at least one record calls an `onChanged`
+hook (`lib/services/processing_service.dart`). In the UI isolate that hook bumps an
+in-memory revision counter (`dataRevisionProvider` in `lib/state/providers.dart`); the
+History and Finance providers watch it, so processed records surface — Queue → History
+moves, balances, transactions — with no manual pull-to-refresh. The app bumps the same
+counter on resume (`lib/app.dart`) to pick up anything written while it was backgrounded,
+including work done by the background isolate, which cannot signal the UI directly.
+Pull-to-refresh (§4) still works and is the fallback for the rare case of a
+background-isolate write while the app sits open and idle.
 
 ## 4. What triggers a drain
 
