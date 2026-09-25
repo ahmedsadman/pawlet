@@ -25,8 +25,11 @@ enum SmsStatus {
 /// Why a processed SMS was ignored (internal only — never shown in the UI,
 /// read via ADB/debug). DB stores the snake_case [value].
 enum IgnoreReason {
-  /// Layer-1 sender/card gate rejected it; the LLM never ran.
+  /// Layer-1 sender/card gate rejected it; nothing ran.
   gated('gated'),
+
+  /// The on-device model confidently classified it as not financial (no LLM).
+  localNone('local_none'),
 
   /// The LLM ran and classified it as not financial.
   llmNone('llm_none'),
@@ -66,6 +69,24 @@ enum FailureReason {
   }
 }
 
+/// Which engine parsed a processed SMS: the on-device model or the cloud LLM.
+/// Null on rows processed before this column existed, or gate-ignored rows.
+/// DB stores the [value].
+enum ParseSource {
+  local('local'),
+  llm('llm');
+
+  const ParseSource(this.value);
+  final String value;
+
+  static ParseSource? fromValue(String? v) {
+    for (final s in ParseSource.values) {
+      if (s.value == v) return s;
+    }
+    return null;
+  }
+}
+
 /// A single captured SMS and its processing state. `sms_records` doubles as the
 /// message store — transactions/bills reference its [id].
 class SmsRecord {
@@ -84,6 +105,7 @@ class SmsRecord {
     this.processedAt,
     this.ignoreReason,
     this.failureReason,
+    this.parseSource,
   });
 
   /// Local DB primary key (null before insert).
@@ -123,6 +145,10 @@ class SmsRecord {
   /// Why a [SmsStatus.failure] row failed (drives the short History hint).
   final FailureReason? failureReason;
 
+  /// Which engine parsed this row (on-device model vs LLM), or null when the
+  /// Layer-1 gate rejected it before any model ran (and for pre-v4 rows).
+  final ParseSource? parseSource;
+
   bool get isQueued =>
       status == SmsStatus.queued || status == SmsStatus.sending;
 
@@ -137,6 +163,7 @@ class SmsRecord {
     int? processedAt,
     IgnoreReason? ignoreReason,
     FailureReason? failureReason,
+    ParseSource? parseSource,
   }) {
     return SmsRecord(
       id: id ?? this.id,
@@ -153,6 +180,7 @@ class SmsRecord {
       processedAt: processedAt ?? this.processedAt,
       ignoreReason: ignoreReason ?? this.ignoreReason,
       failureReason: failureReason ?? this.failureReason,
+      parseSource: parseSource ?? this.parseSource,
     );
   }
 
@@ -171,6 +199,7 @@ class SmsRecord {
     'processed_at': processedAt,
     'ignore_reason': ignoreReason?.value,
     'failure_reason': failureReason?.value,
+    'parse_source': parseSource?.value,
   };
 
   factory SmsRecord.fromDbMap(Map<String, Object?> map) => SmsRecord(
@@ -188,5 +217,6 @@ class SmsRecord {
     processedAt: map['processed_at'] as int?,
     ignoreReason: IgnoreReason.fromValue(map['ignore_reason'] as String?),
     failureReason: FailureReason.fromValue(map['failure_reason'] as String?),
+    parseSource: ParseSource.fromValue(map['parse_source'] as String?),
   );
 }
