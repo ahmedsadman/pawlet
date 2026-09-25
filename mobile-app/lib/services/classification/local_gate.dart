@@ -78,10 +78,14 @@ LocalGateResult _buildBill(
   if (total == null) return const LocalGateResult.reject();
 
   final periodSpan = best['PERIOD'];
-  final period = periodSpan == null
+  var period = periodSpan == null
       ? null
       : parseStatementPeriod(periodSpan.text);
-  final year = period?.year;
+  // Drop the whole period (not just the year) on an out-of-range year, so we
+  // never persist a half-period with a month but no year.
+  if (period != null && (period.year < 2000 || period.year > 2100)) {
+    period = null;
+  }
   return LocalGateResult.accept(
     ClassifyResult(
       category: SmsCategory.bill,
@@ -90,9 +94,7 @@ LocalGateResult _buildBill(
         originalAmount: total, // same currency (mismatch already rejected)
         originalCurrency: currency,
         statementMonth: period?.month,
-        statementYear: (year != null && year >= 2000 && year <= 2100)
-            ? year
-            : null,
+        statementYear: period?.year,
       ),
     ),
   );
