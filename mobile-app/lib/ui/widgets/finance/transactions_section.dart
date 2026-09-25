@@ -198,6 +198,7 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
         ),
         const SizedBox(height: 12),
         async.when(
+          skipLoadingOnReload: true,
           loading: () => TransactionRowsSkeleton(count: _lastCount),
           error: (_, _) => const FinanceError('Could not load transactions.'),
           data: (result) {
