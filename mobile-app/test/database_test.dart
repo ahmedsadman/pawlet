@@ -188,6 +188,57 @@ void main() {
     });
   });
 
+  group('sms_records parse_source schema (v4)', () {
+    test('fresh schema carries the parse_source column', () async {
+      final db = await openTestDb();
+      final cols = await _columnNames(db, 'sms_records');
+      expect(cols, contains('parse_source'));
+      await db.close();
+    });
+
+    test('onUpgrade v3->v4 adds parse_source, preserving rows', () async {
+      // Build a v3 sms_records table by hand, then run the real migration.
+      final db = await databaseFactory.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(singleInstance: false),
+      );
+      await db.execute('''
+        CREATE TABLE sms_records (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sender TEXT NOT NULL,
+          contact_name TEXT,
+          content TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          updated_at INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at INTEGER,
+          category TEXT,
+          processed_at INTEGER,
+          ignore_reason TEXT,
+          failure_reason TEXT
+        )
+      ''');
+      await db.insert('sms_records', {
+        'sender': 'CHK',
+        'content': 'x',
+        'timestamp': 1,
+        'status': 'success',
+        'updated_at': 1,
+      });
+
+      await AppDatabase.onUpgrade(db, 3, 4);
+
+      final cols = await _columnNames(db, 'sms_records');
+      expect(cols, contains('parse_source'));
+      final row = (await db.query('sms_records')).single;
+      expect(row['sender'], 'CHK');
+      expect(row['parse_source'], isNull);
+      await db.close();
+    });
+  });
+
   test(
     'onUpgrade v1->v2 migrates indexes, clears credit matchers, renames',
     () async {

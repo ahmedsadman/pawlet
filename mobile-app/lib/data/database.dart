@@ -19,7 +19,7 @@ class AppDatabase {
   /// Key/value store for small operational metadata (e.g. the last prune time).
   static const String metaTable = 'app_meta';
 
-  static const int _version = 3;
+  static const int _version = 4;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), fileName);
@@ -48,7 +48,8 @@ class AppDatabase {
         category TEXT,
         processed_at INTEGER,
         ignore_reason TEXT,
-        failure_reason TEXT
+        failure_reason TEXT,
+        parse_source TEXT
       )
     ''');
     // Dedupe overlapping foreground / background / cold-start reads of one SMS.
@@ -204,6 +205,12 @@ class AppDatabase {
         )
       ''');
       await _createSmsOpsIndexes(db);
+    }
+
+    // v3 -> v4: record which engine parsed each row (on-device model vs LLM),
+    // surfaced as a muted "LLM" badge in History. Additive; old rows read null.
+    if (oldVersion < 4 && newVersion >= 4) {
+      await db.execute('ALTER TABLE $smsTable ADD COLUMN parse_source TEXT');
     }
   }
 }

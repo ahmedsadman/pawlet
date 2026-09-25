@@ -16,8 +16,27 @@ void main() {
 
     test('uses the expected snake_case backing values', () {
       expect(IgnoreReason.gated.value, 'gated');
+      expect(IgnoreReason.localNone.value, 'local_none');
       expect(IgnoreReason.llmNone.value, 'llm_none');
       expect(IgnoreReason.noRecord.value, 'no_record');
+    });
+  });
+
+  group('ParseSource', () {
+    test('round-trips every value', () {
+      for (final s in ParseSource.values) {
+        expect(ParseSource.fromValue(s.value), s);
+      }
+    });
+
+    test('returns null for null or unknown', () {
+      expect(ParseSource.fromValue(null), isNull);
+      expect(ParseSource.fromValue('nope'), isNull);
+    });
+
+    test('uses the expected backing values', () {
+      expect(ParseSource.local.value, 'local');
+      expect(ParseSource.llm.value, 'llm');
     });
   });
 
@@ -100,6 +119,37 @@ void main() {
       );
       expect(copy.failureReason, FailureReason.llmError);
       expect(copy.ignoreReason, isNull);
+    });
+
+    test('parseSource round-trips through the DB map', () {
+      const rec = SmsRecord(
+        sender: 'MTB',
+        content: 'debit 50',
+        timestamp: 1,
+        parseSource: ParseSource.llm,
+      );
+      final map = rec.toDbMap();
+      expect(map['parse_source'], 'llm');
+      final back = SmsRecord.fromDbMap(map);
+      expect(back.parseSource, ParseSource.llm);
+    });
+
+    test('null parseSource serializes to null and reads back null', () {
+      const rec = SmsRecord(sender: 'MTB', content: 'x', timestamp: 1);
+      expect(rec.toDbMap()['parse_source'], isNull);
+      final back = SmsRecord.fromDbMap({
+        'sender': 'MTB',
+        'content': 'x',
+        'timestamp': 1,
+        'status': 'success',
+      });
+      expect(back.parseSource, isNull);
+    });
+
+    test('copyWith carries parseSource through', () {
+      const base = SmsRecord(sender: 'CHK', content: 'x', timestamp: 1);
+      final copy = base.copyWith(parseSource: ParseSource.local);
+      expect(copy.parseSource, ParseSource.local);
     });
   });
 }
