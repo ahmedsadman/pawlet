@@ -36,4 +36,29 @@ void main() {
       'nex-agi/nex-n2.5-pro:free',
     ]);
   });
+
+  test('exportAll captures only set keys', () async {
+    final r = await repo({'currency': 'USD', 'hide_balance': true});
+    final snap = r.exportAll();
+    expect(snap['currency'], 'USD');
+    expect(snap['hide_balance'], true);
+    // resolve_contacts was never written, so it is absent from the snapshot.
+    expect(snap.containsKey('resolve_contacts'), isFalse);
+  });
+
+  test('importAll restores a snapshot', () async {
+    final r = await repo({'currency': 'USD', 'hide_balance': true});
+    final snap = r.exportAll();
+    await r.setCurrency('BDT');
+    await r.setHideBalance(false);
+    await r.importAll(snap);
+    expect(r.currency, 'USD');
+    expect(r.hideBalance, isTrue);
+  });
+
+  test('importAll clears keys missing from the snapshot (replace)', () async {
+    final r = await repo({'history_hint_seen': true});
+    await r.importAll(const {}); // empty snapshot
+    expect(r.historyHintSeen, isFalse); // reset to its default
+  });
 }
