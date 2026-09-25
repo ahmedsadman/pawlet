@@ -1,3 +1,8 @@
+// Private fields fed by named constructor params can't use `this._field`
+// initializing formals (named params can't be private), so the assignments in
+// the constructor are intentional.
+// ignore_for_file: prefer_initializing_formals
+
 import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
@@ -21,6 +26,8 @@ class BackupFormatException implements Exception {
 /// original ids (so `transactions`/`bills` references stay intact), inside one
 /// DB transaction.
 class BackupService {
+  // Named params can't be private, so `this._db`/`this._settings` initializing
+  // formals aren't possible here — assign the private fields explicitly.
   BackupService({required Database db, required SettingsRepository settings})
     : _db = db,
       _settings = settings;
