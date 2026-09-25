@@ -65,6 +65,7 @@ class _SummaryGraphCardState extends ConsumerState<SummaryGraphCard> {
           child: hidden
               ? const _HiddenChart()
               : async.when(
+                  skipLoadingOnReload: true,
                   loading: () => const SummaryChartSkeleton(),
                   error: (_, _) =>
                       const FinanceError('Could not load the graph.'),

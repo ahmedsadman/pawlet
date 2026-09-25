@@ -228,6 +228,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
 
   Widget _historyBody(AsyncValue<HistoryPage> history) {
     return history.when(
+      skipLoadingOnReload: true,
       loading: () => const SmsTilesSkeleton(),
       error: (e, _) => EmptyHint('Could not load history: $e'),
       data: (page) {
