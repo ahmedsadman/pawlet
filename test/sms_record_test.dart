@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/models/sms_record.dart';
+import 'package:pawlet/models/sms_record.dart';
 
 void main() {
   group('IgnoreReason.fromValue', () {

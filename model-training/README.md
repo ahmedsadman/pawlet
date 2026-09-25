@@ -1,6 +1,6 @@
 # model-training
 
-On-device SMS classification + field extraction models for the **meowni** app.
+On-device SMS classification + field extraction models for the **pawlet** app.
 Lives at `meowni/model-training/` (Python training project inside the app repo).
 Trains small BERT-family encoders (classification + NER), exports int8 ONNX for
 Android.
@@ -9,7 +9,7 @@ Android.
 
 One dataset, two tasks:
 - **Classification** — 5-way leaf label: `expense | income | transfer | bill | null`
-  (covers meowni's category + transaction type).
+  (covers pawlet's category + transaction type).
 - **NER** — extract spans: `AMOUNT`, `BALANCE`, `DUE` (bill total), `PERIOD`
   (statement month/year). Currency is derived in-app from the token next to the
   amount (the dataset's `currency_span` has no char offsets).

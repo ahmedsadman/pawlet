@@ -1,11 +1,11 @@
 import 'package:flutter/services.dart';
 
-/// Bridges the native `meowni/security` channel. The Android side flips a flag
+/// Bridges the native `pawlet/security` channel. The Android side flips a flag
 /// on `ACTION_SCREEN_OFF`; [consumeScreenOff] reads and clears it so the app can
 /// re-lock only after the device was actually locked (not on app-switching).
 class ScreenLockChannel {
   ScreenLockChannel([MethodChannel? channel])
-    : _channel = channel ?? const MethodChannel('meowni/security');
+    : _channel = channel ?? const MethodChannel('pawlet/security');
 
   final MethodChannel _channel;
 

@@ -9,7 +9,7 @@ import 'package:sqflite/sqflite.dart';
 class AppDatabase {
   const AppDatabase._();
 
-  static const String fileName = 'meowni.db';
+  static const String fileName = 'pawlet.db';
 
   static const String smsTable = 'sms_records';
   static const String banksTable = 'banks';

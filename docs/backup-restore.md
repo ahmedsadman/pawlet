@@ -1,6 +1,6 @@
 # Backup & Restore
 
-Meowni keeps everything on-device. **Backup & Restore** (Settings → Data) lets you
+Pawlet keeps everything on-device. **Backup & Restore** (Settings → Data) lets you
 move that data off the phone as a single JSON file and load it back later — onto the
 same device or a fresh install.
 
@@ -50,7 +50,7 @@ error, any file that:
 
 - isn't valid JSON,
 - isn't a JSON object at the top level,
-- carries a `meowni_backup_version` other than the supported one,
+- carries a `pawlet_backup_version` other than the supported one,
 - has no `database` object, or
 - is missing any of the four tables, or has a non-list where a table's rows belong.
 
@@ -65,7 +65,7 @@ The file is a UTF-8 JSON object with this shape:
 
 ```jsonc
 {
-  "meowni_backup_version": 1,            // must match the supported version
+  "pawlet_backup_version": 1,            // must match the supported version
   "exported_at": 1750000000000,          // epoch ms, informational only
   "database": {
     "sms_records":  [ /* row objects */ ],
@@ -184,6 +184,6 @@ up; anything else in `settings` is ignored.
 ## After a restore
 
 Visible finance/messages data is refreshed immediately, but some settings-derived
-caches only fully re-read on launch — hence the "restart Meowni" prompt. A message
+caches only fully re-read on launch — hence the "restart Pawlet" prompt. A message
 that happened to be mid-send when the backup was taken restores as `sending`; the
 queue's stale-reclaim returns it to `queued` on the next drain, so it isn't stuck.

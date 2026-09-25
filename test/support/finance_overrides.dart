@@ -1,11 +1,11 @@
 import 'package:flutter_riverpod/misc.dart' show Override;
-import 'package:meowni/data/finance_repository.dart';
-import 'package:meowni/models/finance/bank.dart';
-import 'package:meowni/models/finance/bills_page.dart';
-import 'package:meowni/models/finance/summary.dart';
-import 'package:meowni/models/finance/transactions_page.dart';
-import 'package:meowni/models/finance/trends.dart';
-import 'package:meowni/state/finance_providers.dart';
+import 'package:pawlet/data/finance_repository.dart';
+import 'package:pawlet/models/finance/bank.dart';
+import 'package:pawlet/models/finance/bills_page.dart';
+import 'package:pawlet/models/finance/summary.dart';
+import 'package:pawlet/models/finance/transactions_page.dart';
+import 'package:pawlet/models/finance/trends.dart';
+import 'package:pawlet/state/finance_providers.dart';
 
 import 'balance_test_overrides.dart';
 

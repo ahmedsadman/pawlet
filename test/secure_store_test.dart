@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meowni/data/secure_store.dart';
+import 'package:pawlet/data/secure_store.dart';
 
 /// In-memory store: overrides the read/write seams so [SecureStore.resolveApiKey]
 /// runs against fakes instead of the platform keystore.

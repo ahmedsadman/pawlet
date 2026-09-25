@@ -39,7 +39,7 @@ class _FinancePageState extends ConsumerState<FinancePage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Meowni',
+          'Pawlet',
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.bold,
           ),

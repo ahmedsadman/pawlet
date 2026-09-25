@@ -1,4 +1,4 @@
-package com.meowni.meowni
+package com.pastabyte.pawlet
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -11,11 +11,11 @@ import io.flutter.plugin.common.MethodChannel
 // FlutterFragmentActivity (not FlutterActivity) is required by local_auth so the
 // biometric prompt can attach to a FragmentActivity.
 class MainActivity : FlutterFragmentActivity() {
-    private val channelName = "meowni/security"
+    private val channelName = "pawlet/security"
 
     // Debug-only: lets `adb` inject a fake SMS into the Dart pipeline.
-    private val debugChannelName = "meowni/debug"
-    private val injectAction = "com.meowni.meowni.INJECT_SMS"
+    private val debugChannelName = "pawlet/debug"
+    private val injectAction = "com.pastabyte.pawlet.INJECT_SMS"
     private var debugChannel: MethodChannel? = null
 
     // Set by the screen-off receiver; read (and reset) by the app on resume so it

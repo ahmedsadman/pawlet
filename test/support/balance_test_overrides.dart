@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/misc.dart' show Override;
-import 'package:meowni/state/providers.dart';
+import 'package:pawlet/state/providers.dart';
 
 /// Pins [balanceHiddenProvider] to a fixed value without touching
 /// SharedPreferences (widget tests that only render masked/unmasked values).
