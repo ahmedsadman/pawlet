@@ -112,7 +112,12 @@ class ProcessingService {
 
       final counts = onCounts;
       if (counts != null) {
-        await counts(await smsRepository.countFailed());
+        try {
+          await counts(await smsRepository.countFailed());
+        } catch (_) {
+          // A notifications-reconcile error must not skip the data-changed
+          // signal or the reschedule below (mirrors the afterPass guard).
+        }
       }
 
       // Throttled cleanup (≤1 real prune / 24h across all triggers and both
