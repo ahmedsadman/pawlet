@@ -1,7 +1,6 @@
-"""Evaluate the trained models on a split — no retraining.
+"""Evaluate the trained fused model on a split — no retraining.
 
-Loads models/classifier + models/ner, runs them over data/splits/<split>.jsonl,
-and prints:
+Loads models/fused, runs it over data/splits/<split>.jsonl, and prints:
   1. classification report (per-class precision/recall/F1)
   2. NER report (seqeval, per-entity)
   3. per-record table: gold vs predicted, class + NER PASS/FAIL
@@ -31,7 +30,7 @@ def ner_token_labels(rec, tok, model):
               return_offsets_mapping=True, return_tensors="pt")
     offsets = enc.pop("offset_mapping")[0].tolist()
     with torch.no_grad():
-        pred_ids = model(**enc).logits[0].argmax(-1).tolist()
+        pred_ids = model(**enc).ner_logits[0].argmax(-1).tolist()
     spans = record_spans(rec)
     gold, pred, started = [], [], set()
     for (st, en), pid in zip(offsets, pred_ids):
@@ -44,7 +43,7 @@ def ner_token_labels(rec, tok, model):
                 started.add(i)
                 break
         gold.append(lab)
-        pred.append(model.config.id2label[int(pid)])
+        pred.append(model._ner_id2label[int(pid)])
     return gold, pred
 
 
@@ -61,7 +60,7 @@ def main():
         sys.exit(f"no split at {path} — run `python -m src.split` first")
 
     rows = [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
-    ctok, cmodel, ntok, nmodel = load()
+    tok, model = load()
 
     y_true, y_pred = [], []
     gold_seqs, pred_seqs = [], []
@@ -70,15 +69,15 @@ def main():
     for rec in rows:
         text = rec["content"]
         gold_c = leaf_label(rec)
-        pred_c, conf = classify(text, ctok, cmodel)
+        pred_c, conf = classify(text, tok, model)
         y_true.append(gold_c)
         y_pred.append(pred_c)
 
-        g_seq, p_seq = ner_token_labels(rec, ntok, nmodel)
+        g_seq, p_seq = ner_token_labels(rec, tok, model)
         gold_seqs.append(g_seq)
         pred_seqs.append(p_seq)
 
-        spans = extract(text, ntok, nmodel)
+        spans = extract(text, tok, model)
         ge = gold_entities(rec)
         pe = {(s["ent"], s["text"]) for s in spans}
         ner_conf = min((s["conf"] for s in spans), default=None)  # weakest entity

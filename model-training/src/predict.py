@@ -1,42 +1,40 @@
-"""Run the trained models on a raw SMS — classify + extract fields.
+"""Run the trained FUSED model on a raw SMS — classify + extract fields.
 
 Usage:
   python -m src.predict "Your A/C debited by Tk 500. Balance Tk 1,200."
   python -m src.predict            # interactive: type a message, press Enter
 
-Loads models/classifier and models/ner (must be trained first).
+Loads models/fused (train it first with `python -m src.train_fused`). One model,
+one forward pass yields both the class logits and the per-token NER logits.
 """
 import re
 import sys
 import torch
-from transformers import (
-    AutoTokenizer,
-    AutoModelForSequenceClassification,
-    AutoModelForTokenClassification,
-)
 
 from .config import MODEL_DIR, MAX_LEN
+from .model_fused import FusedModel
+from transformers import AutoTokenizer
 
-CLF_DIR = MODEL_DIR / "classifier"
-NER_DIR = MODEL_DIR / "ner"
+FUSED_DIR = MODEL_DIR / "fused"
 
 _CUR = re.compile(r"(US\$|BDT|USD|Taka|taka|Tk\.?|TK|\$)", re.I)
 
 
 def load():
-    ctok = AutoTokenizer.from_pretrained(CLF_DIR)
-    cmodel = AutoModelForSequenceClassification.from_pretrained(CLF_DIR).eval()
-    ntok = AutoTokenizer.from_pretrained(NER_DIR)
-    nmodel = AutoModelForTokenClassification.from_pretrained(NER_DIR).eval()
-    return ctok, cmodel, ntok, nmodel
+    tok = AutoTokenizer.from_pretrained(FUSED_DIR)
+    model = FusedModel.from_pretrained(FUSED_DIR).eval()
+    # config maps come back from JSON with string keys — normalise to int.
+    model._class_id2label = {int(k): v for k, v in model.config.class_id2label.items()}
+    model._ner_id2label = {int(k): v for k, v in model.config.ner_id2label.items()}
+    return tok, model
 
 
 def classify(text, tok, model):
     enc = tok(text, truncation=True, max_length=MAX_LEN, return_tensors="pt")
     with torch.no_grad():
-        probs = torch.softmax(model(**enc).logits[0], dim=-1)
+        probs = torch.softmax(model(**enc).class_logits[0], dim=-1)
     idx = int(probs.argmax())
-    return model.config.id2label[idx], float(probs[idx])
+    return model._class_id2label[idx], float(probs[idx])
 
 
 def extract(text, tok, model):
@@ -48,11 +46,11 @@ def extract(text, tok, model):
               return_offsets_mapping=True, return_tensors="pt")
     offsets = enc.pop("offset_mapping")[0].tolist()
     with torch.no_grad():
-        logits = model(**enc).logits[0]
+        logits = model(**enc).ner_logits[0]
     probs = torch.softmax(logits, dim=-1)
     preds = logits.argmax(-1).tolist()
     tconf = probs.max(-1).values.tolist()  # prob of the chosen label per token
-    id2label = model.config.id2label
+    id2label = model._ner_id2label
 
     def close(c):
         c["conf"] = min(c["_p"])  # weakest token = span confidence
@@ -90,9 +88,9 @@ def sniff_currency(text, span):
 
 
 def predict(text, models):
-    ctok, cmodel, ntok, nmodel = models
-    label, conf = classify(text, ctok, cmodel)
-    spans = extract(text, ntok, nmodel)
+    tok, model = models
+    label, conf = classify(text, tok, model)
+    spans = extract(text, tok, model)
 
     if label in ("income", "expense", "transfer"):
         cat = f"transaction / {label}"
