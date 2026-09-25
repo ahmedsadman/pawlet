@@ -56,6 +56,7 @@ void main() {
     Future<bool> Function()? isOnline,
     Future<void> Function(int failed)? onCounts,
     Future<void> Function(Duration? delay)? reschedule,
+    void Function()? onChanged,
   }) => ProcessingService(
     smsRepository: sms,
     banksRepository: banks,
@@ -66,6 +67,7 @@ void main() {
     clock: () => now,
     onCounts: onCounts,
     reschedule: reschedule,
+    onChanged: onChanged,
   );
 
   Future<Map<String, Object?>> row(int id) async =>
@@ -115,6 +117,42 @@ void main() {
     expect(r['category'], 'transaction');
     expect(llm.calls, 1);
     expect((await db.query('transactions')).length, 1);
+    await db.close();
+  });
+
+  test('onChanged fires after a pass that processed a due record', () async {
+    await queue('CHK');
+    final llm = _FakeLlm(
+      result: const ClassifyResult(
+        category: SmsCategory.transaction,
+        transaction: MetadataResult(
+          amount: '50',
+          originalAmount: '50',
+          transactionType: 'expense',
+          originalCurrency: 'BDT',
+        ),
+      ),
+    );
+    var changed = 0;
+    await service(llm, onChanged: () => changed++).process();
+    expect(changed, 1);
+    await db.close();
+  });
+
+  test('onChanged does not fire when the queue is empty', () async {
+    final llm = _FakeLlm(result: const ClassifyResult.none());
+    var changed = 0;
+    await service(llm, onChanged: () => changed++).process();
+    expect(changed, 0);
+    await db.close();
+  });
+
+  test('onChanged does not fire when offline (pass bails early)', () async {
+    await queue('CHK');
+    final llm = _FakeLlm(result: const ClassifyResult.none());
+    var changed = 0;
+    await service(llm, online: false, onChanged: () => changed++).process();
+    expect(changed, 0);
     await db.close();
   });
 
