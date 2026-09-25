@@ -74,4 +74,53 @@ class SettingsRepository {
   bool get historyHintSeen => _prefs.getBool(_kHistoryHintSeen) ?? false;
   Future<void> setHistoryHintSeen(bool value) =>
       _prefs.setBool(_kHistoryHintSeen, value);
+
+  /// Keys included in Backup & Restore, grouped by value type so [exportAll]
+  /// and [importAll] round-trip them with the correct SharedPreferences
+  /// getter/setter. Secrets (PIN, API key) live in SecureStore and are never
+  /// backed up here.
+  static const List<String> _backupStringKeys = [
+    _kCurrency,
+    _kSummaryRange,
+    _kTxRange,
+    _kTxTypes,
+    _kTxSort,
+  ];
+  static const List<String> _backupBoolKeys = [
+    _kHideBalance,
+    _kResolveContacts,
+    _kTxTypeHintSeen,
+    _kHistoryHintSeen,
+  ];
+
+  /// Snapshot of user settings for a backup (only keys that are actually set).
+  Map<String, Object?> exportAll() {
+    final out = <String, Object?>{};
+    for (final key in _backupStringKeys) {
+      final value = _prefs.getString(key);
+      if (value != null) out[key] = value;
+    }
+    for (final key in _backupBoolKeys) {
+      if (_prefs.containsKey(key)) out[key] = _prefs.getBool(key);
+    }
+    return out;
+  }
+
+  /// Replaces all backup-managed settings with [data]. Keys absent from [data]
+  /// are cleared, so a restore is a replace (not a merge); unknown keys and
+  /// type mismatches are ignored for forward/backward compatibility.
+  Future<void> importAll(Map<String, Object?> data) async {
+    for (final key in [..._backupStringKeys, ..._backupBoolKeys]) {
+      await _prefs.remove(key);
+    }
+    for (final entry in data.entries) {
+      final key = entry.key;
+      final value = entry.value;
+      if (_backupStringKeys.contains(key) && value is String) {
+        await _prefs.setString(key, value);
+      } else if (_backupBoolKeys.contains(key) && value is bool) {
+        await _prefs.setBool(key, value);
+      }
+    }
+  }
 }
