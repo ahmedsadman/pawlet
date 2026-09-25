@@ -11,6 +11,7 @@ SmsRecord _rec({
   FailureReason? failureReason,
   int attempts = 0,
   int? nextAttemptAt,
+  ParseSource? parseSource,
 }) => SmsRecord(
   id: 1,
   sender: 'BRAC',
@@ -22,6 +23,7 @@ SmsRecord _rec({
   failureReason: failureReason,
   attempts: attempts,
   nextAttemptAt: nextAttemptAt,
+  parseSource: parseSource,
 );
 
 Future<void> _pump(WidgetTester tester, Widget child) => tester.pumpWidget(
@@ -37,6 +39,50 @@ void main() {
     expect(find.text('BRAC'), findsOneWidget);
     expect(find.text('debit 50 BDT'), findsOneWidget);
     expect(find.text('Queued'), findsOneWidget);
+  });
+
+  testWidgets('history tile shows a muted LLM badge when LLM-parsed', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(
+          status: SmsStatus.success,
+          category: 'transaction',
+          parseSource: ParseSource.llm,
+        ),
+        showCategory: true,
+      ),
+    );
+    expect(find.text('LLM'), findsOneWidget);
+    expect(find.text('Transaction'), findsOneWidget);
+  });
+
+  testWidgets('locally-parsed history tile shows no LLM badge', (tester) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(
+          status: SmsStatus.success,
+          category: 'transaction',
+          parseSource: ParseSource.local,
+        ),
+        showCategory: true,
+      ),
+    );
+    expect(find.text('LLM'), findsNothing);
+    expect(find.text('Transaction'), findsOneWidget);
+  });
+
+  testWidgets('LLM badge does not show in the queue (no category)', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(_rec(status: SmsStatus.sending, parseSource: ParseSource.llm)),
+    );
+    expect(find.text('LLM'), findsNothing);
   });
 
   testWidgets('history tile shows the read-only category label', (
