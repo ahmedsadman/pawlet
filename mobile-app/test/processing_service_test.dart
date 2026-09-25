@@ -147,6 +147,19 @@ void main() {
     await db.close();
   });
 
+  test('onChanged still fires when onCounts throws', () async {
+    await queue('DARAZ', content: 'win a prize'); // gated, offline-safe
+    final llm = _FakeLlm(result: const ClassifyResult.none());
+    var changed = 0;
+    await service(
+      llm,
+      onCounts: (_) async => throw StateError('notifications down'),
+      onChanged: () => changed++,
+    ).process();
+    expect(changed, 1);
+    await db.close();
+  });
+
   test('onChanged does not fire when offline (pass bails early)', () async {
     await queue('CHK');
     final llm = _FakeLlm(result: const ClassifyResult.none());
