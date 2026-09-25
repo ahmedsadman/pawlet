@@ -150,13 +150,21 @@ class _RootShellState extends ConsumerState<RootShell>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      // Reflect anything written while we were away (possibly by a background
-      // isolate) immediately, then drain the queue — process() bumps again via
-      // onDataChanged once its pass commits.
-      ref.read(dataRevisionProvider.notifier).bump();
-      // Fire-and-forget: process() swallows its own pass-level errors.
-      unawaited(ref.read(processingServiceProvider).process());
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // Restart the change-token poller and refresh immediately: reflect
+        // anything written while we were away (possibly by a background
+        // isolate), then drain the queue. process() bumps the DB token once its
+        // pass commits, which the poller then picks up.
+        ref.read(dataRevisionSyncProvider).resume();
+        ref.read(dataRevisionProvider.notifier).bump();
+        // Fire-and-forget: process() swallows its own pass-level errors.
+        unawaited(ref.read(processingServiceProvider).process());
+      case AppLifecycleState.paused:
+        // Stop polling while backgrounded — no wake while the user is away.
+        ref.read(dataRevisionSyncProvider).pause();
+      default:
+        break;
     }
   }
 
