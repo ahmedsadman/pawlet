@@ -40,12 +40,18 @@ class _BackupRestorePageState extends ConsumerState<BackupRestorePage> {
       final stamp = DateTime.now().millisecondsSinceEpoch;
       final file = File('${dir.path}/meowni-backup-$stamp.json');
       await file.writeAsString(json);
-      await SharePlus.instance.share(
-        ShareParams(
-          subject: 'Meowni backup',
-          files: [XFile(file.path, mimeType: 'application/json')],
-        ),
-      );
+      try {
+        await SharePlus.instance.share(
+          ShareParams(
+            subject: 'Meowni backup',
+            files: [XFile(file.path, mimeType: 'application/json')],
+          ),
+        );
+      } finally {
+        // The share completes (or is dismissed) before this returns, so the
+        // temp file — which holds user data — is safe to remove afterward.
+        if (await file.exists()) await file.delete();
+      }
     } catch (e) {
       _toast('Backup failed: $e');
     } finally {
