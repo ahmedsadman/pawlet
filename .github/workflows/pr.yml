@@ -3,10 +3,10 @@ name: ci
 on:
   pull_request:
     paths:
-      - "lib/**"
-      - "android/**"
-      - "pubspec.yaml"
-      - "pubspec.lock"
+      - "mobile-app/lib/**"
+      - "mobile-app/android/**"
+      - "mobile-app/pubspec.yaml"
+      - "mobile-app/pubspec.lock"
       - ".github/workflows/pr.yml"
       - ".github/workflows/checks.yml"
 
@@ -32,9 +32,9 @@ jobs:
         with:
           filters: |
             android:
-              - "android/**"
-              - "pubspec.yaml"
-              - "pubspec.lock"
+              - "mobile-app/android/**"
+              - "mobile-app/pubspec.yaml"
+              - "mobile-app/pubspec.lock"
               - ".github/workflows/pr.yml"
               - ".github/workflows/checks.yml"
 
@@ -46,6 +46,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
     steps:
       - name: Checkout code
         uses: actions/checkout@v5

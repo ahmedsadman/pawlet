@@ -13,12 +13,12 @@
 
 ## Docs
 
-Found under `/docs` directory. This is intended for humans, not LLM. **Do not read those to gather context**.
+Found under `mobile-app/docs` directory. This is intended for humans, not LLM. **Do not read those to gather context**.
 
 ### When to update
 - After completing execution of a plan
 - After edits which changes an existing behavior
 
-While updating, follow instructions of `docs/README.md`. Only focus on the docs' **correctness**. **We don't care
+While updating, follow instructions of `mobile-app/docs/README.md`. Only focus on the docs' **correctness**. **We don't care
 about omission of information** - unless the user specifically instructed to add the new info.
 

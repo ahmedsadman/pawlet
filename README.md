@@ -77,6 +77,8 @@ the original app (trends over rolling windows, monthly summaries, balances, spen
 
 ## Building
 
+The Flutter app lives in `mobile-app/` — run the commands below from there (`cd mobile-app`).
+
 The only secret is the OpenRouter API key. There is **no in-app field for it** — the key is baked
 in at **build time** via a `--dart-define` (a compiler flag), so whoever builds passes it and people
 who install the app pass nothing. On first launch the app persists it to encrypted storage.
