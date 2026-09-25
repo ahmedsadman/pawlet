@@ -13,6 +13,7 @@ void main() {
       'scb',
       'stanchart',
     ]);
+    expect(bankCatalogByLabel('BRAC Bank')!.matchers, ['brac', 'brac-bank']);
     expect(
       bankCatalogByLabel('Eastern Bank Limited'),
       isNull,
