@@ -17,7 +17,9 @@ if the phone is offline, the model is rate-limited, or the app is killed mid-way
 | Queue drain, retry/backoff policy | `lib/services/processing_service.dart` |
 | Queue persistence + queries (claim, due, stale, prune) | `lib/data/sms_repository.dart` |
 | Record shape + lifecycle states | `lib/models/sms_record.dart` |
-| Layer-1 gate + fused LLM orchestration | `lib/services/classification/classifier.dart`, `lib/services/classification/sender_matcher.dart` |
+| Layer-1 gate + on-device/LLM orchestration | `lib/services/classification/classifier.dart`, `lib/services/classification/sender_matcher.dart` |
+| On-device model inference (TFLite/LiteRT) + tokenizer | `lib/services/classification/tflite_local_classifier.dart` |
+| On-device accept/reject gate + field building | `lib/services/classification/local_gate.dart`, `lib/services/classification/local_parsers.dart`, `lib/services/classification/local_model.dart` |
 | The single LLM call + HTTP error/hint parsing | `lib/services/llm/openrouter_provider.dart` |
 | Persisting the classified result | `lib/services/finance/finance_writer.dart` |
 | Connectivity check | `lib/services/connectivity_service.dart` |
@@ -81,9 +83,14 @@ A **category label** (`transaction` / `bill`) is stored only on `success` rows.
 Two internal, debug-only reason columns explain terminal non-success outcomes (see
 `lib/models/sms_record.dart`):
 
-- **`ignore_reason`** on `ignored` rows — `gated` (Layer-1 gate rejected it, no LLM call),
-  `llm_none` (the model said "not financial"), or `no_record` (the model classified it as
-  financial but no row was written — missing metadata, unmatched card, or a duplicate).
+- **`ignore_reason`** on `ignored` rows — `gated` (Layer-1 gate rejected it, nothing ran),
+  `local_none` (the on-device model confidently said "not financial", no LLM call),
+  `llm_none` (the LLM said "not financial"), or `no_record` (classified as financial but no
+  row was written — missing metadata, unmatched card, or a duplicate).
+- **`parse_source`** on processed rows — `local` (parsed on-device) or `llm` (fell back to
+  the LLM). History shows a small, muted **"LLM"** marker on rows parsed by the LLM (i.e.
+  where the on-device model was not confident); locally-parsed rows show nothing. Rows from
+  before this column existed read as null.
 - **`failure_reason`** on `failure` rows — `llm_error` (fatal) or `retry_exhausted`. The
   underlying error text is stored (truncated) in `last_error`; both are internal (read via
   ADB/debug), never surfaced in the UI. History shows only a short hint derived from
@@ -113,7 +120,28 @@ call while one is running is ignored) and, before touching anything, requeues st
      or does the body contain one of your registered card numbers? If not, the message is
      **ignored with no LLM call** — this is what stops OTPs, promos, and personal texts
      from spending API quota.
-   - **Fused LLM call:** a message that passes the gate goes to a *single* OpenRouter
+   - **On-device model (local, free):** a message that passes the gate is first run through
+     a bundled fused model (a small BERT-family encoder exported to TFLite and run via
+     LiteRT — `tflite_local_classifier.dart`). In one pass it both classifies the message
+     (transaction / bill / null) and extracts the numeric spans (amount, balance, amount
+     due, statement period). The tokenizer reproduces the training tokenizer exactly (a
+     golden parity test guards this). The result is **accepted on-device — skipping the LLM
+     entirely — only when it is confident** (`local_gate.dart`):
+     - the classifier confidence AND the weakest extracted-span confidence (NERc) both clear
+       a threshold; a confident `null` is ignored locally without any call;
+     - a transaction must carry an amount span, a bill an amount-due span;
+     - the amount must parse to a number.
+
+     Anything short of that (low confidence, a missing span, or the model failing to load)
+     **falls back to the LLM**. When multiple spans of the same field are emitted, the
+     highest-confidence one wins; NERc is measured over *all* emitted spans.
+
+     **Currency limitation (future improvement):** the on-device model does not convert
+     currencies. If a currency token near the amount resolves to something other than your
+     normalized currency, the message is routed to the LLM (which performs the conversion).
+     Improving on-device FX handling is a known follow-up.
+   - **Fused LLM call:** a message the model could not confidently handle goes to a *single*
+     OpenRouter
      request carrying a static ordered fallback list of structured-output-capable models
      (from `SettingsRepository.defaultLlmModels`). The request uses strict structured
      output (`response_format: {type: json_schema, json_schema: <schema>}`) with
@@ -306,6 +334,8 @@ matters, since numbers can drift.
 | Max single backoff step | 6h | `processing_service.dart` |
 | Server-hint ceiling | 24h | `processing_service.dart` |
 | Stale `sending` reclaim window | 3 min | `processing_service.dart` |
+| On-device accept threshold (class conf & NERc) | 0.90 | `local_model.dart` |
+| On-device max sequence length | 128 tokens | `tflite_local_classifier.dart` |
 | LLM single-attempt HTTP timeout | 2 min | `openrouter_provider.dart` |
 | Ignored retention | 7 days | `sms_repository.dart` |
 | Prune throttle gap | 24h | `sms_repository.dart` |
