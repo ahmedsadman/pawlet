@@ -205,6 +205,39 @@ void main() {
     expect(r.accepted, isFalse);
   });
 
+  test('non-BDT/USD foreign currency (EUR) also rejects', () {
+    const content = 'Charged EUR 100 at store';
+    final r = decideLocal(
+      LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.95,
+        spans: [_span('AMOUNT', '100', 0.99, start: content.indexOf('100'))],
+      ),
+      currency: bdt,
+      content: content,
+    );
+    expect(r.accepted, isFalse);
+  });
+
+  test('bill: out-of-range year drops the whole period, still accepts', () {
+    const content = 'Total Due: BDT 4924.35 AUG 1899';
+    final r = decideLocal(
+      LocalPrediction(
+        classLabel: 'bill',
+        classConfidence: 0.99,
+        spans: [
+          _span('DUE', '4924.35', 0.98, start: content.indexOf('4924.35')),
+          _span('PERIOD', 'AUG 1899', 0.95, start: content.indexOf('AUG 1899')),
+        ],
+      ),
+      currency: bdt,
+      content: content,
+    );
+    expect(r.accepted, isTrue);
+    expect(r.result!.bill!.statementMonth, isNull);
+    expect(r.result!.bill!.statementYear, isNull);
+  });
+
   test('same currency accepts (no FX conversion needed)', () {
     const content = 'Debited BDT 100';
     final r = decideLocal(
