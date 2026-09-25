@@ -1,7 +1,7 @@
 # model-training
 
 On-device SMS classification + field extraction models for the **pawlet** app.
-Lives at `meowni/model-training/` (Python training project inside the app repo).
+Lives at `pawlet/model-training/` (Python training project inside the app repo).
 Trains small BERT-family encoders (classification + NER), exports int8 ONNX for
 Android.
 
