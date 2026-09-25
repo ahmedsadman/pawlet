@@ -84,6 +84,17 @@ class SmsRepository {
 
   Future<int> countFailed() => _count('status = ?', [SmsStatus.failure.name]);
 
+  /// The oldest `updated_at` among in-flight (`sending`) rows, or null when none.
+  /// Used to schedule a stale-reclaim wake so a single orphaned in-flight row
+  /// (holder isolate died) can't stall the single-slot queue indefinitely.
+  Future<int?> oldestSendingAt() async {
+    final rows = await _db.rawQuery(
+      'SELECT MIN(updated_at) AS oldest FROM $_table WHERE status = ?',
+      [SmsStatus.sending.name],
+    );
+    return rows.first['oldest'] as int?;
+  }
+
   /// The soonest time any queued row wants to run (epoch ms), treating a null
   /// `next_attempt_at` as "due now" (0). Returns null when nothing is queued —
   /// used to decide whether/when to schedule a background catch-up.
