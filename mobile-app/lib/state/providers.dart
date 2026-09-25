@@ -131,17 +131,34 @@ class DataRevisionSync {
   DataRevisionSync(
     this._readToken,
     this._bump, {
-    Duration interval = const Duration(seconds: 2),
+    this._interval = const Duration(seconds: 2),
   }) {
-    _timer = Timer.periodic(interval, (_) => syncOnce());
+    _start();
   }
 
   final Future<int> Function() _readToken;
   final void Function() _bump;
+  final Duration _interval;
 
   Timer? _timer;
   int _last = -1; // -1 => not yet observed; first read always refreshes once
   bool _busy = false;
+
+  /// Whether the poll timer is currently running.
+  bool get isPolling => _timer != null;
+
+  void _start() => _timer ??= Timer.periodic(_interval, (_) => syncOnce());
+
+  /// Stops polling — call when the app is backgrounded. We don't rely on the OS
+  /// freezing the isolate to halt the timer; we stop it explicitly so there's no
+  /// wake while the user is away.
+  void pause() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  /// Resumes polling — call when the app returns to the foreground.
+  void resume() => _start();
 
   /// Reads the token; bumps the revision on the first observation (to catch a
   /// write that landed before polling started) and on every subsequent change.
@@ -160,7 +177,10 @@ class DataRevisionSync {
     }
   }
 
-  void dispose() => _timer?.cancel();
+  void dispose() {
+    _timer?.cancel();
+    _timer = null;
+  }
 }
 
 /// Owns the [DataRevisionSync] for the app's lifetime (kept alive by RootShell).
