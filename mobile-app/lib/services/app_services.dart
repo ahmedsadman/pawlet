@@ -10,6 +10,7 @@ import '../data/sms_repository.dart';
 import '../models/sms_record.dart';
 import 'background_worker.dart';
 import 'classification/classifier.dart';
+import 'classification/onnx_local_classifier.dart';
 import 'connectivity_service.dart';
 import 'contact_resolver.dart';
 import 'finance/finance_matcher.dart';
@@ -62,7 +63,7 @@ class AppServices {
     final processingService = ProcessingService(
       smsRepository: smsRepository,
       banksRepository: banksRepository,
-      classifier: Classifier(llmProvider),
+      classifier: Classifier(llmProvider, local: OnnxLocalClassifier()),
       financeWriter: FinanceWriter(database),
       isOnline: connectivity.isOnline,
       currency: () => settings.currency,
