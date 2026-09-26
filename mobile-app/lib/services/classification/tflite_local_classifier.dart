@@ -11,8 +11,9 @@ import 'local_model.dart';
 /// [LocalClassifier] backed by the bundled fused TFLite model + the HF WordPiece
 /// tokenizer, run via the tflite_flutter (LiteRT) interpreter.
 ///
-/// Inference runs in a background isolate ([IsolateInterpreter]) so the ~99 MB
-/// model's `run()` never blocks the UI isolate that drives the processing queue.
+/// Inference runs in a background isolate ([IsolateInterpreter]) so the ~26 MB
+/// (dynamic-range int8) model's `run()` never blocks the UI isolate that drives
+/// the processing queue.
 /// Inputs are padded to a FIXED [_maxLen] so `allocateTensors` runs once at load
 /// (not per message) — the per-call resize/realloc on the big graph was itself a
 /// source of jank. The interpreter + tokenizer load lazily once and are reused;
@@ -58,9 +59,17 @@ class TfliteLocalClassifier implements LocalClassifier {
       _maskIn = ins.indexWhere((t) => t.name.contains('attention_mask'));
       _typeIn = ins.indexWhere((t) => t.name.contains('token_type_ids'));
 
+      // tf.lite renames the ONNX outputs to `PartitionedCall:*` and does not
+      // preserve their order, so resolve class vs NER BY SHAPE (not name):
+      // class_logits is rank-2 [1, kClassLabels], ner_logits is rank-3
+      // [1, maxLen, _numNerLabels]. The export gate asserts this is unambiguous.
       final outs = interpreter.getOutputTensors();
-      _classOut = outs.indexWhere((t) => t.name.contains('class_logits'));
-      _nerOut = outs.indexWhere((t) => t.name.contains('ner_logits'));
+      _classOut = outs.indexWhere(
+        (t) => t.shape.length == 2 && t.shape.last == kClassLabels.length,
+      );
+      _nerOut = outs.indexWhere(
+        (t) => t.shape.length == 3 && t.shape.last == _numNerLabels,
+      );
 
       if ([_idsIn, _maskIn, _typeIn, _classOut, _nerOut].contains(-1)) {
         _initFailed = true;
@@ -125,6 +134,10 @@ class TfliteLocalClassifier implements LocalClassifier {
             List<double>.filled(_numNerLabels, 0),
         ],
       ];
+      // tflite_flutter copies outputs by position, so each buffer is keyed by the
+      // shape-resolved tensor index (_classOut/_nerOut may be in either order —
+      // tf.lite doesn't preserve it). Keying by the resolved index keeps class/ner
+      // correct regardless of the physical output order.
       final outputs = <int, Object>{_classOut: classBuf, _nerOut: nerBuf};
 
       // Runs on the background isolate; awaits without blocking the UI isolate.

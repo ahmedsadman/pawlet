@@ -2,8 +2,8 @@
 
 On-device SMS classification + field extraction models for the **pawlet** app.
 Lives at `pawlet/model-training/` (Python training project inside the app repo).
-Trains small BERT-family encoders (classification + NER), exports int8 ONNX for
-Android.
+Trains small BERT-family encoders (classification + NER), exports an fp32 ONNX
+graph and converts it to a dynamic-range int8 TFLite model for Android.
 
 ## What this does
 
@@ -83,7 +83,8 @@ python -m src.split              # build train/val/test  -> data/splits/
 python -m src.train_classifier   # seed-sweep, keep best-by-val -> models/classifier
 python -m src.train_ner          # -> models/ner, prints per-entity test report
 python -m src.evaluate           # score a trained split (default test) -> report
-python -m src.export_onnx        # -> models/*_int8/ (ship these in the app)
+python -m src.export_onnx        # -> models/fused_onnx/model.onnx (fp32 source graph)
+python scripts/export_tflite.py  # onnx2tf + dynamic-range int8 -> app assets/model/model.tflite
 ```
 
 `evaluate` runs the already-trained models over a split (no retraining) and prints
@@ -134,8 +135,9 @@ the run with the best validation macro-F1. `SEEDS=7` reproduces just the winner.
   classes (bill, transfer) are small, so their val/test counts are small — that
   is the real signal we have; add more real SMS over time.
 - **Train/serve parity.** The app must reproduce the exact tokenizer
-  preprocessing used here, or accuracy drops. Simplest: run tokenization inside
-  the ONNX graph via ONNX Runtime Extensions.
+  preprocessing used here, or accuracy drops. The app ships the HF WordPiece
+  `tokenizer.json` and tokenizes in Dart (`dart_bert_tokenizer`); parity is
+  guarded by `mobile-app/integration_test/local_model_parity_test.dart`.
 - **750 is a v1.** Expect to keep adding real data.
 - **Pinning regression cases.** A dataset row can carry `_split: "test"` (or
   `"val"`/`"train"`) to force it into that split, bypassing the reserve logic —
