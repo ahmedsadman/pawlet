@@ -298,6 +298,32 @@ void main() {
     },
   );
 
+  test(
+    'blocked queued rows wake at stale-reclaim, not immediately (no WM busy-loop)',
+    () async {
+      // The single slot is held by an in-flight row, and a due-now queued row is
+      // waiting behind it. The queued row CANNOT be claimed until the holder is
+      // reclaimed as stale, so the next catch-up must be scheduled at ~staleAfter
+      // — NOT at ~0. A ~0 delay makes WorkManager re-run the catch-up back-to-back
+      // (it reschedules itself every pass), a livelock that janks the whole app.
+      final held = await queue('CHK', content: 'held');
+      await sms.claim(held, now); // sending; occupies the single global slot
+      await queue('CHK', content: 'waiting'); // queued, due now, but blocked
+      Duration? scheduled;
+      var calls = 0;
+      await service(
+        _FakeLlm(result: const ClassifyResult.none()),
+        reschedule: (d) async {
+          scheduled = d;
+          calls++;
+        },
+      ).process();
+      expect(calls, 1);
+      expect(scheduled, ProcessingService.staleAfter);
+      await db.close();
+    },
+  );
+
   test('gates out an unregistered sender as ignored/gated, no LLM', () async {
     final id = await queue('DARAZ', content: 'win a prize');
     final llm = _FakeLlm(result: const ClassifyResult.none());
