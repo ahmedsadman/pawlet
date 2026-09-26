@@ -10,10 +10,18 @@ evaluate>=0.4
 seqeval>=1.2
 scikit-learn>=1.3
 
-# ONNX export + int8 quantization
+# ONNX export (fp32 source graph for the TFLite step)
 optimum[onnxruntime]>=1.21
 onnx>=1.16
 onnxruntime>=1.18
+
+# ONNX -> TFLite conversion + dynamic-range int8 quantization (export_tflite.py).
+# Pinned: onnx2tf's tensor naming/ordering changes between releases and the app
+# depends on the output ORDER. The [tensorflow] extra pulls a matched
+# tensorflow/tf-keras/keras 2.21 set. onnx2tf also hard-pins onnx + onnxruntime,
+# so install it deliberately in this env.
+onnx2tf[tensorflow]==2.6.9
+onnx_graphsurgeon>=0.5
 
 numpy
 pandas

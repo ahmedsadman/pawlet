@@ -9,7 +9,8 @@ SPLIT_DIR = DATA_DIR / "splits"
 MODEL_DIR = ROOT / "models"
 
 # Pretrained encoder backbone (AutoModel* resolves the head).
-# Swap freely — code is backbone-agnostic. Size/quality trade-offs (int8 export):
+# Swap freely — code is backbone-agnostic. Size/quality trade-offs (approx
+# dynamic-range int8 TFLite footprint):
 #   huawei-noah/TinyBERT_General_4L_312D   ~15 MB   smallest
 #   google/mobilebert-uncased              ~25 MB   good default
 #   microsoft/MiniLM-L12-H384-uncased      ~22 MB
