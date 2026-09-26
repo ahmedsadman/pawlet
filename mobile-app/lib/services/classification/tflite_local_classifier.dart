@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dart_bert_tokenizer/dart_bert_tokenizer.dart';
@@ -8,9 +9,14 @@ import 'local_classifier.dart';
 import 'local_model.dart';
 
 /// [LocalClassifier] backed by the bundled fused TFLite model + the HF WordPiece
-/// tokenizer, run via the tflite_flutter (LiteRT) interpreter. The interpreter
-/// and tokenizer are loaded lazily once and reused; a load failure is remembered
-/// so later messages skip straight to the LLM fallback without re-attempting.
+/// tokenizer, run via the tflite_flutter (LiteRT) interpreter.
+///
+/// Inference runs in a background isolate ([IsolateInterpreter]) so the ~99 MB
+/// model's `run()` never blocks the UI isolate that drives the processing queue.
+/// Inputs are padded to a FIXED [_maxLen] so `allocateTensors` runs once at load
+/// (not per message) — the per-call resize/realloc on the big graph was itself a
+/// source of jank. The interpreter + tokenizer load lazily once and are reused;
+/// a load failure is remembered so later messages skip to the LLM fallback.
 class TfliteLocalClassifier implements LocalClassifier {
   TfliteLocalClassifier({
     this.modelAsset = 'assets/model/model.tflite',
@@ -25,6 +31,7 @@ class TfliteLocalClassifier implements LocalClassifier {
   static const int _numNerLabels = 9; // kNerLabels.length
 
   Interpreter? _interpreter;
+  IsolateInterpreter? _isolate;
   WordPieceTokenizer? _tokenizer;
   // Input tensor indices, resolved by name (onnx2tf preserves the ONNX names but
   // not necessarily their positional order).
@@ -37,7 +44,9 @@ class TfliteLocalClassifier implements LocalClassifier {
   bool _initFailed = false;
 
   Future<bool> _ensureLoaded() async {
-    if (_interpreter != null && _tokenizer != null) return true;
+    if (_interpreter != null && _isolate != null && _tokenizer != null) {
+      return true;
+    }
     if (_initFailed) return false;
     try {
       final json = await rootBundle.loadString(tokenizerAsset);
@@ -58,6 +67,17 @@ class TfliteLocalClassifier implements LocalClassifier {
         interpreter.close();
         return false;
       }
+
+      // Fix the sequence length once so the tensor arena is allocated a single
+      // time here, not on every inference.
+      interpreter.resizeInputTensor(_idsIn, [1, _maxLen]);
+      interpreter.resizeInputTensor(_maskIn, [1, _maxLen]);
+      interpreter.resizeInputTensor(_typeIn, [1, _maxLen]);
+      interpreter.allocateTensors();
+
+      // Run inference in a background isolate so the native run() never blocks
+      // the UI isolate that drives the processing queue.
+      _isolate = await IsolateInterpreter.create(address: interpreter.address);
       _interpreter = interpreter;
       return true;
     } catch (_) {
@@ -70,23 +90,23 @@ class TfliteLocalClassifier implements LocalClassifier {
   Future<LocalPrediction?> infer(String content) async {
     if (!await _ensureLoaded()) return null;
     final tokenizer = _tokenizer!;
-    final interpreter = _interpreter!;
+    final isolate = _isolate!;
 
     try {
       final enc = tokenizer.encode(content);
       final n = math.min(enc.ids.length, _maxLen);
 
-      // Plain Dart int lists: the model takes int32 inputs and tflite_flutter's
-      // per-element int32 path is little-endian correct (its int64 path is not).
-      final ids = [for (var i = 0; i < n; i++) enc.ids[i]];
-      final mask = List<int>.filled(n, 1);
-      final typeIds = List<int>.filled(n, 0); // single sequence
-
-      // Sequence length is dynamic; resize the three inputs then reallocate.
-      interpreter.resizeInputTensor(_idsIn, [1, n]);
-      interpreter.resizeInputTensor(_maskIn, [1, n]);
-      interpreter.resizeInputTensor(_typeIn, [1, n]);
-      interpreter.allocateTensors();
+      // Fixed-length, padded inputs (arena allocated once at load). Plain Dart int
+      // lists: the model takes int32 inputs and tflite_flutter's per-element int32
+      // path is little-endian correct (its int64 path is not). Padding is masked
+      // out via attention_mask=0, so the result matches the unpadded sequence.
+      final ids = List<int>.filled(_maxLen, 0); // 0 == [PAD]
+      final mask = List<int>.filled(_maxLen, 0);
+      final typeIds = List<int>.filled(_maxLen, 0);
+      for (var i = 0; i < n; i++) {
+        ids[i] = enc.ids[i];
+        mask[i] = 1;
+      }
 
       // runForMultipleInputs takes inputs ordered by ascending input-tensor index.
       final byIndex = <int, Object>{
@@ -97,16 +117,21 @@ class TfliteLocalClassifier implements LocalClassifier {
       final orderedKeys = byIndex.keys.toList()..sort();
       final inputs = [for (final k in orderedKeys) byIndex[k]!];
 
-      // Pre-allocated output buffers matching the model's shapes.
+      // Pre-allocated output buffers matching the model's (fixed) shapes.
       final classBuf = [List<double>.filled(kClassLabels.length, 0)];
       final nerBuf = [
-        [for (var t = 0; t < n; t++) List<double>.filled(_numNerLabels, 0)],
+        [
+          for (var t = 0; t < _maxLen; t++)
+            List<double>.filled(_numNerLabels, 0),
+        ],
       ];
       final outputs = <int, Object>{_classOut: classBuf, _nerOut: nerBuf};
 
-      interpreter.runForMultipleInputs(inputs, outputs);
+      // Runs on the background isolate; awaits without blocking the UI isolate.
+      await isolate.runForMultipleInputs(inputs, outputs);
 
       final (label, conf) = _classify(classBuf[0]);
+      // Decode only the real (non-pad) tokens: enc.offsets has length n.
       final spans = _decodeSpans(content, enc, nerBuf[0], n);
       return LocalPrediction(
         classLabel: label,
@@ -199,10 +224,13 @@ class TfliteLocalClassifier implements LocalClassifier {
     return [for (final e in exps) e / sum];
   }
 
-  /// Frees the native interpreter. Call from each isolate's dispose so a
-  /// background isolate that loaded the ~model doesn't leak native buffers.
+  /// Frees the inference isolate and the native interpreter. Call from each
+  /// isolate's dispose so a bundle that loaded the model doesn't leak.
   void close() {
+    final iso = _isolate;
+    if (iso != null) unawaited(iso.close());
     _interpreter?.close();
+    _isolate = null;
     _interpreter = null;
   }
 }
