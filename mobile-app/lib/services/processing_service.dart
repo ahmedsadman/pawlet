@@ -351,19 +351,28 @@ class ProcessingService {
     if (cb == null) return;
     final now = _clock();
 
-    final wakeTimes = <int>[];
-    final soonestQueued = await smsRepository.soonestQueuedAttempt();
-    if (soonestQueued != null) wakeTimes.add(soonestQueued);
+    final int? wake;
     final oldestSending = await smsRepository.oldestSendingAt();
     if (oldestSending != null) {
-      wakeTimes.add(oldestSending + staleAfter.inMilliseconds);
+      // The single global slot is held by an in-flight row. While it is held, NO
+      // queued row can be claimed (see [SmsRepository.claim]), so the soonest a
+      // queued row can make progress is the stale-reclaim time — the point at
+      // which a dead holder's row is returned to the queue. Waking at the queued
+      // rows' due-now time instead would schedule a ~0-delay catch-up that
+      // WorkManager re-runs back-to-back (each pass reschedules itself), a
+      // livelock that pegs the device. A live holder drains the queue itself, so
+      // this wake is only the dead-holder safety net.
+      wake = oldestSending + staleAfter.inMilliseconds;
+    } else {
+      // No slot contention: wake when the soonest queued retry is due (null =
+      // nothing queued → cancel the catch-up).
+      wake = await smsRepository.soonestQueuedAttempt();
     }
 
-    if (wakeTimes.isEmpty) {
+    if (wake == null) {
       await cb(null);
       return;
     }
-    final wake = wakeTimes.reduce((a, b) => a < b ? a : b);
     final delayMs = wake - now;
     await cb(Duration(milliseconds: delayMs < 0 ? 0 : delayMs));
   }

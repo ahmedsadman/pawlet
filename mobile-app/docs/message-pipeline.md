@@ -220,8 +220,14 @@ exists in `connectivity_service.dart` but is intentionally unused for triggering
 Recovery comes from two mechanisms instead:
 
 - **Network-constrained background catch-up (primary).** After every pass, the pipeline
-  reschedules a *single* one-off WorkManager task for the soonest queued attempt — or
-  cancels it entirely when the queue is empty. Crucially the task carries a
+  reschedules a *single* one-off WorkManager task — for the soonest queued attempt, or,
+  while a row is still `sending` (the slot is held, so no queued row can be claimed yet),
+  for that in-flight row's **stale-reclaim time** — or cancels it entirely when the queue
+  is empty. Waking at the reclaim time rather than the blocked rows' due-now time is
+  deliberate: a due-now wake would schedule the catch-up at delay zero, which WorkManager
+  re-runs back-to-back (each pass reschedules itself) — a livelock. For the same reason the
+  task is enqueued with `ExistingWorkPolicy.keep`, so a catch-up already running (holding the
+  slot mid-call) is never cancelled and re-enqueued. Crucially the task carries a
   **"network connected" constraint**, so an offline backlog schedules a catch-up at
   delay zero and the OS simply holds it until connectivity returns, then runs it. An idle
   app with an empty queue schedules nothing and never wakes.
