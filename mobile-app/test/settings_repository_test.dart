@@ -42,8 +42,8 @@ void main() {
     final snap = r.exportAll();
     expect(snap['currency'], 'USD');
     expect(snap['hide_balance'], true);
-    // resolve_contacts was never written, so it is absent from the snapshot.
-    expect(snap.containsKey('resolve_contacts'), isFalse);
+    // history_hint_seen was never written, so it is absent from the snapshot.
+    expect(snap.containsKey('history_hint_seen'), isFalse);
   });
 
   test('importAll restores a snapshot', () async {

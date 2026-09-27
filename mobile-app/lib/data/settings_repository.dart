@@ -15,7 +15,6 @@ class SettingsRepository {
   static const _kTxRange = 'tx_range';
   static const _kTxTypes = 'tx_types';
   static const _kTxSort = 'tx_sort';
-  static const _kResolveContacts = 'resolve_contacts';
   static const _kTxTypeHintSeen = 'tx_type_hint_seen';
   static const _kHistoryHintSeen = 'history_hint_seen';
 
@@ -60,11 +59,6 @@ class SettingsRepository {
   String? get txSort => _prefs.getString(_kTxSort);
   Future<void> setTxSort(String key) => _prefs.setString(_kTxSort, key);
 
-  /// Attach a saved contact name to numeric senders (for display).
-  bool get resolveContacts => _prefs.getBool(_kResolveContacts) ?? true;
-  Future<void> setResolveContacts(bool value) =>
-      _prefs.setBool(_kResolveContacts, value);
-
   /// Whether the user has seen the one-time "long-press to change type" hint.
   bool get txTypeHintSeen => _prefs.getBool(_kTxTypeHintSeen) ?? false;
   Future<void> setTxTypeHintSeen(bool value) =>
@@ -88,7 +82,6 @@ class SettingsRepository {
   ];
   static const List<String> _backupBoolKeys = [
     _kHideBalance,
-    _kResolveContacts,
     _kTxTypeHintSeen,
     _kHistoryHintSeen,
   ];
