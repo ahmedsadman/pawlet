@@ -60,23 +60,33 @@ class BanksPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Banks & Cards')),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openForm(context, ref),
-        child: const Icon(Icons.add),
-      ),
       body: banksAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Failed to load banks: $e')),
         data: (result) {
           final banks = result.data;
           if (banks.isEmpty) {
-            return const _EmptyBanks();
+            return _EmptyBanks(onAdd: () => _openForm(context, ref));
           }
+          // One extra row after the last bank holds the inline "Add bank"
+          // button — more discoverable than a floating action button.
           return ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: banks.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemCount: banks.length + 1,
+            separatorBuilder: (_, index) => index < banks.length - 1
+                ? const Divider(height: 1)
+                : const SizedBox.shrink(),
             itemBuilder: (context, i) {
+              if (i == banks.length) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: FilledButton.icon(
+                    onPressed: () => _openForm(context, ref),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add bank'),
+                  ),
+                );
+              }
               final bank = banks[i];
               return _BankTile(
                 bank: bank,
@@ -92,7 +102,9 @@ class BanksPage extends ConsumerWidget {
 }
 
 class _EmptyBanks extends StatelessWidget {
-  const _EmptyBanks();
+  const _EmptyBanks({required this.onAdd});
+
+  final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +129,12 @@ class _EmptyBanks extends StatelessWidget {
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.outline,
               ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add),
+              label: const Text('Add bank'),
             ),
           ],
         ),

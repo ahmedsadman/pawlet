@@ -47,6 +47,29 @@ void main() {
     expect(find.text('No banks yet'), findsNothing);
   });
 
+  testWidgets('shows an inline Add bank button, not a FAB', (tester) async {
+    await _pump(tester, const BanksPage(), [
+      banksProvider.overrideWith(
+        (ref) async => CachedResult(data: [_bank('City Bank')]),
+      ),
+    ]);
+
+    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.widgetWithText(FilledButton, 'Add bank'), findsOneWidget);
+  });
+
+  testWidgets('empty state offers an Add bank button', (tester) async {
+    await _pump(tester, const BanksPage(), [
+      banksProvider.overrideWith(
+        (ref) async => const CachedResult(data: <Bank>[]),
+      ),
+    ]);
+
+    expect(find.text('No banks yet'), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.widgetWithText(FilledButton, 'Add bank'), findsOneWidget);
+  });
+
   testWidgets('form shows the bank picker + conditional credit fields', (
     tester,
   ) async {
