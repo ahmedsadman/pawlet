@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/models/finance/bank.dart';
 import 'package:pawlet/models/sms_record.dart';
@@ -141,6 +142,57 @@ void main() {
     expect(outcome.parseSource, ParseSource.local);
     expect(outcome.category, SmsCategory.transaction);
     expect(outcome.transaction!.amount, '50');
+  });
+
+  test('confident local USD transaction converts locally with a rate', () async {
+    final llm = _FakeLlm(const ClassifyResult.none());
+    const content = 'POS Transaction USD 100';
+    final local = _FakeLocal(
+      LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.95,
+        spans: [_lspan('AMOUNT', '100', 0.97, content.indexOf('100'))],
+      ),
+    );
+    final outcome = await Classifier(llm, local: local).classify(
+      sender: 'MTB',
+      content: content,
+      banks: banks,
+      currency: 'BDT',
+      usdRate: Decimal.parse('120'),
+    );
+    expect(local.calls, 1);
+    expect(llm.calls, 0); // converted on-device, no LLM
+    expect(outcome.parseSource, ParseSource.local);
+    expect(outcome.transaction!.amount, '12000');
+    expect(outcome.transaction!.originalCurrency, 'USD');
+  });
+
+  test('confident local USD transaction falls to LLM without a rate', () async {
+    final llm = _FakeLlm(
+      const ClassifyResult(
+        category: SmsCategory.transaction,
+        transaction: MetadataResult(amount: '12000'),
+      ),
+    );
+    const content = 'POS Transaction USD 100';
+    final local = _FakeLocal(
+      LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.95,
+        spans: [_lspan('AMOUNT', '100', 0.97, content.indexOf('100'))],
+      ),
+    );
+    final outcome = await Classifier(llm, local: local).classify(
+      sender: 'MTB',
+      content: content,
+      banks: banks,
+      currency: 'BDT',
+      // usdRate omitted → USD mismatch can't convert → LLM.
+    );
+    expect(local.calls, 1);
+    expect(llm.calls, 1);
+    expect(outcome.parseSource, ParseSource.llm);
   });
 
   test('low-confidence local prediction falls back to the LLM', () async {
