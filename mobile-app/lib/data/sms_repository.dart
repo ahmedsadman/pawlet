@@ -126,8 +126,8 @@ class SmsRepository {
   }
 
   /// Processed History (financial rows + failures), most recent first,
-  /// paginated. [query] is a multi-word substring filter over sender, contact
-  /// name, and content (each term must match one of them; terms are ANDed).
+  /// paginated. [query] is a multi-word substring filter over sender and content
+  /// (each term must match one of them; terms are ANDed).
   Future<List<SmsRecord>> history({
     int limit = kHistoryPageSize,
     int offset = 0,
@@ -168,11 +168,9 @@ class SmsRepository {
       for (final term in q.split(RegExp(r'\s+'))) {
         final like = '%${_escapeLike(term)}%';
         where.write(
-          " AND (sender LIKE ? ESCAPE '\\' OR contact_name LIKE ? ESCAPE '\\' "
-          "OR content LIKE ? ESCAPE '\\')",
+          " AND (sender LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')",
         );
         args
-          ..add(like)
           ..add(like)
           ..add(like);
       }

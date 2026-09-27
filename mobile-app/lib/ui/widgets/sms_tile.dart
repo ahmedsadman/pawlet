@@ -31,12 +31,7 @@ class SmsTile extends StatelessWidget {
   /// Tapped by the per-row retry icon on a Failed history row. Null hides it.
   final VoidCallback? onRetry;
 
-  String get _title {
-    final name = record.contactName;
-    return (name != null && name.isNotEmpty)
-        ? '$name (${record.sender})'
-        : record.sender;
-  }
+  String get _title => record.sender;
 
   String _formatTime(int millis) {
     final dt = DateTime.fromMillisecondsSinceEpoch(millis);

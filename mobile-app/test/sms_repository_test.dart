@@ -235,7 +235,7 @@ void main() {
     });
 
     test(
-      'multi-word search ANDs terms across sender/contact/content',
+      'multi-word search ANDs terms across sender/content',
       () async {
         final db = await openTestDb();
         final repo = SmsRepository(db);

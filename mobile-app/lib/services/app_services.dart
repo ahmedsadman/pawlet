@@ -12,7 +12,6 @@ import 'background_worker.dart';
 import 'classification/classifier.dart';
 import 'classification/tflite_local_classifier.dart';
 import 'connectivity_service.dart';
-import 'contact_resolver.dart';
 import 'finance/finance_matcher.dart';
 import 'finance/finance_writer.dart';
 import 'llm/openrouter_provider.dart';
@@ -28,7 +27,6 @@ class AppServices {
     required this.smsRepository,
     required this.banksRepository,
     required this.settings,
-    required this.contactResolver,
     required this.connectivity,
     required this.notifications,
     required this.llmProvider,
@@ -40,7 +38,6 @@ class AppServices {
   final SmsRepository smsRepository;
   final BanksRepository banksRepository;
   final SettingsRepository settings;
-  final ContactResolver contactResolver;
   final ConnectivityService connectivity;
   final NotificationService notifications;
   final OpenRouterProvider llmProvider;
@@ -86,7 +83,6 @@ class AppServices {
       smsRepository: smsRepository,
       banksRepository: banksRepository,
       settings: settings,
-      contactResolver: ContactResolver(),
       connectivity: connectivity,
       notifications: notifications,
       llmProvider: llmProvider,
@@ -169,15 +165,10 @@ class AppServices {
         .trim();
     if (trimmedSender.isEmpty || normalizedContent.isEmpty) return;
 
-    final contactName = settings.resolveContacts
-        ? await contactResolver.nameFor(trimmedSender)
-        : null;
-
     final now = DateTime.now().millisecondsSinceEpoch;
     await smsRepository.insertIfNew(
       SmsRecord(
         sender: trimmedSender,
-        contactName: contactName,
         content: normalizedContent,
         timestamp: timestamp ?? now,
         updatedAt: now,
