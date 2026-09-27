@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/data/banks_repository.dart';
 import 'package:pawlet/data/sms_repository.dart';
@@ -129,6 +130,58 @@ void main() {
     }
     return id;
   }
+
+  test(
+    'threads the USD->BDT rate so a USD message converts on-device',
+    () async {
+      const content = 'POS Transaction USD 100';
+      final llm = _FakeLlm(result: _expense());
+      var rateCalls = 0;
+      final local = _FakeLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.95,
+          spans: [
+            LocalSpan(
+              entity: 'AMOUNT',
+              text: '100',
+              confidence: 0.97,
+              start: content.indexOf('100'),
+              end: content.indexOf('100') + 3,
+            ),
+          ],
+        ),
+      );
+      final svc = ProcessingService(
+        smsRepository: sms,
+        banksRepository: banks,
+        classifier: Classifier(llm, local: local),
+        financeWriter: FinanceWriter(db, nowMs: () => now),
+        isOnline: () async => true,
+        currency: () => 'BDT',
+        usdBdtRate: () async {
+          rateCalls++;
+          return Decimal.parse('120');
+        },
+        clock: () => now,
+      );
+      final id = await queue('CHK', content: content);
+      await svc.process();
+
+      expect(rateCalls, 1); // fetched once for the pass
+      expect(llm.calls, 0); // converted on-device, no LLM
+      final tx = (await db.query(
+        'transactions',
+        where: 'message_id = ?',
+        whereArgs: [id],
+      )).first;
+      expect(tx['normalized_amount'], '12000');
+      expect(tx['normalized_currency'], 'BDT');
+      expect(tx['original_currency'], 'USD');
+      expect(tx['original_amount'], '100');
+      await db.close();
+    },
+  );
 
   test('processes a matching SMS into a transaction', () async {
     final id = await queue('CHK');
