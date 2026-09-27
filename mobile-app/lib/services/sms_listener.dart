@@ -11,7 +11,7 @@ import 'app_services.dart';
 Future<void> backgroundSmsHandler(SmsMessage message) async {
   WidgetsFlutterBinding.ensureInitialized();
   // A fresh background isolate must register plugins itself, otherwise sqflite /
-  // shared_preferences / flutter_contacts channels throw MissingPluginException.
+  // shared_preferences channels throw MissingPluginException.
   DartPluginRegistrant.ensureInitialized();
   final services = await AppServices.bootstrap();
   try {
