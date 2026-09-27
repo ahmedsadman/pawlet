@@ -13,6 +13,7 @@ import '../services/app_services.dart';
 import '../services/backup_service.dart';
 import '../services/processing_service.dart';
 import '../services/sms_listener.dart';
+import '../utils/currency_format.dart';
 
 /// Overridden in `main()` (and in tests) once async initialization completes.
 final sharedPreferencesProvider = Provider<SharedPreferences>(
@@ -34,7 +35,7 @@ final banksRepositoryProvider = Provider<BanksRepository>(
 final financeRepositoryProvider = Provider<FinanceRepository>(
   (ref) => FinanceRepository(
     ref.watch(databaseProvider),
-    currency: () => ref.read(settingsRepositoryProvider).currency,
+    currency: () => kBaseCurrency,
   ),
 );
 

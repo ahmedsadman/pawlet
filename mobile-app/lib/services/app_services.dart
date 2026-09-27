@@ -8,6 +8,7 @@ import '../data/secure_store.dart';
 import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
 import '../models/sms_record.dart';
+import '../utils/currency_format.dart';
 import 'background_worker.dart';
 import 'classification/classifier.dart';
 import 'classification/tflite_local_classifier.dart';
@@ -69,7 +70,7 @@ class AppServices {
       classifier: Classifier(llmProvider, local: localClassifier),
       financeWriter: FinanceWriter(database),
       isOnline: connectivity.isOnline,
-      currency: () => settings.currency,
+      currency: () => kBaseCurrency,
       afterPass: matcher.runPending,
       onCounts: (failed) async {
         await notifications.reconcileFailures(failed);

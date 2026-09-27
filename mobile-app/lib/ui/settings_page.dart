@@ -4,16 +4,14 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/permissions.dart';
 import '../state/auth_providers.dart';
-import '../state/finance_providers.dart';
-import '../state/providers.dart';
 import 'backup_restore_page.dart';
 import 'banks_page.dart';
 import 'security/change_pin_screen.dart';
 
-/// Settings tab: normalized currency, bank management, contact-name resolution,
-/// background-delivery help, security, and a privacy note. The LLM key/model are
-/// no longer configurable here — the key is provisioned via `--dart-define` and
-/// stored encrypted (see SecureStore), and the model is hardcoded.
+/// Settings tab: bank management, background-delivery help, security, and a
+/// privacy note. The LLM key/model are not configurable here — the key is
+/// provisioned via `--dart-define` and stored encrypted (see SecureStore), and
+/// the model is hardcoded.
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -22,23 +20,11 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  late String _currency;
   String? _version;
 
   @override
   void initState() {
     super.initState();
-    final settings = ref.read(settingsRepositoryProvider);
-    // Clamp to the two supported options so the SegmentedButton never asserts on
-    // a legacy free-text currency.
-    final stored = settings.currency;
-    _currency = stored == 'USD' ? 'USD' : 'BDT';
-    // Normalize a legacy free-text value (e.g. from the old text field) so the
-    // stored currency matches the toggle the user sees — otherwise finance
-    // amounts would keep rendering against the stale currency until first tap.
-    if (stored != 'BDT' && stored != 'USD') {
-      settings.setCurrency(_currency);
-    }
     _loadVersion();
   }
 
@@ -58,12 +44,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _setCurrency(String value) async {
-    setState(() => _currency = value);
-    await ref.read(settingsRepositoryProvider).setCurrency(value);
-    refreshAllFinance(ref);
   }
 
   Future<void> _requestBattery() async {
@@ -92,24 +72,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('Currency', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(
-            'All amounts are normalized to this currency.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.outline,
-            ),
-          ),
-          const SizedBox(height: 8),
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'BDT', label: Text('BDT')),
-              ButtonSegment(value: 'USD', label: Text('USD')),
-            ],
-            selected: {_currency},
-            onSelectionChanged: (s) => _setCurrency(s.first),
-          ),
-          const Divider(height: 32),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.account_balance_outlined),
