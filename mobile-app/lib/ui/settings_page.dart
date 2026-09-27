@@ -23,7 +23,6 @@ class SettingsPage extends ConsumerStatefulWidget {
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   late String _currency;
-  late bool _resolveContacts;
   String? _version;
 
   @override
@@ -40,7 +39,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (stored != 'BDT' && stored != 'USD') {
       settings.setCurrency(_currency);
     }
-    _resolveContacts = settings.resolveContacts;
     _loadVersion();
   }
 
@@ -66,11 +64,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     setState(() => _currency = value);
     await ref.read(settingsRepositoryProvider).setCurrency(value);
     refreshAllFinance(ref);
-  }
-
-  Future<void> _setResolveContacts(bool value) async {
-    await ref.read(settingsRepositoryProvider).setResolveContacts(value);
-    setState(() => _resolveContacts = value);
   }
 
   Future<void> _requestBattery() async {
@@ -126,17 +119,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onTap: () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const BanksPage())),
-          ),
-          const Divider(height: 32),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Resolve contact names'),
-            subtitle: const Text(
-              'Show your saved contact name for numeric senders. Requires '
-              'Contacts permission.',
-            ),
-            value: _resolveContacts,
-            onChanged: _setResolveContacts,
           ),
           const Divider(height: 32),
           Text('Data', style: theme.textTheme.titleMedium),
