@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:decimal/decimal.dart';
+
 import '../data/banks_repository.dart';
 import '../data/sms_repository.dart';
 import '../models/finance/bank.dart';
@@ -21,6 +23,8 @@ enum _PassStep {
   contended,
 }
 
+Future<Decimal?> _noRate() async => null;
+
 /// Drains the SMS queue, processing each due record atomically: Layer-1 gate +
 /// single fused LLM call + finance write. Failures are rescheduled with a
 /// capped-exponential backoff persisted in `next_attempt_at`; the existing
@@ -34,6 +38,7 @@ class ProcessingService {
     required this.financeWriter,
     required this.isOnline,
     required this.currency,
+    this.usdBdtRate = _noRate,
     int Function()? clock,
     this.onCounts,
     this.afterPass,
@@ -46,6 +51,12 @@ class ProcessingService {
   final FinanceWriter financeWriter;
   final Future<bool> Function() isOnline;
   final String Function() currency;
+
+  /// Supplies the current USD→BDT rate (cached; null when unavailable). Called
+  /// once per online pass and threaded into classification so a confident USD
+  /// message is converted on-device instead of falling back to the LLM.
+  final Future<Decimal?> Function() usdBdtRate;
+
   final int Function() _clock;
 
   /// Optional hook fired after a pass with the current failed count
@@ -102,11 +113,12 @@ class ProcessingService {
 
       final banks = await banksRepository.list();
       final cur = currency();
+      final rate = await usdBdtRate();
 
       final due = await smsRepository.dueForDelivery(_clock());
       var processedAny = false;
       for (final record in due) {
-        final step = await _processOne(record, banks, cur);
+        final step = await _processOne(record, banks, cur, rate);
         if (step == _PassStep.processed) {
           processedAny = true;
           continue;
@@ -169,6 +181,7 @@ class ProcessingService {
     SmsRecord record,
     List<Bank> banks,
     String cur,
+    Decimal? usdRate,
   ) async {
     if (!await isOnline()) return _PassStep.offline;
 
@@ -181,6 +194,7 @@ class ProcessingService {
         content: record.content,
         banks: banks,
         currency: cur,
+        usdRate: usdRate,
       );
       final label = await financeWriter.apply(
         record: record,

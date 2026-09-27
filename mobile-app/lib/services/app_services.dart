@@ -13,6 +13,7 @@ import 'background_worker.dart';
 import 'classification/classifier.dart';
 import 'classification/tflite_local_classifier.dart';
 import 'connectivity_service.dart';
+import 'exchange_rate_service.dart';
 import 'finance/finance_matcher.dart';
 import 'finance/finance_writer.dart';
 import 'llm/openrouter_provider.dart';
@@ -33,6 +34,7 @@ class AppServices {
     required this.llmProvider,
     required this.localClassifier,
     required this.processingService,
+    required this.exchangeRate,
   });
 
   final Database database;
@@ -47,6 +49,7 @@ class AppServices {
   /// (each isolate builds its own bundle).
   final TfliteLocalClassifier localClassifier;
   final ProcessingService processingService;
+  final ExchangeRateService exchangeRate;
 
   factory AppServices.from({
     required Database database,
@@ -64,6 +67,7 @@ class AppServices {
     );
     final matcher = FinanceMatcher(database);
     final localClassifier = TfliteLocalClassifier();
+    final exchangeRate = ExchangeRateService(prefs);
     final processingService = ProcessingService(
       smsRepository: smsRepository,
       banksRepository: banksRepository,
@@ -71,6 +75,7 @@ class AppServices {
       financeWriter: FinanceWriter(database),
       isOnline: connectivity.isOnline,
       currency: () => kBaseCurrency,
+      usdBdtRate: exchangeRate.usdToBdt,
       afterPass: matcher.runPending,
       onCounts: (failed) async {
         await notifications.reconcileFailures(failed);
@@ -89,6 +94,7 @@ class AppServices {
       llmProvider: llmProvider,
       localClassifier: localClassifier,
       processingService: processingService,
+      exchangeRate: exchangeRate,
     );
   }
 
@@ -113,6 +119,7 @@ class AppServices {
   void dispose() {
     llmProvider.close();
     localClassifier.close();
+    exchangeRate.close();
   }
 
   /// Background-isolate dispose: closes the isolate-local LLM http client and the
@@ -129,6 +136,7 @@ class AppServices {
   Future<void> disposeStandalone() async {
     llmProvider.close();
     localClassifier.close();
+    exchangeRate.close();
   }
 
   /// Manual per-message retry: returns one failed message to the queue for a
