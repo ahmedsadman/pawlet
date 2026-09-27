@@ -1,3 +1,5 @@
+import 'package:decimal/decimal.dart';
+
 import '../llm/llm_provider.dart';
 import 'local_model.dart';
 import 'local_parsers.dart';
@@ -18,12 +20,15 @@ class LocalGateResult {
 ///
 /// Reject == "fall back to the LLM". In summary: reject when classConf < X, or
 /// (for transaction/bill) NERc < X, or a required span is missing/unparseable,
-/// or the detected source currency differs from [currency] (the local model
-/// cannot convert FX).
+/// or the detected source currency cannot be represented in [currency] — i.e.
+/// anything other than the base currency itself or USD-with-a-live-[usdToBdtRate]
+/// (a USD amount is converted on-device; every other foreign currency still
+/// defers to the LLM).
 LocalGateResult decideLocal(
   LocalPrediction pred, {
   required String currency,
   required String content,
+  Decimal? usdToBdtRate,
 }) {
   if (pred.classConfidence < kLocalConfidenceThreshold) {
     return const LocalGateResult.reject();
@@ -54,13 +59,19 @@ LocalGateResult decideLocal(
   }
 
   if (pred.classLabel == 'bill') {
-    return _buildBill(best, currency: currency, content: content);
+    return _buildBill(
+      best,
+      currency: currency,
+      content: content,
+      usdToBdtRate: usdToBdtRate,
+    );
   }
   return _buildTransaction(
     best,
     type: pred.classLabel,
     currency: currency,
     content: content,
+    usdToBdtRate: usdToBdtRate,
   );
 }
 
@@ -68,14 +79,12 @@ LocalGateResult _buildBill(
   Map<String, LocalSpan> best, {
   required String currency,
   required String content,
+  Decimal? usdToBdtRate,
 }) {
   final due = best['DUE'];
   if (due == null) return const LocalGateResult.reject();
-  if (_mismatchedCurrency(content, due, currency)) {
-    return const LocalGateResult.reject();
-  }
-  final total = parseLocalAmount(due.text);
-  if (total == null) return const LocalGateResult.reject();
+  final conv = _convert(content, due, currency, usdToBdtRate);
+  if (conv == null) return const LocalGateResult.reject();
 
   final periodSpan = best['PERIOD'];
   var period = periodSpan == null
@@ -90,9 +99,9 @@ LocalGateResult _buildBill(
     ClassifyResult(
       category: SmsCategory.bill,
       bill: BillMetadataResult(
-        normalizedTotalDue: total,
-        originalAmount: total, // same currency (mismatch already rejected)
-        originalCurrency: currency,
+        normalizedTotalDue: conv.normalized,
+        originalAmount: conv.originalAmount,
+        originalCurrency: conv.originalCurrency,
         statementMonth: period?.month,
         statementYear: period?.year,
       ),
@@ -105,15 +114,16 @@ LocalGateResult _buildTransaction(
   required String type,
   required String currency,
   required String content,
+  Decimal? usdToBdtRate,
 }) {
   final amountSpan = best['AMOUNT'];
   if (amountSpan == null) return const LocalGateResult.reject();
-  if (_mismatchedCurrency(content, amountSpan, currency)) {
-    return const LocalGateResult.reject();
-  }
-  final amount = parseLocalAmount(amountSpan.text);
-  if (amount == null) return const LocalGateResult.reject();
+  final conv = _convert(content, amountSpan, currency, usdToBdtRate);
+  if (conv == null) return const LocalGateResult.reject();
 
+  // Balance (if any) is only used to update a deposit's stored balance, which
+  // FinanceWriter skips whenever the source currency differs from the base — so
+  // for a converted USD row the balance is intentionally left in source units.
   final balanceSpan = best['BALANCE'];
   final balance = balanceSpan == null
       ? null
@@ -123,17 +133,49 @@ LocalGateResult _buildTransaction(
     ClassifyResult(
       category: SmsCategory.transaction,
       transaction: MetadataResult(
-        amount: amount,
+        amount: conv.normalized,
         balance: balance,
         transactionType: type, // expense | income | transfer
-        originalAmount: amount, // same currency
-        originalCurrency: currency,
+        originalAmount: conv.originalAmount,
+        originalCurrency: conv.originalCurrency,
       ),
     ),
   );
 }
 
-bool _mismatchedCurrency(String content, LocalSpan span, String currency) {
+/// The amount resolved into the base currency: [normalized] is the base-currency
+/// value, [originalAmount]/[originalCurrency] preserve the source figure.
+class _Converted {
+  const _Converted(this.normalized, this.originalAmount, this.originalCurrency);
+  final String normalized;
+  final String originalAmount;
+  final String originalCurrency;
+}
+
+/// Resolves the amount at [span] into the base [currency]:
+/// - no currency token near the amount, or it already matches [currency]:
+///   use the amount as-is.
+/// - USD into a BDT base with a live [usdToBdtRate]: convert (2-dp round).
+/// - any other foreign currency, or USD with no rate: return null → reject
+///   (the pipeline then falls back to the LLM, which can convert).
+_Converted? _convert(
+  String content,
+  LocalSpan span,
+  String currency,
+  Decimal? usdToBdtRate,
+) {
+  final parsed = parseLocalAmount(span.text);
+  if (parsed == null) return null;
+
   final iso = sniffCurrencyIso(content, span.start, span.end);
-  return iso != null && iso != currency;
+  if (iso == null || iso == currency) {
+    return _Converted(parsed, parsed, currency);
+  }
+  if (iso == 'USD' && currency == 'BDT' && usdToBdtRate != null) {
+    final normalized = (Decimal.parse(parsed) * usdToBdtRate)
+        .round(scale: 2)
+        .toString();
+    return _Converted(normalized, parsed, 'USD');
+  }
+  return null;
 }
