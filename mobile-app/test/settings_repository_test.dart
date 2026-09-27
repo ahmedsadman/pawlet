@@ -8,13 +8,6 @@ void main() {
     return SettingsRepository(await SharedPreferences.getInstance());
   }
 
-  test('currency defaults to BDT and upper-cases on set', () async {
-    final r = await repo();
-    expect(r.currency, 'BDT');
-    await r.setCurrency('usd');
-    expect(r.currency, 'USD');
-  });
-
   test('txTypeHintSeen defaults false and persists', () async {
     final r = await repo();
     expect(r.txTypeHintSeen, isFalse);
@@ -38,22 +31,21 @@ void main() {
   });
 
   test('exportAll captures only set keys', () async {
-    final r = await repo({'currency': 'USD', 'hide_balance': true});
+    final r = await repo({'hide_balance': true});
     final snap = r.exportAll();
-    expect(snap['currency'], 'USD');
     expect(snap['hide_balance'], true);
     // history_hint_seen was never written, so it is absent from the snapshot.
     expect(snap.containsKey('history_hint_seen'), isFalse);
   });
 
   test('importAll restores a snapshot', () async {
-    final r = await repo({'currency': 'USD', 'hide_balance': true});
+    final r = await repo({'hide_balance': true, 'tx_sort': 'amount'});
     final snap = r.exportAll();
-    await r.setCurrency('BDT');
     await r.setHideBalance(false);
+    await r.setTxSort('date');
     await r.importAll(snap);
-    expect(r.currency, 'USD');
     expect(r.hideBalance, isTrue);
+    expect(r.txSort, 'amount');
   });
 
   test('importAll clears keys missing from the snapshot (replace)', () async {

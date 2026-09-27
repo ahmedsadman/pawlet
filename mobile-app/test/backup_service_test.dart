@@ -63,15 +63,15 @@ void main() {
   });
 
   test('restore replaces settings with the backup snapshot', () async {
-    final prefs = await settings({'currency': 'USD', 'hide_balance': true});
+    final prefs = await settings({'tx_sort': 'amount', 'hide_balance': true});
     final db = await openTestDb();
     final json = await BackupService(db: db, settings: prefs).exportJson();
 
-    await prefs.setCurrency('BDT'); // mutate after the snapshot
+    await prefs.setTxSort('date'); // mutate after the snapshot
     await prefs.setHideBalance(false);
 
     await BackupService(db: db, settings: prefs).importJson(json);
-    expect(prefs.currency, 'USD');
+    expect(prefs.txSort, 'amount');
     expect(prefs.hideBalance, isTrue);
 
     await db.close();
@@ -108,7 +108,7 @@ void main() {
   });
 
   test('clears settings when the backup omits the settings section', () async {
-    final prefs = await settings({'currency': 'USD', 'hide_balance': true});
+    final prefs = await settings({'tx_sort': 'amount', 'hide_balance': true});
     final db = await openTestDb();
     // Well-formed DB payload (all four tables empty) but no `settings` key.
     final json = jsonEncode({
@@ -123,7 +123,7 @@ void main() {
 
     await BackupService(db: db, settings: prefs).importJson(json);
     // Absent settings section => managed keys reset to their defaults (replace).
-    expect(prefs.currency, 'BDT');
+    expect(prefs.txSort, isNull);
     expect(prefs.hideBalance, isFalse);
 
     await db.close();

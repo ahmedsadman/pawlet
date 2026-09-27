@@ -9,7 +9,6 @@ class SettingsRepository {
 
   final SharedPreferences _prefs;
 
-  static const _kCurrency = 'currency';
   static const _kHideBalance = 'hide_balance';
   static const _kSummaryRange = 'summary_range';
   static const _kTxRange = 'tx_range';
@@ -27,13 +26,6 @@ class SettingsRepository {
     'qwen/qwen3.8-27b:free',
     'nex-agi/nex-n2.5-pro:free',
   ];
-
-  /// User's normalized reporting currency (all amounts are stored in it).
-  String get currency => _prefs.getString(_kCurrency) ?? 'BDT';
-  Future<void> setCurrency(String value) {
-    final trimmed = value.trim().toUpperCase();
-    return _prefs.setString(_kCurrency, trimmed.isEmpty ? 'BDT' : trimmed);
-  }
 
   /// Masks monetary values across the Finance tab.
   bool get hideBalance => _prefs.getBool(_kHideBalance) ?? false;
@@ -74,7 +66,6 @@ class SettingsRepository {
   /// getter/setter. Secrets (PIN, API key) live in SecureStore and are never
   /// backed up here.
   static const List<String> _backupStringKeys = [
-    _kCurrency,
     _kSummaryRange,
     _kTxRange,
     _kTxTypes,

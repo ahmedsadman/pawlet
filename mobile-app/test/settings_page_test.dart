@@ -26,7 +26,7 @@ Future<(Widget, ProviderContainer)> _app(List<Override> extra) async {
 
 void main() {
   testWidgets(
-    'renders currency toggle, manage-banks and privacy — no AI fields',
+    'renders manage-banks and privacy — no currency/contact/AI fields',
     (tester) async {
       final (widget, _) = await _app(const []);
       await tester.pumpWidget(widget);
@@ -34,18 +34,12 @@ void main() {
 
       // AI (OpenRouter) section is gone.
       expect(find.text('AI (OpenRouter)'), findsNothing);
-      expect(find.widgetWithText(TextField, 'API key'), findsNothing);
-      expect(find.widgetWithText(TextField, 'Model'), findsNothing);
 
-      // Currency is a BDT/USD segmented toggle (no free-text field).
-      expect(find.byType(SegmentedButton<String>), findsOneWidget);
-      expect(
-        find.widgetWithText(TextField, 'Normalized currency'),
-        findsNothing,
-      );
+      // Currency toggle and contact toggle are gone.
+      expect(find.byType(SegmentedButton<String>), findsNothing);
+      expect(find.text('Resolve contact names'), findsNothing);
 
       expect(find.text('Manage Banks & Cards'), findsOneWidget);
-      expect(find.text('Resolve contact names'), findsOneWidget);
 
       // Privacy sits near the bottom of the (lazy) ListView — scroll it in.
       await tester.dragUntilVisible(
@@ -57,18 +51,6 @@ void main() {
       expect(find.textContaining('stays on this device'), findsOneWidget);
     },
   );
-
-  testWidgets('selecting a currency persists it', (tester) async {
-    final (widget, container) = await _app(const []);
-    await tester.pumpWidget(widget);
-    await tester.pump();
-
-    expect(container.read(settingsRepositoryProvider).currency, 'BDT');
-    await tester.tap(find.text('USD'));
-    await tester.pump();
-
-    expect(container.read(settingsRepositoryProvider).currency, 'USD');
-  });
 
   testWidgets('Manage Banks & Cards navigates to the Banks page', (
     tester,
