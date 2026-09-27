@@ -93,7 +93,6 @@ class SmsRecord {
   const SmsRecord({
     this.id,
     required this.sender,
-    this.contactName,
     required this.content,
     required this.timestamp,
     this.status = SmsStatus.queued,
@@ -113,9 +112,6 @@ class SmsRecord {
 
   /// Raw sender as reported by Android (phone number or alphanumeric ID).
   final String sender;
-
-  /// Resolved contact name, or null when unmatched / alphanumeric sender.
-  final String? contactName;
 
   final String content;
 
@@ -168,7 +164,6 @@ class SmsRecord {
     return SmsRecord(
       id: id ?? this.id,
       sender: sender,
-      contactName: contactName,
       content: content,
       timestamp: timestamp,
       status: status ?? this.status,
@@ -187,7 +182,6 @@ class SmsRecord {
   Map<String, Object?> toDbMap() => {
     'id': id,
     'sender': sender,
-    'contact_name': contactName,
     'content': content,
     'timestamp': timestamp,
     'status': status.name,
@@ -205,7 +199,6 @@ class SmsRecord {
   factory SmsRecord.fromDbMap(Map<String, Object?> map) => SmsRecord(
     id: map['id'] as int?,
     sender: map['sender'] as String,
-    contactName: map['contact_name'] as String?,
     content: map['content'] as String,
     timestamp: map['timestamp'] as int,
     status: SmsStatus.fromName(map['status'] as String),
