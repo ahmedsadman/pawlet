@@ -18,7 +18,7 @@ restore), `lib/data/settings_repository.dart` (the settings half), and
 Included:
 
 - The four SQLite tables — `sms_records`, `banks`, `transactions`, `bills`.
-- User settings (currency and the finance-view preferences).
+- User settings (the finance-view preferences).
 
 Deliberately excluded:
 
@@ -74,8 +74,8 @@ The file is a UTF-8 JSON object with this shape:
     "bills":        [ /* row objects */ ]
   },
   "settings": {                          // optional; omit to reset all settings
-    "currency": "USD",
-    "hide_balance": true
+    "hide_balance": true,
+    "tx_sort": "amount"
   }
 }
 ```
@@ -106,7 +106,7 @@ table is a snapshot — verify there if precision matters.
 |---|---|---|
 | `id` | INTEGER | primary key, preserved |
 | `sender` | TEXT | required |
-| `contact_name` | TEXT | nullable |
+| `contact_name` | TEXT | nullable; legacy/unused — always null on new rows |
 | `content` | TEXT | required; the message body |
 | `timestamp` | INTEGER | required; received time, epoch ms |
 | `status` | TEXT | required; one of `queued`, `sending`, `success`, `ignored`, `failure` |
@@ -171,13 +171,11 @@ up; anything else in `settings` is ignored.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `currency` | string | reporting currency (`BDT` default, or `USD`) |
 | `summary_range` | string | saved Finance summary range |
 | `tx_range` | string | saved transactions range |
 | `tx_types` | string | comma-joined transaction-type filter |
 | `tx_sort` | string | transactions sort key |
 | `hide_balance` | bool | mask monetary values |
-| `resolve_contacts` | bool | show contact names for numeric senders |
 | `tx_type_hint_seen` | bool | one-time hint dismissed |
 | `history_hint_seen` | bool | one-time hint dismissed |
 

@@ -43,12 +43,10 @@ Capture then does, in order:
 
 1. **Normalize** — trim the sender, convert CRLF/CR to LF and trim the body. Empty
    sender or empty body is dropped.
-2. **Resolve contact** (optional) — look up a contact name for the sender when the
-   setting is on.
-3. **Persist, deduped** — insert into the queue. A unique index on
+2. **Persist, deduped** — insert into the queue. A unique index on
    `(sender, timestamp, content)` means overlapping foreground / background / cold-start
    reads of the *same* SMS collapse to one row (duplicate inserts are ignored).
-4. **Kick off processing** — call the queue drain immediately.
+3. **Kick off processing** — call the queue drain immediately.
 
 A freshly captured row starts in status **`queued`**. Storage cleanup no longer runs on
 capture — it moved into the drain pass as a throttled step (§3, §9).
@@ -136,10 +134,15 @@ call while one is running is ignored) and, before touching anything, requeues st
      **falls back to the LLM**. When multiple spans of the same field are emitted, the
      highest-confidence one wins; NERc is measured over *all* emitted spans.
 
-     **Currency limitation (future improvement):** the on-device model does not convert
-     currencies. If a currency token near the amount resolves to something other than your
-     normalized currency, the message is routed to the LLM (which performs the conversion).
-     Improving on-device FX handling is a known follow-up.
+     **Currency handling:** the reporting currency is fixed to BDT (Pawlet is
+     Bangladesh-only). A BDT amount is stored as-is. A **USD** amount is converted to BDT
+     **on-device** using a live rate fetched and cached for 24h from an online source
+     (`exchange_rate_service.dart`, `open.er-api.com`); the converted BDT value is stored
+     as the normalized amount while the original USD figure is kept alongside it. Any
+     *other* foreign currency, or USD when no rate has been cached yet (e.g. first run with
+     no network), still routes to the LLM (which performs the conversion). The rate is
+     fetched once per online drain pass and served from cache thereafter; when the network
+     is unavailable a stale cached rate is used until a fresh one can be fetched.
    - **Fused LLM call:** a message the model could not confidently handle goes to a *single*
      OpenRouter
      request carrying a static ordered fallback list of structured-output-capable models
