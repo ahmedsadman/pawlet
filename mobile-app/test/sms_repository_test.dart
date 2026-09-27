@@ -234,34 +234,31 @@ void main() {
       await db.close();
     });
 
-    test(
-      'multi-word search ANDs terms across sender/content',
-      () async {
-        final db = await openTestDb();
-        final repo = SmsRepository(db);
-        Future<void> add(String sender, String content, int ts) async {
-          final id = (await repo.insertIfNew(
-            _sms(sender, content: content, ts: ts),
-          ))!;
-          await repo.updateStatus(
-            id,
-            SmsStatus.success,
-            updatedAt: ts,
-            category: 'transaction',
-            processedAt: ts,
-          );
-        }
+    test('multi-word search ANDs terms across sender/content', () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      Future<void> add(String sender, String content, int ts) async {
+        final id = (await repo.insertIfNew(
+          _sms(sender, content: content, ts: ts),
+        ))!;
+        await repo.updateStatus(
+          id,
+          SmsStatus.success,
+          updatedAt: ts,
+          category: 'transaction',
+          processedAt: ts,
+        );
+      }
 
-        await add('EBL', 'your payment is due', 10); // both terms
-        await add('EBL', 'balance update', 20); // only 'ebl'
-        await add('BRAC', 'payment received', 30); // only 'payment'
+      await add('EBL', 'your payment is due', 10); // both terms
+      await add('EBL', 'balance update', 20); // only 'ebl'
+      await add('BRAC', 'payment received', 30); // only 'payment'
 
-        final rows = await repo.history(query: 'ebl payment');
-        expect(rows.map((r) => r.sender), ['EBL']);
-        expect(await repo.historyCount(query: 'ebl payment'), 1);
-        await db.close();
-      },
-    );
+      final rows = await repo.history(query: 'ebl payment');
+      expect(rows.map((r) => r.sender), ['EBL']);
+      expect(await repo.historyCount(query: 'ebl payment'), 1);
+      await db.close();
+    });
 
     test('search treats LIKE wildcards literally (ESCAPE)', () async {
       final db = await openTestDb();
