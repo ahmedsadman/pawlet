@@ -5,6 +5,10 @@ const String _placeholder = '—';
 /// Fixed mask shown in place of a numeric value when balances are hidden.
 const String maskedValue = '****';
 
+/// The single reporting currency. Pawlet is Bangladesh-only, so every amount is
+/// normalized to BDT; USD is converted in-app via ExchangeRateService.
+const String kBaseCurrency = 'BDT';
+
 /// The masked form keeps the currency but replaces the amount: `**** BDT`.
 String maskAmount(String currency) => '$maskedValue $currency';
 
