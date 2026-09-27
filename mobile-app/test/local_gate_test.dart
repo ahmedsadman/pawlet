@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/services/classification/local_gate.dart';
 import 'package:pawlet/services/classification/local_model.dart';
@@ -250,5 +251,110 @@ void main() {
       content: content,
     );
     expect(r.accepted, isTrue);
+  });
+
+  test('USD transaction converts to BDT when a rate is provided', () {
+    const content = 'POS Transaction USD 100';
+    final r = decideLocal(
+      LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.95,
+        spans: [_span('AMOUNT', '100', 0.99, start: content.indexOf('100'))],
+      ),
+      currency: bdt,
+      content: content,
+      usdToBdtRate: Decimal.parse('120'),
+    );
+    expect(r.accepted, isTrue);
+    expect(r.result!.transaction!.amount, '12000');
+    expect(r.result!.transaction!.originalAmount, '100');
+    expect(r.result!.transaction!.originalCurrency, 'USD');
+  });
+
+  test('USD bill converts to BDT when a rate is provided', () {
+    const content = 'Total Due: USD 50.5 AUG2026';
+    final r = decideLocal(
+      LocalPrediction(
+        classLabel: 'bill',
+        classConfidence: 0.99,
+        spans: [
+          _span('DUE', '50.5', 0.99, start: content.indexOf('50.5')),
+          _span('PERIOD', 'AUG2026', 0.99, start: content.indexOf('AUG2026')),
+        ],
+      ),
+      currency: bdt,
+      content: content,
+      usdToBdtRate: Decimal.parse('120'),
+    );
+    expect(r.accepted, isTrue);
+    expect(r.result!.bill!.normalizedTotalDue, '6060');
+    expect(r.result!.bill!.originalAmount, '50.5');
+    expect(r.result!.bill!.originalCurrency, 'USD');
+    expect(r.result!.bill!.statementMonth, 8);
+  });
+
+  test('USD still rejects when no rate is available (LLM fallback)', () {
+    const content = 'POS Transaction USD 100';
+    final r = decideLocal(
+      LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.95,
+        spans: [_span('AMOUNT', '100', 0.99, start: content.indexOf('100'))],
+      ),
+      currency: bdt,
+      content: content,
+      // usdToBdtRate omitted → null.
+    );
+    expect(r.accepted, isFalse);
+  });
+
+  test('EUR rejects even when a USD rate is available', () {
+    const content = 'Charged EUR 100 at store';
+    final r = decideLocal(
+      LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.95,
+        spans: [_span('AMOUNT', '100', 0.99, start: content.indexOf('100'))],
+      ),
+      currency: bdt,
+      content: content,
+      usdToBdtRate: Decimal.parse('120'),
+    );
+    expect(r.accepted, isFalse);
+  });
+
+  test('USD conversion keeps cents and rounds to 2 dp', () {
+    const content = 'POS Transaction USD 10.5';
+    final r = decideLocal(
+      LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.95,
+        spans: [_span('AMOUNT', '10.5', 0.99, start: content.indexOf('10.5'))],
+      ),
+      currency: bdt,
+      content: content,
+      usdToBdtRate: Decimal.parse('120.75'),
+    );
+    expect(r.accepted, isTrue);
+    // 10.5 * 120.75 = 1267.875 → 1267.88 (round half-up to 2 dp).
+    expect(r.result!.transaction!.amount, '1267.88');
+    expect(r.result!.transaction!.originalAmount, '10.5');
+  });
+
+  test('BDT still converts to itself unchanged when a rate is present', () {
+    const content = 'Debited BDT 100';
+    final r = decideLocal(
+      LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.95,
+        spans: [_span('AMOUNT', '100', 0.99, start: content.indexOf('100'))],
+      ),
+      currency: bdt,
+      content: content,
+      usdToBdtRate: Decimal.parse('120'),
+    );
+    expect(r.accepted, isTrue);
+    expect(r.result!.transaction!.amount, '100');
+    expect(r.result!.transaction!.originalCurrency, 'BDT');
   });
 }
