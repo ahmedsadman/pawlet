@@ -1,3 +1,5 @@
+import 'package:decimal/decimal.dart';
+
 import '../../models/finance/bank.dart';
 import '../../models/sms_record.dart';
 import '../llm/llm_provider.dart';
@@ -50,6 +52,7 @@ class Classifier {
     required String content,
     required List<Bank> banks,
     required String currency,
+    Decimal? usdRate,
   }) async {
     if (gateBanks(sender, content, banks).isEmpty) {
       return const ClassificationOutcome.ignored();
@@ -64,6 +67,7 @@ class Classifier {
           prediction,
           currency: currency,
           content: content,
+          usdToBdtRate: usdRate,
         );
         if (decision.accepted) {
           final r = decision.result!;
