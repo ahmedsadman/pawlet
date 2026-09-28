@@ -174,6 +174,8 @@ void main() {
         showCategory: true,
       ),
     );
+    await tester.tap(find.text('BRAC'));
+    await tester.pumpAndSettle();
     expect(find.text('Extraction error'), findsOneWidget);
   });
 
@@ -190,6 +192,8 @@ void main() {
         showCategory: true,
       ),
     );
+    await tester.tap(find.text('BRAC'));
+    await tester.pumpAndSettle();
     expect(find.text('Retries exhausted'), findsOneWidget);
   });
 
@@ -200,6 +204,8 @@ void main() {
       tester,
       SmsTile(_rec(status: SmsStatus.failure), showCategory: true),
     );
+    await tester.tap(find.text('BRAC'));
+    await tester.pumpAndSettle();
     expect(find.text('Extraction error'), findsOneWidget);
   });
 
@@ -259,5 +265,55 @@ void main() {
       ),
     );
     expect(find.byIcon(Icons.refresh), findsNothing);
+  });
+
+  testWidgets('history tile hides the message body until tapped', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.success, category: 'transaction'),
+        showCategory: true,
+      ),
+    );
+    // Compact: body hidden, caret shown.
+    expect(find.text('debit 50 BDT'), findsNothing);
+    expect(find.byIcon(Icons.expand_more), findsOneWidget);
+
+    // Tap anywhere on the card.
+    await tester.tap(find.text('BRAC'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('debit 50 BDT'), findsOneWidget);
+    expect(find.byIcon(Icons.expand_less), findsOneWidget);
+
+    // Tap again to collapse.
+    await tester.tap(find.text('BRAC'));
+    await tester.pumpAndSettle();
+    expect(find.text('debit 50 BDT'), findsNothing);
+  });
+
+  testWidgets('queue tile still shows the body inline (not compact)', (
+    tester,
+  ) async {
+    await _pump(tester, SmsTile(_rec(status: SmsStatus.queued)));
+    expect(find.text('debit 50 BDT'), findsOneWidget);
+    expect(find.byIcon(Icons.expand_more), findsNothing);
+  });
+
+  testWidgets('history failure hint is revealed on expand', (tester) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.failure, failureReason: FailureReason.llmError),
+        showCategory: true,
+      ),
+    );
+    // Hint lives in the collapsible body now.
+    expect(find.text('Extraction error'), findsNothing);
+    await tester.tap(find.text('BRAC'));
+    await tester.pumpAndSettle();
+    expect(find.text('Extraction error'), findsOneWidget);
   });
 }

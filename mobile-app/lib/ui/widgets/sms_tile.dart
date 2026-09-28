@@ -7,10 +7,16 @@ import 'status_badge.dart';
 
 int _defaultNow() => DateTime.now().millisecondsSinceEpoch;
 
-/// A single SMS row used in both the Queue and History lists. In the Queue it
-/// shows the processing status; in History it shows the read-only classification
-/// label (Transaction / Bill).
-class SmsTile extends StatelessWidget {
+/// A single SMS row used in both the Queue and History lists.
+///
+/// Queue (showCategory == false): full inline layout with the processing
+/// status badge and retry progress — unchanged.
+///
+/// History (showCategory == true): a compact card. Line 1 shows the sender, an
+/// optional muted `LLM` marker, the category/status trailing, a retry icon for
+/// failed rows, and a caret. Line 2 shows the timestamp. Tapping anywhere
+/// toggles a collapsible body (the failure hint, if any, plus the message text).
+class SmsTile extends StatefulWidget {
   const SmsTile(
     this.record, {
     this.showCategory = false,
@@ -21,7 +27,7 @@ class SmsTile extends StatelessWidget {
 
   final SmsRecord record;
 
-  /// When true, render the category label instead of the status badge.
+  /// When true, render the History (compact, expandable) layout.
   final bool showCategory;
 
   /// Injectable clock (epoch ms) for deciding whether a scheduled next-attempt
@@ -30,6 +36,17 @@ class SmsTile extends StatelessWidget {
 
   /// Tapped by the per-row retry icon on a Failed history row. Null hides it.
   final VoidCallback? onRetry;
+
+  @override
+  State<SmsTile> createState() => _SmsTileState();
+}
+
+class _SmsTileState extends State<SmsTile> {
+  bool _expanded = false;
+
+  SmsRecord get record => widget.record;
+  bool get showCategory => widget.showCategory;
+  VoidCallback? get onRetry => widget.onRetry;
 
   String get _title => record.sender;
 
@@ -50,12 +67,10 @@ class SmsTile extends StatelessWidget {
   }
 
   /// Retry-progress line for a queued row that has already failed at least once.
-  /// Appends the scheduled next-attempt time only while it is still upcoming
-  /// (compared to [now]); an overdue/just-due row shows only the counter.
   String get _retryLine {
     final base = 'Retry ${record.attempts}/${ProcessingService.maxAttempts}';
     final next = record.nextAttemptAt;
-    if (next != null && next > now()) {
+    if (next != null && next > widget.now()) {
       return '$base · Next attempt at ${_formatClock(next)}';
     }
     return base;
@@ -80,8 +95,7 @@ class SmsTile extends StatelessWidget {
   }
 
   /// Short, user-facing reason a History row failed. The internal `last_error`
-  /// is never surfaced here (ADB/debug only). Null legacy rows read as the
-  /// generic extraction hint.
+  /// is never surfaced here (ADB/debug only).
   String get _failureHint => switch (record.failureReason) {
     FailureReason.retryExhausted => 'Retries exhausted',
     FailureReason.llmError => 'Extraction error',
@@ -90,6 +104,101 @@ class SmsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return showCategory ? _buildHistory(context) : _buildQueue(context);
+  }
+
+  // ---- History: compact + expandable -------------------------------------
+
+  Widget _buildHistory(BuildContext context) {
+    final theme = Theme.of(context);
+    final isFailure = record.status == SmsStatus.failure;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Line 1: sender · (LLM) · category/status · retry · caret.
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _trailing(),
+                  if (isFailure && onRetry != null)
+                    IconButton(
+                      icon: const Icon(Icons.refresh, size: 18),
+                      tooltip: 'Retry',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: onRetry,
+                    ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                    color: theme.colorScheme.outline,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              // Line 2: timestamp.
+              Text(
+                _formatTime(record.timestamp),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+              // Collapsible body: failure hint (if any) + message text. Built
+              // only while expanded so it is truly absent (not just hidden)
+              // from the tree when collapsed; AnimatedSize animates the height.
+              AnimatedSize(
+                duration: const Duration(milliseconds: 180),
+                alignment: Alignment.topCenter,
+                child: _expanded
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (isFailure) ...[
+                              Text(
+                                _failureHint,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.error,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                            ],
+                            Text(
+                              record.content,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---- Queue: unchanged full inline layout -------------------------------
+
+  Widget _buildQueue(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -127,11 +236,7 @@ class SmsTile extends StatelessWidget {
                 color: theme.colorScheme.outline,
               ),
             ),
-            // Queue: show retry progress once a row has failed at least once
-            // (a fresh, never-tried row shows only its status badge). The raw
-            // internal error is deliberately not surfaced here — it stays in
-            // the DB for debug only.
-            if (!showCategory && record.attempts >= 1) ...[
+            if (record.attempts >= 1) ...[
               const SizedBox(height: 6),
               Row(
                 children: [
@@ -149,30 +254,6 @@ class SmsTile extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
-              ),
-            ],
-            // History failure rows: short hint (never the raw error) + an
-            // optional per-message retry affordance.
-            if (showCategory && record.status == SmsStatus.failure) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _failureHint,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.error,
-                      ),
-                    ),
-                  ),
-                  if (onRetry != null)
-                    IconButton(
-                      icon: const Icon(Icons.refresh, size: 18),
-                      tooltip: 'Retry',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: onRetry,
-                    ),
                 ],
               ),
             ],
