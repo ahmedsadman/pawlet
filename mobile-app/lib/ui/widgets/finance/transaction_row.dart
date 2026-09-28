@@ -10,7 +10,8 @@ import 'finance_badge.dart';
 import 'finance_placeholders.dart';
 
 /// A transaction list row. Tapping toggles an expanded panel showing the
-/// backing SMS message (and its paired counterpart for transfers).
+/// backing SMS message (and its paired counterpart for transfers). Manual rows
+/// (no backing SMS) show a "Manual" badge and do not expand.
 class TransactionRow extends StatelessWidget {
   const TransactionRow({
     required this.tx,
@@ -59,6 +60,8 @@ class TransactionRow extends StatelessWidget {
                         runSpacing: 4,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
+                          if (tx.messageId == null)
+                            const FinanceBadge('Manual'),
                           if (tx.isCreditCard) const FinanceBadge('Credit'),
                           if (tx.pairedWithId != null)
                             Icon(
@@ -93,7 +96,7 @@ class TransactionRow extends StatelessWidget {
             ),
           ),
         ),
-        if (expanded) _MessagePanel(tx: tx),
+        if (expanded && tx.messageId != null) _MessagePanel(tx: tx),
         const Divider(height: 1),
       ],
     );
