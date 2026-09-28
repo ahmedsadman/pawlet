@@ -368,45 +368,53 @@ void main() {
   });
 
   group('manual transactions', () {
-    test('lists a manual (null message_id) row with bank name as sender', () async {
-      final db = await openTestDb();
-      final bank = await insertBank(db, name: 'City', accountType: 'deposit');
-      final repo = FinanceRepository(db);
+    test(
+      'lists a manual (null message_id) row with bank name as sender',
+      () async {
+        final db = await openTestDb();
+        final bank = await insertBank(db, name: 'City', accountType: 'deposit');
+        final repo = FinanceRepository(db);
 
-      final id = await repo.insertManualTransaction(
-        bankId: bank,
-        amount: '250.00',
-        type: TxType.expense,
-        date: DateTime(2026, 5, 1),
-        currency: 'BDT',
-      );
-      expect(id, greaterThan(0));
+        final id = await repo.insertManualTransaction(
+          bankId: bank,
+          amount: '250.00',
+          type: TxType.expense,
+          date: DateTime(2026, 5, 1),
+          currency: 'BDT',
+        );
+        expect(id, greaterThan(0));
 
-      final page = (await repo.transactions(const TxQuery())).data;
-      final tx = page.transactions.single;
-      expect(tx.messageId, isNull);
-      expect(tx.bankName, 'City');
-      expect(tx.sender, 'City'); // COALESCE(sms.sender, bank.name)
-      expect(_n(tx.normalizedAmount), 250);
-      expect(tx.type, TxType.expense);
-      expect(_n(page.totals.expense), 250);
-      await db.close();
-    });
+        final page = (await repo.transactions(const TxQuery())).data;
+        final tx = page.transactions.single;
+        expect(tx.messageId, isNull);
+        expect(tx.bankName, 'City');
+        expect(tx.sender, 'City'); // COALESCE(sms.sender, bank.name)
+        expect(_n(tx.normalizedAmount), 250);
+        expect(tx.type, TxType.expense);
+        expect(_n(page.totals.expense), 250);
+        await db.close();
+      },
+    );
 
-    test('insertManualTransaction falls back to repo currency when omitted', () async {
-      final db = await openTestDb();
-      final bank = await insertBank(db, name: 'City');
-      final repo = FinanceRepository(db, currency: () => 'BDT');
-      await repo.insertManualTransaction(
-        bankId: bank,
-        amount: '5.00',
-        type: TxType.income,
-        date: DateTime(2026, 5, 1),
-      );
-      final tx = (await repo.transactions(const TxQuery())).data.transactions.single;
-      expect(tx.normalizedCurrency, 'BDT');
-      await db.close();
-    });
+    test(
+      'insertManualTransaction falls back to repo currency when omitted',
+      () async {
+        final db = await openTestDb();
+        final bank = await insertBank(db, name: 'City');
+        final repo = FinanceRepository(db, currency: () => 'BDT');
+        await repo.insertManualTransaction(
+          bankId: bank,
+          amount: '5.00',
+          type: TxType.income,
+          date: DateTime(2026, 5, 1),
+        );
+        final tx = (await repo.transactions(
+          const TxQuery(),
+        )).data.transactions.single;
+        expect(tx.normalizedCurrency, 'BDT');
+        await db.close();
+      },
+    );
   });
 
   group('updateTransaction', () {
@@ -424,7 +432,9 @@ void main() {
 
       await repo.updateTransaction(id, amount: '75.50', type: TxType.income);
 
-      final tx = (await repo.transactions(const TxQuery())).data.transactions.single;
+      final tx = (await repo.transactions(
+        const TxQuery(),
+      )).data.transactions.single;
       expect(_n(tx.normalizedAmount), 75.5);
       expect(tx.type, TxType.income);
       await db.close();

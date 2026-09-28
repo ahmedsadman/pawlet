@@ -81,9 +81,9 @@ class _FinancePageState extends ConsumerState<FinancePage> {
       await showAddTransactionSheet(context);
     } else if (choice == 'banks') {
       // BanksPage refreshes finance itself after edits.
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const BanksPage()),
-      );
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const BanksPage()));
     }
   }
 
