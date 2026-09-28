@@ -138,14 +138,14 @@ class FinanceRepository {
       '''
       SELECT t.id, t.message_id, t.bank_id,
              b.name AS bank_name, b.account_type AS bank_account_type,
-             s.sender AS sender,
+             COALESCE(s.sender, b.name) AS sender,
              t.normalized_amount, t.normalized_currency,
              t.original_amount, t.original_currency,
              t.type, t.date, t.paired_with_id,
              p.message_id AS paired_with_message_id,
              t.bill_id
       FROM ${AppDatabase.transactionsTable} t
-      JOIN ${AppDatabase.smsTable} s ON s.id = t.message_id
+      LEFT JOIN ${AppDatabase.smsTable} s ON s.id = t.message_id
       LEFT JOIN ${AppDatabase.banksTable} b ON b.id = t.bank_id
       LEFT JOIN ${AppDatabase.transactionsTable} p ON p.id = t.paired_with_id
       $filterClause
@@ -174,6 +174,44 @@ class FinanceRepository {
     await _db.update(
       AppDatabase.transactionsTable,
       {'type': type.value},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Inserts a user-entered transaction with no backing SMS (`message_id` NULL).
+  /// [bankId] is required; the sender is derived from the bank name in reads.
+  /// Aggregates recompute from stored rows, so callers should refresh the
+  /// finance providers afterwards. Returns the new row id.
+  Future<int> insertManualTransaction({
+    required int bankId,
+    required String amount,
+    required TxType type,
+    required DateTime date,
+    String? currency,
+  }) async {
+    final ms = date.millisecondsSinceEpoch;
+    return _db.insert(AppDatabase.transactionsTable, {
+      'message_id': null,
+      'bank_id': bankId,
+      'normalized_amount': amount,
+      'normalized_currency': currency ?? _currency(),
+      'type': type.value,
+      'date': ms,
+      'created_at': ms,
+    });
+  }
+
+  /// Updates a transaction's amount and type. Aggregates recompute from stored
+  /// rows, so callers should refresh the finance providers afterwards.
+  Future<void> updateTransaction(
+    int id, {
+    required String amount,
+    required TxType type,
+  }) async {
+    await _db.update(
+      AppDatabase.transactionsTable,
+      {'normalized_amount': amount, 'type': type.value},
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -486,7 +524,7 @@ class FinanceRepository {
 
   TransactionItem _txFromRow(Map<String, Object?> row) => TransactionItem(
     id: row['id'] as int,
-    messageId: row['message_id'] as int,
+    messageId: row['message_id'] as int?,
     bankId: row['bank_id'] as int?,
     bankName: row['bank_name'] as String?,
     bankAccountType: row['bank_account_type'] as String?,

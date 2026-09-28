@@ -33,7 +33,7 @@ class TransactionItem {
   });
 
   final int id;
-  final int messageId;
+  final int? messageId;
   final int? bankId;
   final String? bankName;
 
@@ -60,7 +60,7 @@ class TransactionItem {
   factory TransactionItem.fromJson(Map<String, dynamic> json) =>
       TransactionItem(
         id: json['id'] as int,
-        messageId: json['message_id'] as int,
+        messageId: json['message_id'] as int?,
         bankId: json['bank_id'] as int?,
         bankName: json['bank_name'] as String?,
         bankAccountType: json['bank_account_type'] as String?,

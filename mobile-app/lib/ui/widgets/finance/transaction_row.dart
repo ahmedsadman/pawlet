@@ -118,7 +118,7 @@ class _MessagePanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Message(id: tx.messageId),
+          _Message(id: tx.messageId!),
           if (tx.pairedWithMessageId != null) ...[
             const SizedBox(height: 12),
             _Message(id: tx.pairedWithMessageId!),
