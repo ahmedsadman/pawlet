@@ -137,55 +137,6 @@ void main() {
       );
       await db.close();
     });
-
-    test('onUpgrade v2->v3 adds columns, app_meta, and indexes', () async {
-      // Build a v2 sms_records table by hand, then run the real migration.
-      final db = await databaseFactory.openDatabase(
-        inMemoryDatabasePath,
-        options: OpenDatabaseOptions(singleInstance: false),
-      );
-      await db.execute('''
-        CREATE TABLE sms_records (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          sender TEXT NOT NULL,
-          contact_name TEXT,
-          content TEXT NOT NULL,
-          timestamp INTEGER NOT NULL,
-          status TEXT NOT NULL,
-          attempts INTEGER NOT NULL DEFAULT 0,
-          last_error TEXT,
-          updated_at INTEGER NOT NULL DEFAULT 0,
-          next_attempt_at INTEGER,
-          category TEXT,
-          processed_at INTEGER
-        )
-      ''');
-      // A pre-v3 row must survive the additive migration untouched.
-      await db.insert('sms_records', {
-        'sender': 'CHK',
-        'content': 'x',
-        'timestamp': 1,
-        'status': 'success',
-        'updated_at': 1,
-      });
-
-      await AppDatabase.onUpgrade(db, 2, 3);
-
-      final cols = await _columnNames(db, 'sms_records');
-      expect(cols, containsAll(['ignore_reason', 'failure_reason']));
-      expect(await _tableNames(db), contains('app_meta'));
-      final indexes = await _indexNames(db, 'sms_records');
-      expect(
-        indexes,
-        containsAll(['idx_sms_status_updated', 'idx_sms_status_next']),
-      );
-      // Existing row preserved, new columns default to null.
-      final row = (await db.query('sms_records')).single;
-      expect(row['sender'], 'CHK');
-      expect(row['ignore_reason'], isNull);
-      expect(row['failure_reason'], isNull);
-      await db.close();
-    });
   });
 
   group('sms_records parse_source schema (v4)', () {
@@ -195,118 +146,79 @@ void main() {
       expect(cols, contains('parse_source'));
       await db.close();
     });
+  });
 
-    test('onUpgrade v3->v4 adds parse_source, preserving rows', () async {
-      // Build a v3 sms_records table by hand, then run the real migration.
-      final db = await databaseFactory.openDatabase(
-        inMemoryDatabasePath,
-        options: OpenDatabaseOptions(singleInstance: false),
-      );
-      await db.execute('''
-        CREATE TABLE sms_records (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          sender TEXT NOT NULL,
-          contact_name TEXT,
-          content TEXT NOT NULL,
-          timestamp INTEGER NOT NULL,
-          status TEXT NOT NULL,
-          attempts INTEGER NOT NULL DEFAULT 0,
-          last_error TEXT,
-          updated_at INTEGER NOT NULL DEFAULT 0,
-          next_attempt_at INTEGER,
-          category TEXT,
-          processed_at INTEGER,
-          ignore_reason TEXT,
-          failure_reason TEXT
-        )
-      ''');
-      await db.insert('sms_records', {
-        'sender': 'CHK',
-        'content': 'x',
-        'timestamp': 1,
-        'status': 'success',
-        'updated_at': 1,
+  group('transactions manual-entry schema', () {
+    test('fresh schema allows a null message_id', () async {
+      final db = await openTestDb();
+      final bank = await insertBank(db, name: 'City', accountType: 'deposit');
+      final id = await db.insert('transactions', {
+        'message_id': null,
+        'bank_id': bank,
+        'normalized_amount': '10.00',
+        'normalized_currency': 'BDT',
+        'type': 'expense',
+        'date': 1,
+        'created_at': 1,
       });
-
-      await AppDatabase.onUpgrade(db, 3, 4);
-
-      final cols = await _columnNames(db, 'sms_records');
-      expect(cols, contains('parse_source'));
-      final row = (await db.query('sms_records')).single;
-      expect(row['sender'], 'CHK');
-      expect(row['parse_source'], isNull);
+      expect(id, greaterThan(0));
+      final row =
+          (await db.query('transactions', where: 'id = ?', whereArgs: [id]))
+              .single;
+      expect(row['message_id'], isNull);
       await db.close();
     });
   });
 
-  test(
-    'onUpgrade v1->v2 migrates indexes, clears credit matchers, renames',
-    () async {
-      // Build the v1 banks table + its single unique index by hand, then run the
-      // real migration and assert its effects (in-memory, no reopen needed).
+  group('destructive onUpgrade (pre-release policy)', () {
+    test('any version bump drops old tables and rebuilds the current schema', () async {
+      // Simulate an old install: a legacy transactions table with a NOT NULL
+      // message_id and a stray row. onUpgrade must wipe and rebuild.
       final db = await databaseFactory.openDatabase(
         inMemoryDatabasePath,
         options: OpenDatabaseOptions(singleInstance: false),
       );
       await db.execute('''
-      CREATE TABLE banks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        account_type TEXT NOT NULL DEFAULT 'deposit',
-        card_digits TEXT,
-        last_balance TEXT,
-        last_balance_at INTEGER,
-        created_at INTEGER NOT NULL,
-        matchers TEXT
-      )
-    ''');
-      await db.execute('CREATE UNIQUE INDEX idx_banks_name ON banks (name)');
-      // v1 enforced unique names, so each stored bank has a distinct name (this is
-      // exactly the limitation v2 lifts). One credit card carries an old catalog
-      // name + matchers, so the migration must both rename it and clear matchers.
-      await insertBank(
-        db,
-        name: 'Eastern Bank Limited',
-        accountType: 'deposit',
-        matchers: const ['ebl'],
+        CREATE TABLE transactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id INTEGER NOT NULL,
+          normalized_amount TEXT NOT NULL,
+          normalized_currency TEXT NOT NULL,
+          type TEXT NOT NULL,
+          date INTEGER NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+      ''');
+      await db.insert('transactions', {
+        'message_id': 42,
+        'normalized_amount': '99.00',
+        'normalized_currency': 'BDT',
+        'type': 'income',
+        'date': 5,
+        'created_at': 5,
+      });
+
+      await AppDatabase.onUpgrade(db, 1, 5);
+
+      // Rebuilt from scratch: old row is gone, all current tables exist.
+      final tables = await _tableNames(db);
+      expect(
+        tables,
+        containsAll(['sms_records', 'banks', 'transactions', 'bills', 'app_meta']),
       );
-      await insertBank(db, name: 'Mutual Trust Bank', matchers: const ['mtb']);
-      await insertBank(
-        db,
-        name: 'Standard Chartered Bank (SCB)',
-        accountType: 'credit',
-        cardDigits: '4238|3241',
-        matchers: const ['scb'],
-      );
+      expect((await db.query('transactions')).isEmpty, isTrue);
 
-      await AppDatabase.onUpgrade(db, 1, 2);
-
-      final names = await _indexNames(db);
-      expect(names, containsAll(['idx_banks_deposit', 'idx_banks_credit']));
-      expect(names, isNot(contains('idx_banks_name')));
-
-      final rows = await db.query('banks', orderBy: 'id');
-      expect(rows.map((r) => r['name']).toList(), [
-        'EBL',
-        'MTB',
-        'StanChart (SCB)',
-      ]);
-      // Credit matchers cleared; deposit matchers untouched.
-      final creditRow = rows.firstWhere((r) => r['account_type'] == 'credit');
-      expect(creditRow['name'], 'StanChart (SCB)'); // renamed too
-      expect(creditRow['matchers'], isNull);
-      final depositEbl = rows.firstWhere((r) => r['name'] == 'EBL');
-      expect(depositEbl['matchers'], 'ebl');
-
-      // The whole point of v2: a deposit + a card can now share one name.
-      await insertBank(
-        db,
-        name: 'EBL',
-        accountType: 'credit',
-        cardDigits: '5100|9999',
-      );
-      expect((await db.query('banks')).length, 4);
+      // The rebuilt schema allows a null message_id.
+      final id = await db.insert('transactions', {
+        'message_id': null,
+        'normalized_amount': '1.00',
+        'normalized_currency': 'BDT',
+        'type': 'expense',
+        'date': 6,
+        'created_at': 6,
+      });
+      expect(id, greaterThan(0));
       await db.close();
-    },
-  );
+    });
+  });
 }

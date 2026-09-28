@@ -19,7 +19,7 @@ class AppDatabase {
   /// Key/value store for small operational metadata (e.g. the last prune time).
   static const String metaTable = 'app_meta';
 
-  static const int _version = 4;
+  static const int _version = 5;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), fileName);
@@ -93,7 +93,8 @@ class AppDatabase {
     await db.execute('''
       CREATE TABLE $transactionsTable (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        message_id INTEGER NOT NULL,
+        -- Nullable: manual (user-entered) transactions have no backing SMS.
+        message_id INTEGER,
         bank_id INTEGER,
         paired_with_id INTEGER,
         bill_id INTEGER,
@@ -151,66 +152,26 @@ class AppDatabase {
     ''');
   }
 
-  /// Applies incremental migrations. Each version's delta is additive so future
-  /// upgrades can be appended below.
+  /// Pre-release upgrade policy: the schema is defined once in [createSchema];
+  /// there are no incremental deltas to preserve. Any version bump drops every
+  /// table and rebuilds from scratch, discarding local data. Revisit this (add
+  /// real, data-preserving migrations) once the app ships and real user data
+  /// exists on devices.
   static Future<void> onUpgrade(
     Database db,
     int oldVersion,
     int newVersion,
   ) async {
-    // v1 -> v2: allow a deposit + multiple credit cards under one bank name.
-    if (oldVersion < 2) {
-      await db.execute('DROP INDEX IF EXISTS idx_banks_name');
-      await db.execute('''
-        CREATE UNIQUE INDEX idx_banks_deposit ON $banksTable (name)
-        WHERE account_type = 'deposit'
-      ''');
-      await db.execute('''
-        CREATE UNIQUE INDEX idx_banks_credit ON $banksTable (name, card_digits)
-        WHERE account_type = 'credit'
-      ''');
-      // Credit cards route by card digits only, so they must carry no
-      // sender-matchers (otherwise a non-card SMS would match both the deposit
-      // and the card and resolve as ambiguous).
-      await db.execute(
-        "UPDATE $banksTable SET matchers = NULL WHERE account_type = 'credit'",
-      );
-      // Rename stored rows to the shortened v2 catalog labels so the edit form
-      // still preselects them (matchers are unchanged, so routing is unaffected).
-      await db.execute(
-        "UPDATE $banksTable SET name = 'EBL' WHERE name = 'Eastern Bank Limited'",
-      );
-      await db.execute(
-        "UPDATE $banksTable SET name = 'MTB' WHERE name = 'Mutual Trust Bank'",
-      );
-      await db.execute(
-        "UPDATE $banksTable SET name = 'StanChart (SCB)' "
-        "WHERE name = 'Standard Chartered Bank (SCB)'",
-      );
+    for (final table in const [
+      smsTable,
+      banksTable,
+      transactionsTable,
+      billsTable,
+      metaTable,
+    ]) {
+      // Dropping a table also drops its indexes.
+      await db.execute('DROP TABLE IF EXISTS $table');
     }
-
-    // v2 -> v3: retention model reboot. Schema-only — the app is pre-release, so
-    // existing test devices get wiped and no data backfill is needed. Kept for
-    // robustness on any non-wiped install: pre-v3 rows keep their old shape
-    // (old category='ignored' success rows stay hidden; null failure_reason
-    // reads back as the generic hint). Gated on the target [newVersion] so a
-    // partial upgrade (e.g. straight to v2) doesn't apply a later delta.
-    if (oldVersion < 3 && newVersion >= 3) {
-      await db.execute('ALTER TABLE $smsTable ADD COLUMN ignore_reason TEXT');
-      await db.execute('ALTER TABLE $smsTable ADD COLUMN failure_reason TEXT');
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS $metaTable (
-          key TEXT PRIMARY KEY,
-          value INTEGER NOT NULL
-        )
-      ''');
-      await _createSmsOpsIndexes(db);
-    }
-
-    // v3 -> v4: record which engine parsed each row (on-device model vs LLM),
-    // surfaced as a muted "LLM" badge in History. Additive; old rows read null.
-    if (oldVersion < 4 && newVersion >= 4) {
-      await db.execute('ALTER TABLE $smsTable ADD COLUMN parse_source TEXT');
-    }
+    await createSchema(db, newVersion);
   }
 }
