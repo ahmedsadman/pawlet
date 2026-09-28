@@ -169,10 +169,41 @@ row (its isolate died) is freed by the stale-reclaim step (§3, *Reclaim stale*)
 reschedule always leaves a wake scheduled while any row is `sending` so the slot can't stall
 forever.
 
-After the queue drains, deferred **relationship matchers** run once (transfer pairing,
-credit-card-payment ↔ bill), then the terminal-failure **count** is reconciled into
-notifications, a **throttled prune** runs (§9), the **data-change token** is bumped (see
-below), and the next background catch-up is (re)scheduled (§6).
+After the queue drains, deferred **relationship matchers** run once (see below), then the
+terminal-failure **count** is reconciled into notifications, a **throttled prune** runs
+(§9), the **data-change token** is bumped (see below), and the next background catch-up is
+(re)scheduled (§6).
+
+### Relationship matchers
+
+Once the queue is empty, `FinanceMatcher.runPending` (`lib/services/finance/finance_matcher.dart`)
+sweeps *recently-created, still-unmatched* rows and stitches related credit-card money
+movements together. These are **deterministic rule-based matchers, not the model** — the
+on-device model classified each SMS in isolation (§3); the matchers reconstruct the links
+*between* those records afterwards.
+
+They are **event-driven, not on a schedule**: they run at the tail of every drain pass and
+on resume, replacing what used to be periodic daemon threads. There is no matcher timer —
+the only time values involved are the **matching windows** (how far apart two records may
+sit and still be considered the same money movement), not polling intervals.
+
+Three passes run, each match committed in **its own DB transaction** (so a two- or
+three-row link is all-or-nothing), and any **ambiguous tie is skipped** and left for manual
+reconciliation:
+
+- **Transfer pairing** — a credit-card `transfer` (the bill payment the issuer received) is
+  paired with the bank `expense` debit that funded it. Match on amount within **±1.00** and
+  time within **±15 minutes**; the closest-in-time candidate wins. The debit is retyped to
+  `transfer` and both rows point at each other via `paired_with_id`.
+- **Bill linking** — a credit-card `transfer` is linked to the matching `bill` on that same
+  card (credit accounts only), on amount **±1.00** within a **±45-day** window, preferring a
+  bill *received before* the payment then closest in time. It sets `bill_id` on the
+  transfer (and its paired debit) and stamps `paid_at` on the bill. This runs from **both
+  directions** — payment→bill and bill→payment — so a late-arriving counterpart still links
+  whichever record showed up first.
+
+The whole sweep is **look-back bounded to 45 days** (the bill window): older rows can no
+longer acquire a new counterpart, so they are skipped for efficiency.
 
 **Keeping the UI fresh.** Any pass that changed data increments a DB-backed change token
 (`SmsRepository.bumpDataRevision`, an `app_meta` counter) — from *whichever* isolate ran,
@@ -343,6 +374,9 @@ matters, since numbers can drift.
 | Max single backoff step | 6h | `processing_service.dart` |
 | Server-hint ceiling | 24h | `processing_service.dart` |
 | Stale `sending` reclaim window | 3 min | `processing_service.dart` |
+| Matcher amount tolerance | ±1.00 | `finance_matcher.dart` |
+| Transfer-pairing time window | ±15 min | `finance_matcher.dart` |
+| Bill-linking time window & look-back | ±45 days | `finance_matcher.dart` |
 | On-device accept threshold (class conf & NERc) | 0.90 | `local_model.dart` |
 | On-device max sequence length | 128 tokens | `tflite_local_classifier.dart` |
 | LLM single-attempt HTTP timeout | 2 min | `openrouter_provider.dart` |

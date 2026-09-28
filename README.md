@@ -6,6 +6,13 @@ everything happens on the phone. Most messages are read by a bundled on-device m
 only network calls are a fallback to a large language model (OpenRouter's free models) for
 the messages the on-device model can't confidently handle.
 
+## Documentation
+
+- [`mobile-app/docs/`](mobile-app/docs/README.md) — technical write-ups on how the app
+  behaves 
+- [`model-training/`](model-training/README.md) — how the on-device model is trained,
+  exported, and quantized.
+
 ## What it does
 
 The phone receives bank SMS all the time — debits, credits, credit-card statements, OTPs,
