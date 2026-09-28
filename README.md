@@ -6,6 +6,8 @@ everything happens on the phone. Most messages are read by a bundled on-device m
 only network calls are a fallback to a large language model (OpenRouter's free models) for
 the messages the on-device model can't confidently handle.
 
+> **Note:** Pawlet currently targets **Bangladeshi banks only**, with plans to expand to more regions in the future.
+
 ## Documentation
 
 - [`mobile-app/docs/`](mobile-app/docs/README.md) — technical write-ups on how the app
@@ -177,3 +179,14 @@ PY
 
 Processing is asynchronous (it makes a network call), so give it a few seconds after injecting
 before pulling the database.
+
+## License
+
+Pawlet is split into two parts under different licenses:
+
+| Part | Path | License | Terms |
+|------|------|---------|-------|
+| **App / code** | `mobile-app/` | [AGPL v3](mobile-app/LICENSE) | Use/modify/distribute, including commercially. Must keep it open source — anyone who distributes or runs it as a network service must release their source under AGPL too. |
+| **Dataset & models** | `model-training/` | [CC BY 4.0](model-training/LICENSE) | Share/adapt, including commercially, with credit. Derivatives may use any license. |
+
+Building on Pawlet requires crediting the author (Ahmed Sadman Muhib) and this project.

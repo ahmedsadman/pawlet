@@ -142,3 +142,10 @@ the run with the best validation macro-F1. `SEEDS=7` reproduces just the winner.
 - **Pinning regression cases.** A dataset row can carry `_split: "test"` (or
   `"val"`/`"train"`) to force it into that split, bypassing the reserve logic —
   use it to permanently evaluate real SMS a past model got wrong.
+
+## License
+
+Pawlet dataset & models © 2026 Ahmed Sadman Muhib
+
+Licensed under [CC BY 4.0](LICENSE). You may share and adapt this data and
+these models, including commercially, provided you give appropriate credit.
