@@ -140,10 +140,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Text('Privacy', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
           Text(
-            'Everything Pawlet knows stays on this device — nothing is uploaded '
-            'or synced. To read a message we send only its text for one-time '
-            'metadata extraction, with no name, number, or identifying detail '
-            'attached.',
+            'All data stays on device. Messages the local classification model '
+            "can't categorize may be sent to an LLM for better accuracy. No "
+            'identifying information is recorded externally.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.outline,
             ),

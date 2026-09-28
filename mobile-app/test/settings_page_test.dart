@@ -48,9 +48,34 @@ void main() {
         const Offset(0, -200),
       );
       expect(find.text('Privacy'), findsOneWidget);
-      expect(find.textContaining('stays on this device'), findsOneWidget);
+      expect(find.textContaining('All data stays on device'), findsOneWidget);
     },
   );
+
+  testWidgets('privacy paragraph states on-device + LLM fallback wording', (
+    tester,
+  ) async {
+    final (widget, _) = await _app(const []);
+    await tester.pumpWidget(widget);
+    await tester.pump();
+
+    // Privacy sits near the bottom of the (lazy) ListView — scroll it in.
+    await tester.dragUntilVisible(
+      find.text('Privacy'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+
+    expect(find.textContaining('All data stays on device'), findsOneWidget);
+    expect(
+      find.textContaining('sent to an LLM for better accuracy'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('No identifying information is recorded externally'),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('Manage Banks & Cards navigates to the Banks page', (
     tester,
