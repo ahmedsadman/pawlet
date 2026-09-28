@@ -63,13 +63,15 @@ class _AddTransactionSheetState extends ConsumerState<_AddTransactionSheet> {
     );
     if (picked != null) {
       // Preserve the time-of-day so intra-day ordering stays stable.
-      setState(() => _date = DateTime(
-            picked.year,
-            picked.month,
-            picked.day,
-            _date.hour,
-            _date.minute,
-          ));
+      setState(
+        () => _date = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          _date.hour,
+          _date.minute,
+        ),
+      );
     }
   }
 
@@ -77,7 +79,9 @@ class _AddTransactionSheetState extends ConsumerState<_AddTransactionSheet> {
     if (!_formKey.currentState!.validate() || _bankId == null) return;
     setState(() => _saving = true);
     final currency = ref.read(currencyProvider).value?.data ?? 'BDT';
-    await ref.read(financeRepositoryProvider).insertManualTransaction(
+    await ref
+        .read(financeRepositoryProvider)
+        .insertManualTransaction(
           bankId: _bankId!,
           amount: _amount.text.trim(),
           type: _type,

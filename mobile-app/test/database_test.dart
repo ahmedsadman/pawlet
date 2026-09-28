@@ -162,23 +162,27 @@ void main() {
         'created_at': 1,
       });
       expect(id, greaterThan(0));
-      final row =
-          (await db.query('transactions', where: 'id = ?', whereArgs: [id]))
-              .single;
+      final row = (await db.query(
+        'transactions',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).single;
       expect(row['message_id'], isNull);
       await db.close();
     });
   });
 
   group('destructive onUpgrade (pre-release policy)', () {
-    test('any version bump drops old tables and rebuilds the current schema', () async {
-      // Simulate an old install: a legacy transactions table with a NOT NULL
-      // message_id and a stray row. onUpgrade must wipe and rebuild.
-      final db = await databaseFactory.openDatabase(
-        inMemoryDatabasePath,
-        options: OpenDatabaseOptions(singleInstance: false),
-      );
-      await db.execute('''
+    test(
+      'any version bump drops old tables and rebuilds the current schema',
+      () async {
+        // Simulate an old install: a legacy transactions table with a NOT NULL
+        // message_id and a stray row. onUpgrade must wipe and rebuild.
+        final db = await databaseFactory.openDatabase(
+          inMemoryDatabasePath,
+          options: OpenDatabaseOptions(singleInstance: false),
+        );
+        await db.execute('''
         CREATE TABLE transactions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           message_id INTEGER NOT NULL,
@@ -189,36 +193,43 @@ void main() {
           created_at INTEGER NOT NULL
         )
       ''');
-      await db.insert('transactions', {
-        'message_id': 42,
-        'normalized_amount': '99.00',
-        'normalized_currency': 'BDT',
-        'type': 'income',
-        'date': 5,
-        'created_at': 5,
-      });
+        await db.insert('transactions', {
+          'message_id': 42,
+          'normalized_amount': '99.00',
+          'normalized_currency': 'BDT',
+          'type': 'income',
+          'date': 5,
+          'created_at': 5,
+        });
 
-      await AppDatabase.onUpgrade(db, 1, 5);
+        await AppDatabase.onUpgrade(db, 1, 5);
 
-      // Rebuilt from scratch: old row is gone, all current tables exist.
-      final tables = await _tableNames(db);
-      expect(
-        tables,
-        containsAll(['sms_records', 'banks', 'transactions', 'bills', 'app_meta']),
-      );
-      expect((await db.query('transactions')).isEmpty, isTrue);
+        // Rebuilt from scratch: old row is gone, all current tables exist.
+        final tables = await _tableNames(db);
+        expect(
+          tables,
+          containsAll([
+            'sms_records',
+            'banks',
+            'transactions',
+            'bills',
+            'app_meta',
+          ]),
+        );
+        expect((await db.query('transactions')).isEmpty, isTrue);
 
-      // The rebuilt schema allows a null message_id.
-      final id = await db.insert('transactions', {
-        'message_id': null,
-        'normalized_amount': '1.00',
-        'normalized_currency': 'BDT',
-        'type': 'expense',
-        'date': 6,
-        'created_at': 6,
-      });
-      expect(id, greaterThan(0));
-      await db.close();
-    });
+        // The rebuilt schema allows a null message_id.
+        final id = await db.insert('transactions', {
+          'message_id': null,
+          'normalized_amount': '1.00',
+          'normalized_currency': 'BDT',
+          'type': 'expense',
+          'date': 6,
+          'created_at': 6,
+        });
+        expect(id, greaterThan(0));
+        await db.close();
+      },
+    );
   });
 }

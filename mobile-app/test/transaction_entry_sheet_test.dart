@@ -8,7 +8,7 @@ import 'package:pawlet/theme/catppuccin_theme.dart';
 import 'package:pawlet/ui/widgets/finance/transaction_entry_sheet.dart';
 
 void main() {
-  Bank _bank(int id, String name) => Bank(
+  Bank bank(int id, String name) => Bank(
     id: id,
     name: name,
     accountType: 'deposit',
@@ -58,7 +58,7 @@ void main() {
   testWidgets('renders bank picker, amount, type and date when banks exist', (
     tester,
   ) async {
-    await openSheet(tester, banks: [_bank(1, 'City'), _bank(2, 'EBL')]);
+    await openSheet(tester, banks: [bank(1, 'City'), bank(2, 'EBL')]);
     expect(find.byType(DropdownButtonFormField<int>), findsOneWidget);
     expect(find.text('Amount'), findsOneWidget);
     expect(find.text('Income'), findsOneWidget);
@@ -74,11 +74,14 @@ void main() {
   testWidgets('blocks save until a bank and valid amount are set', (
     tester,
   ) async {
-    await openSheet(tester, banks: [_bank(1, 'City')]);
+    await openSheet(tester, banks: [bank(1, 'City')]);
     await tester.tap(find.widgetWithText(FilledButton, 'Add transaction'));
     await tester.pumpAndSettle();
     // Validation errors keep the sheet open.
-    expect(find.widgetWithText(FilledButton, 'Add transaction'), findsOneWidget);
+    expect(
+      find.widgetWithText(FilledButton, 'Add transaction'),
+      findsOneWidget,
+    );
     expect(find.text('Enter a valid amount'), findsOneWidget);
   });
 }
