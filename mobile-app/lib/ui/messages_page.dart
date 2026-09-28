@@ -97,23 +97,23 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
   Widget _queueSection(QueuePage? page) {
     final count = page?.total ?? 0;
     final records = page?.records ?? const <SmsRecord>[];
+    final canExpand = count > 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader(
-          'Queue',
-          count: count,
-          // Expand/collapse only offered when there is something to show.
-          action: count > 0
-              ? IconButton(
-                  tooltip: _queueExpanded ? 'Collapse' : 'Expand',
-                  icon: Icon(
-                    _queueExpanded ? Icons.expand_less : Icons.expand_more,
-                  ),
-                  onPressed: () =>
-                      setState(() => _queueExpanded = !_queueExpanded),
-                )
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: canExpand
+              ? () => setState(() => _queueExpanded = !_queueExpanded)
               : null,
+          child: SectionHeader(
+            'Queue',
+            count: count,
+            // Pure indicator now; the whole row toggles. Hidden when empty.
+            action: canExpand
+                ? Icon(_queueExpanded ? Icons.expand_less : Icons.expand_more)
+                : null,
+          ),
         ),
         if (_queueExpanded && count > 0) ...[
           ...records.map((r) => SmsTile(r)),

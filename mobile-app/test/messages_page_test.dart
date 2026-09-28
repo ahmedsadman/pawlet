@@ -8,6 +8,7 @@ import 'package:pawlet/state/messages_providers.dart';
 import 'package:pawlet/state/providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
 import 'package:pawlet/ui/messages_page.dart';
+import 'package:pawlet/ui/widgets/sms_tile.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -80,6 +81,32 @@ void main() {
     await tester.tap(find.byIcon(Icons.expand_more));
     await tester.pump();
     expect(find.text('BankA'), findsOneWidget);
+  });
+
+  testWidgets('tapping the Queue header row expands it', (tester) async {
+    await _pump(
+      tester,
+      _overrides(
+        queue: QueuePage(
+          records: [
+            _sms('BankA', SmsStatus.queued),
+            _sms('BankB', SmsStatus.queued),
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 20,
+        ),
+      ),
+    );
+
+    // Collapsed: queued rows not shown yet.
+    expect(find.byType(SmsTile), findsNothing);
+
+    // Tap the header text (not the caret) — whole row should toggle.
+    await tester.tap(find.text('Queue'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SmsTile), findsWidgets);
   });
 
   testWidgets('no expand control when the queue is empty', (tester) async {
