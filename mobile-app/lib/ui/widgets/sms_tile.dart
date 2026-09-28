@@ -85,11 +85,11 @@ class _SmsTileState extends State<SmsTile> {
           children: [
             const _LlmBadge(),
             const SizedBox(width: 6),
-            CategoryLabel(category),
+            CategoryLabel(category, type: record.transactionType),
           ],
         );
       }
-      return CategoryLabel(category);
+      return CategoryLabel(category, type: record.transactionType);
     }
     return StatusBadge(record.status);
   }

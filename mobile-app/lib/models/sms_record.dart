@@ -1,3 +1,5 @@
+import 'finance/transaction.dart';
+
 /// Lifecycle status of a captured SMS as it moves through the processing queue.
 enum SmsStatus {
   /// Waiting to be processed (also used while backing off between retries).
@@ -105,6 +107,7 @@ class SmsRecord {
     this.ignoreReason,
     this.failureReason,
     this.parseSource,
+    this.transactionType,
   });
 
   /// Local DB primary key (null before insert).
@@ -145,6 +148,12 @@ class SmsRecord {
   /// Layer-1 gate rejected it before any model ran (and for pre-v4 rows).
   final ParseSource? parseSource;
 
+  /// Transient (not persisted on `sms_records`): the type of the backing
+  /// transaction row, joined in for History display so a transaction shows its
+  /// subcategory (Income/Expense/Transfer) instead of the generic label. Null
+  /// for bills, failures, and rows read without the join.
+  final TxType? transactionType;
+
   bool get isQueued =>
       status == SmsStatus.queued || status == SmsStatus.sending;
 
@@ -160,6 +169,7 @@ class SmsRecord {
     IgnoreReason? ignoreReason,
     FailureReason? failureReason,
     ParseSource? parseSource,
+    TxType? transactionType,
   }) {
     return SmsRecord(
       id: id ?? this.id,
@@ -176,6 +186,7 @@ class SmsRecord {
       ignoreReason: ignoreReason ?? this.ignoreReason,
       failureReason: failureReason ?? this.failureReason,
       parseSource: parseSource ?? this.parseSource,
+      transactionType: transactionType ?? this.transactionType,
     );
   }
 
@@ -211,5 +222,10 @@ class SmsRecord {
     ignoreReason: IgnoreReason.fromValue(map['ignore_reason'] as String?),
     failureReason: FailureReason.fromValue(map['failure_reason'] as String?),
     parseSource: ParseSource.fromValue(map['parse_source'] as String?),
+    // `tx_type` is present only when a query LEFT JOINs the transactions table
+    // (History); absent elsewhere, in which case it stays null.
+    transactionType: map['tx_type'] == null
+        ? null
+        : TxType.fromValue(map['tx_type'] as String),
   );
 }

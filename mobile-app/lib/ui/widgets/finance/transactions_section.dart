@@ -9,6 +9,7 @@ import '../../../state/providers.dart';
 import '../../../theme/catppuccin_theme.dart';
 import '../../../utils/currency_format.dart';
 import '../../../utils/date_range.dart';
+import '../keyboard_inset.dart';
 import '../section_header.dart';
 import '../skeleton.dart';
 import 'date_range_selector.dart';
@@ -209,7 +210,9 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
               // While hidden, keep rows collapsed and non-expandable so the raw
               // SMS (which contains the amount) can't be revealed.
               expanded: !hidden && _expandedId == tx.id,
-              onTap: hidden
+              // No tap target for manual rows (no backing SMS to reveal) or
+              // while balances are hidden.
+              onTap: (hidden || tx.messageId == null)
                   ? null
                   : () => setState(
                       () => _expandedId = _expandedId == tx.id ? null : tx.id,
@@ -389,6 +392,7 @@ class _EditTransactionSheet extends StatefulWidget {
 
 class _EditTransactionSheetState extends State<_EditTransactionSheet> {
   late final TextEditingController _amount;
+  final _amountFocus = FocusNode();
   late TxType _type;
   String? _error;
 
@@ -397,11 +401,18 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
     super.initState();
     _amount = TextEditingController(text: widget.tx.normalizedAmount);
     _type = widget.tx.type;
+    // Defer the keyboard until the open animation settles; focusing mid-slide
+    // (with isScrollControlled) re-lays out the sheet per frame and janks the
+    // open. See transaction_entry_sheet.dart for the same treatment.
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (mounted) _amountFocus.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _amount.dispose();
+    _amountFocus.dispose();
     super.dispose();
   }
 
@@ -425,64 +436,73 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bank = widget.tx.bankName ?? widget.tx.sender;
+    // Keyboard inset applied by the leaf KeyboardInset so a show/hide rebuilds
+    // only that widget (not this form), keeping the resize smooth.
     return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 8,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Edit transaction', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 16),
-            // Read-only bank.
-            InputDecorator(
-              decoration: const InputDecoration(
-                labelText: 'Bank',
-                border: OutlineInputBorder(),
-              ),
-              child: Text(bank, style: theme.textTheme.bodyLarge),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _amount,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: InputDecoration(
-                labelText: 'Amount',
-                border: const OutlineInputBorder(),
-                errorText: _error,
-                suffixText: widget.tx.normalizedCurrency,
-              ),
-              onChanged: (_) {
-                if (_error != null) setState(() => _error = null);
-              },
-            ),
-            const SizedBox(height: 16),
-            SegmentedButton<TxType>(
-              segments: [
-                for (final t in TxType.values)
-                  ButtonSegment(value: t, label: Text(_typeLabel(t))),
+      // Bottom handled by KeyboardInset (max of IME + nav-bar) to keep the pad
+      // monotonic through the keyboard animation.
+      bottom: false,
+      child: KeyboardInset(
+        child: Padding(
+          padding: const EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 8,
+            bottom: 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Edit transaction', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 16),
+                // Read-only bank.
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Bank',
+                    border: OutlineInputBorder(),
+                  ),
+                  child: Text(bank, style: theme.textTheme.bodyLarge),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _amount,
+                  focusNode: _amountFocus,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Amount',
+                    border: const OutlineInputBorder(),
+                    errorText: _error,
+                    suffixText: widget.tx.normalizedCurrency,
+                  ),
+                  onChanged: (_) {
+                    if (_error != null) setState(() => _error = null);
+                  },
+                ),
+                const SizedBox(height: 16),
+                SegmentedButton<TxType>(
+                  segments: [
+                    for (final t in TxType.values)
+                      ButtonSegment(value: t, label: Text(_typeLabel(t))),
+                  ],
+                  selected: {_type},
+                  onSelectionChanged: (s) => setState(() => _type = s.first),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _save,
+                    icon: const Icon(Icons.save),
+                    label: const Text('Save'),
+                  ),
+                ),
               ],
-              selected: {_type},
-              onSelectionChanged: (s) => setState(() => _type = s.first),
             ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _save,
-                icon: const Icon(Icons.save),
-                label: const Text('Save'),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

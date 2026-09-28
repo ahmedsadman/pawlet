@@ -134,13 +134,18 @@ class SmsRepository {
     String? query,
   }) async {
     final (where, args) = _historyWhere(query);
-    final rows = await _db.query(
-      _table,
-      where: where,
-      whereArgs: args,
-      orderBy: 'updated_at DESC',
-      limit: limit,
-      offset: offset,
+    // LEFT JOIN the backing transaction so a transaction row can surface its
+    // subcategory (type) in History; `tx_type` is null for bills and failures.
+    final rows = await _db.rawQuery(
+      '''
+      SELECT s.*, t.type AS tx_type
+      FROM $_table s
+      LEFT JOIN ${AppDatabase.transactionsTable} t ON t.message_id = s.id
+      WHERE $where
+      ORDER BY s.updated_at DESC
+      LIMIT ? OFFSET ?
+      ''',
+      [...args, limit, offset],
     );
     return rows.map(SmsRecord.fromDbMap).toList();
   }
