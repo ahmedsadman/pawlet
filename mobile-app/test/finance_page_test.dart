@@ -51,4 +51,19 @@ void main() {
     expect(find.text('2,000.00 BDT'), findsOneWidget);
     expect(find.text('Add a bank to get started'), findsNothing);
   });
+
+  testWidgets('shows a FAB that opens the add menu', (tester) async {
+    await _pump(tester, const []);
+
+    expect(find.byType(FloatingActionButton), findsOneWidget);
+
+    await tester.tap(find.byType(FloatingActionButton));
+    // Avoid pumpAndSettle (loading skeletons animate indefinitely); pump the
+    // modal route open manually.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text('Banks & Cards'), findsOneWidget);
+  });
 }
