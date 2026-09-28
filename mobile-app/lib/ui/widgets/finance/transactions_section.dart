@@ -66,42 +66,22 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
     ref.read(settingsRepositoryProvider).setTxTypeHintSeen(true);
   }
 
-  String _typeLabel(TxType t) => switch (t) {
-    TxType.income => 'Income',
-    TxType.expense => 'Expense',
-    TxType.transfer => 'Transfer',
-  };
-
-  /// Long-press handler: pick a new type from a bottom sheet, then persist it and
-  /// refresh so totals/trends recompute. Also retires the one-time hint.
-  Future<void> _changeType(TransactionItem tx) async {
+  /// Long-press handler: edit the transaction's amount and type in a bottom
+  /// sheet (the bank is read-only), persist, then refresh so totals/trends
+  /// recompute. Also retires the one-time hint.
+  Future<void> _editTransaction(TransactionItem tx) async {
     _markHintSeen();
-    final selected = await showModalBottomSheet<TxType>(
+    final result = await showModalBottomSheet<({String amount, TxType type})>(
       context: context,
+      isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final type in TxType.values)
-              ListTile(
-                title: Text(_typeLabel(type)),
-                trailing: type == tx.type
-                    ? Icon(
-                        Icons.check,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : null,
-                onTap: () => Navigator.of(context).pop(type),
-              ),
-          ],
-        ),
-      ),
+      builder: (context) => _EditTransactionSheet(tx: tx),
     );
-    if (selected == null || selected == tx.type) return;
+    if (result == null) return;
+    if (result.amount == tx.normalizedAmount && result.type == tx.type) return;
     await ref
         .read(financeRepositoryProvider)
-        .updateTransactionType(tx.id, selected);
+        .updateTransaction(tx.id, amount: result.amount, type: result.type);
     if (!mounted) return;
     refreshAllFinance(ref);
   }
@@ -236,7 +216,7 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
                     ),
               // Long-press changes the type; allowed even while hidden (it never
               // reveals the amount).
-              onLongPress: () => _changeType(tx),
+              onLongPress: () => _editTransaction(tx),
             ),
         ],
         if (page.totalPages > 1) _Pagination(page: page, onChange: _goToPage),
@@ -262,7 +242,7 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Tip: long-press a transaction to change its type.',
+              'Tip: long-press a transaction to edit its amount or type.',
               style: theme.textTheme.bodySmall,
             ),
           ),
@@ -392,6 +372,118 @@ class _Pagination extends StatelessWidget {
             icon: const Icon(Icons.chevron_right),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Bottom sheet to edit a transaction's amount and type. The bank is read-only.
+class _EditTransactionSheet extends StatefulWidget {
+  const _EditTransactionSheet({required this.tx});
+
+  final TransactionItem tx;
+
+  @override
+  State<_EditTransactionSheet> createState() => _EditTransactionSheetState();
+}
+
+class _EditTransactionSheetState extends State<_EditTransactionSheet> {
+  late final TextEditingController _amount;
+  late TxType _type;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _amount = TextEditingController(text: widget.tx.normalizedAmount);
+    _type = widget.tx.type;
+  }
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
+
+  String _typeLabel(TxType t) => switch (t) {
+    TxType.income => 'Income',
+    TxType.expense => 'Expense',
+    TxType.transfer => 'Transfer',
+  };
+
+  void _save() {
+    final text = _amount.text.trim();
+    final value = double.tryParse(text);
+    if (value == null || value <= 0) {
+      setState(() => _error = 'Enter a valid amount');
+      return;
+    }
+    Navigator.of(context).pop((amount: text, type: _type));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bank = widget.tx.bankName ?? widget.tx.sender;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 8,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Edit transaction', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 16),
+            // Read-only bank.
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Bank',
+                border: OutlineInputBorder(),
+              ),
+              child: Text(bank, style: theme.textTheme.bodyLarge),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _amount,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: InputDecoration(
+                labelText: 'Amount',
+                border: const OutlineInputBorder(),
+                errorText: _error,
+                suffixText: widget.tx.normalizedCurrency,
+              ),
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
+            ),
+            const SizedBox(height: 16),
+            SegmentedButton<TxType>(
+              segments: [
+                for (final t in TxType.values)
+                  ButtonSegment(value: t, label: Text(_typeLabel(t))),
+              ],
+              selected: {_type},
+              onSelectionChanged: (s) => setState(() => _type = s.first),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _save,
+                icon: const Icon(Icons.save),
+                label: const Text('Save'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

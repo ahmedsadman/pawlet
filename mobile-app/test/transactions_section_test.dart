@@ -70,6 +70,50 @@ Future<void> _pump(
   await tester.pumpAndSettle();
 }
 
+Future<void> _pumpManual(WidgetTester tester) async {
+  SharedPreferences.setMockInitialValues(const {'tx_type_hint_seen': true});
+  final prefs = await SharedPreferences.getInstance();
+  final manual = TransactionItem(
+    id: 1,
+    messageId: null,
+    sender: 'Manual Bank',
+    bankName: 'Manual Bank',
+    normalizedAmount: '30.00',
+    normalizedCurrency: 'BDT',
+    type: TxType.expense,
+    date: DateTime(2026, 1, 1),
+  );
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        settingsRepositoryProvider.overrideWithValue(SettingsRepository(prefs)),
+        currencyProvider.overrideWith(
+          (ref) async => const CachedResult(data: 'BDT', stale: false),
+        ),
+        transactionsProvider.overrideWith(
+          (ref, query) async => CachedResult(
+            data: TransactionsPage(
+              transactions: [manual],
+              total: 1,
+              page: 1,
+              pageSize: 10,
+              totals: const Totals(income: '0.00', expense: '30.00'),
+            ),
+            stale: false,
+          ),
+        ),
+      ],
+      child: MaterialApp(
+        theme: AppTheme.theme,
+        home: const Scaffold(
+          body: SingleChildScrollView(child: TransactionsSection()),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('shows totals and a color-coded row', (tester) async {
     await _pump(tester);
@@ -117,26 +161,35 @@ void main() {
     expect(find.text('Page 2 of 3'), findsOneWidget);
   });
 
-  testWidgets('long-press opens the change-type sheet, current type checked', (
+  testWidgets('long-press opens the edit sheet with amount and type', (
     tester,
   ) async {
     await _pump(tester);
     await tester.longPress(find.text('ACME-1'));
     await tester.pumpAndSettle();
 
-    // Three options; the current type (expense) is the only checked one.
-    expect(find.widgetWithText(ListTile, 'Income'), findsOneWidget);
-    expect(find.widgetWithText(ListTile, 'Expense'), findsOneWidget);
-    expect(find.widgetWithText(ListTile, 'Transfer'), findsOneWidget);
-    // Exactly one type is checked, and it is the current type (expense).
-    expect(find.byIcon(Icons.check), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.widgetWithText(ListTile, 'Expense'),
-        matching: find.byIcon(Icons.check),
-      ),
-      findsOneWidget,
-    );
+    // Amount field prefilled with the current amount.
+    expect(find.widgetWithText(TextField, '50.00'), findsOneWidget);
+    // All three type options offered as segments.
+    expect(find.text('Income'), findsWidgets);
+    expect(find.text('Expense'), findsWidgets);
+    expect(find.text('Transfer'), findsWidgets);
+    // Read-only bank shown.
+    expect(find.textContaining('ACME-1'), findsWidgets);
+    // A Save action exists.
+    expect(find.widgetWithText(FilledButton, 'Save'), findsOneWidget);
+  });
+
+  testWidgets('manual row shows a Manual badge and does not expand', (
+    tester,
+  ) async {
+    await _pumpManual(tester);
+    expect(find.text('Manual'), findsOneWidget);
+
+    // Tapping must not reveal a backing SMS (there is none).
+    await tester.tap(find.text('Manual Bank'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('SMS body'), findsNothing);
   });
 
   testWidgets('shows the one-time long-press hint until dismissed', (
