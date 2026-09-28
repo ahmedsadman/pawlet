@@ -93,6 +93,11 @@ class _FinancePageState extends ConsumerState<FinancePage> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      // The page has no text inputs of its own; keyboards only appear from modal
+      // sheets, which manage their own inset (see KeyboardInset). Not resizing
+      // for the IME keeps the heavy page (charts/rows) from relaying out every
+      // keyboard-animation frame, which was stuttering the sheet animation.
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: Text(
           'Pawlet',

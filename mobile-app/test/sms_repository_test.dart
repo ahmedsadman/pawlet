@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/data/sms_repository.dart';
+import 'package:pawlet/models/finance/transaction.dart';
 import 'package:pawlet/models/sms_record.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -195,6 +196,43 @@ void main() {
       final rows = await repo.history(query: 'brac');
       expect(rows.map((r) => r.sender), ['BRAC']);
       expect(await repo.historyCount(query: 'brac'), 1);
+    });
+
+    test('surfaces the backing transaction type; null for bills', () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+
+      final txId = (await repo.insertIfNew(_sms('BRAC', ts: 10)))!;
+      await repo.updateStatus(
+        txId,
+        SmsStatus.success,
+        updatedAt: 10,
+        category: 'transaction',
+        processedAt: 10,
+      );
+      await insertTx(
+        db,
+        messageId: txId,
+        amount: '50',
+        type: 'income',
+        date: DateTime(2026, 1, 1),
+      );
+
+      final billId = (await repo.insertIfNew(_sms('EBL', ts: 20)))!;
+      await repo.updateStatus(
+        billId,
+        SmsStatus.success,
+        updatedAt: 20,
+        category: 'bill',
+        processedAt: 20,
+      );
+
+      final rows = await repo.history();
+      final tx = rows.firstWhere((r) => r.sender == 'BRAC');
+      final bill = rows.firstWhere((r) => r.sender == 'EBL');
+      expect(tx.transactionType, TxType.income);
+      expect(bill.transactionType, isNull);
+      await db.close();
     });
 
     test('paginates', () async {

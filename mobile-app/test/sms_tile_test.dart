@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pawlet/models/finance/transaction.dart';
 import 'package:pawlet/models/sms_record.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
 import 'package:pawlet/ui/widgets/sms_tile.dart';
@@ -12,6 +13,7 @@ SmsRecord _rec({
   int attempts = 0,
   int? nextAttemptAt,
   ParseSource? parseSource,
+  TxType? transactionType,
 }) => SmsRecord(
   id: 1,
   sender: 'BRAC',
@@ -24,6 +26,7 @@ SmsRecord _rec({
   attempts: attempts,
   nextAttemptAt: nextAttemptAt,
   parseSource: parseSource,
+  transactionType: transactionType,
 );
 
 Future<void> _pump(WidgetTester tester, Widget child) => tester.pumpWidget(
@@ -98,6 +101,39 @@ void main() {
     expect(find.text('Transaction'), findsOneWidget);
     expect(find.text('Done'), findsNothing); // no status badge in history
   });
+
+  testWidgets('history transaction shows its subcategory (type) label', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(
+          status: SmsStatus.success,
+          category: 'transaction',
+          transactionType: TxType.income,
+        ),
+        showCategory: true,
+      ),
+    );
+    // Type replaces the generic "Transaction" label.
+    expect(find.text('Income'), findsOneWidget);
+    expect(find.text('Transaction'), findsNothing);
+  });
+
+  testWidgets(
+    'history transaction with unknown type falls back to Transaction',
+    (tester) async {
+      await _pump(
+        tester,
+        SmsTile(
+          _rec(status: SmsStatus.success, category: 'transaction'),
+          showCategory: true,
+        ),
+      );
+      expect(find.text('Transaction'), findsOneWidget);
+    },
+  );
 
   testWidgets('bill label in history', (tester) async {
     await _pump(

@@ -311,7 +311,7 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
             DropdownButtonFormField<String>(
               initialValue: _selectedBank,
               isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Bank'),
+              decoration: const InputDecoration(labelText: 'Select Bank'),
               items: [
                 for (final entry in kBankCatalog)
                   DropdownMenuItem(
