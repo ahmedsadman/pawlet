@@ -132,12 +132,13 @@ table is a snapshot — verify there if precision matters.
 | `created_at` | INTEGER | required, epoch ms |
 | `matchers` | TEXT | nullable; sender matchers, newline-joined |
 
-**`transactions`** — one per financial message classified as a transaction.
+**`transactions`** — one per financial message classified as a transaction,
+plus user-entered manual transactions (which have no backing SMS).
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | INTEGER | primary key, preserved |
-| `message_id` | INTEGER | required; → `sms_records.id` |
+| `message_id` | INTEGER | nullable; → `sms_records.id`; null for manual entries |
 | `bank_id` | INTEGER | nullable; → `banks.id` |
 | `paired_with_id` | INTEGER | nullable; → `transactions.id` (transfer pairing) |
 | `bill_id` | INTEGER | nullable; → `bills.id` (card-payment ↔ bill) |
