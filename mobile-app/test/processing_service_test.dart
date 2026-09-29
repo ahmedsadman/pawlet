@@ -805,4 +805,19 @@ void main() {
   test('provider timeout stays safely below the stale-reclaim threshold', () {
     expect(OpenRouterProvider.timeout, lessThan(ProcessingService.staleAfter));
   });
+
+  test('a paused service does not drain the queue', () async {
+    final llm = _FakeLlm(result: _expense());
+    final svc = service(llm);
+    await queue('CHK');
+
+    svc.pause();
+    await svc.process();
+    expect(llm.calls, 0);
+
+    svc.resume();
+    await svc.process();
+    expect(llm.calls, 1);
+    await db.close();
+  });
 }
