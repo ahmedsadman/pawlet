@@ -28,6 +28,9 @@ update these docs to provide the latest and accurate info
 
 - [Message pipeline](message-pipeline.md) — how an SMS is received, queued, processed,
   and retried, including offline, reconnect, and backoff behavior.
+- [Matching](matching.md) — which account owns a record (card-digit matching, including
+  partially-masked cards) and which records belong together (transfer pairing, bill
+  linking).
 - [Backup & Restore](backup-restore.md) — exporting all local data to a JSON file and
   restoring it (replace-all, IDs preserved), including the expected file format.
 
