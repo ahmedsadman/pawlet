@@ -33,6 +33,11 @@ enum IgnoreReason {
   /// The on-device model confidently classified it as not financial (no LLM).
   localNone('local_none'),
 
+  /// The on-device model ran but did not clear the confidence gate. Only the
+  /// bulk inbox import produces this: the live pipeline would fall back to the
+  /// LLM, whereas the import is on-device only and drops the message instead.
+  localLowConfidence('local_low_confidence'),
+
   /// The LLM ran and classified it as not financial.
   llmNone('llm_none'),
 

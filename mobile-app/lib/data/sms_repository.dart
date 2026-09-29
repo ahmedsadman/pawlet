@@ -46,6 +46,57 @@ class SmsRepository {
     return id == 0 ? null : id;
   }
 
+  /// The stored record matching the dedup key `(sender, timestamp, content)`,
+  /// or null. The bulk inbox import uses it after [insertIfNew] reports a
+  /// duplicate, to decide whether the existing row still needs processing.
+  Future<SmsRecord?> findByIdentity({
+    required String sender,
+    required int timestamp,
+    required String content,
+  }) async {
+    final rows = await _db.query(
+      _table,
+      where: 'sender = ? AND timestamp = ? AND content = ?',
+      whereArgs: [sender, timestamp, content],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : SmsRecord.fromDbMap(rows.first);
+  }
+
+  /// Writes the terminal state of a bulk-imported record, overwriting every
+  /// outcome column.
+  ///
+  /// Distinct from [updateStatus], whose null-aware writes deliberately
+  /// preserve prior values: the import may re-process a row an earlier pass
+  /// left `ignored` (e.g. a card bill that had no matching card yet), so a
+  /// stale `ignore_reason` has to be cleared when it now succeeds. The import
+  /// never retries, so `attempts`/`last_error`/`next_attempt_at` are reset too.
+  Future<void> markBulkProcessed(
+    int id, {
+    required SmsStatus status,
+    required int now,
+    String? category,
+    IgnoreReason? ignoreReason,
+  }) async {
+    await _db.update(
+      _table,
+      {
+        'status': status.name,
+        'attempts': 0,
+        'last_error': null,
+        'updated_at': now,
+        'next_attempt_at': null,
+        'category': category,
+        'processed_at': now,
+        'ignore_reason': ignoreReason?.value,
+        'failure_reason': null,
+        'parse_source': ParseSource.local.value,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   /// Queued + in-flight records, oldest first (drives the Queue section).
   Future<List<SmsRecord>> queued() => _query(
     where: 'status IN (?, ?)',
