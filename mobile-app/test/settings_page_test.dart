@@ -112,4 +112,18 @@ void main() {
     expect(find.text('Back up to file'), findsOneWidget);
     expect(find.text('Restore from file'), findsOneWidget);
   });
+
+  testWidgets('Data section offers the inbox import', (tester) async {
+    final (widget, _) = await _app(const []);
+    await tester.pumpWidget(widget);
+    await tester.pump();
+
+    await tester.dragUntilVisible(
+      find.text('Import existing messages'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    expect(find.text('Import existing messages'), findsOneWidget);
+    expect(find.textContaining('Scan your SMS inbox'), findsOneWidget);
+  });
 }

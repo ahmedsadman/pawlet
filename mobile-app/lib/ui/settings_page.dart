@@ -6,6 +6,7 @@ import '../services/permissions.dart';
 import '../state/auth_providers.dart';
 import 'backup_restore_page.dart';
 import 'banks_page.dart';
+import 'bulk_import_flow.dart';
 import 'security/change_pin_screen.dart';
 
 /// Settings tab: bank management, background-delivery help, security, and a
@@ -56,6 +57,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
+  Future<void> _importInbox() async {
+    if (!await AppPermissions.hasSms()) {
+      await AppPermissions.requestAll();
+      if (!await AppPermissions.hasSms()) {
+        if (!mounted) return;
+        _toast('SMS permission is required to read your inbox');
+        return;
+      }
+    }
+    if (!mounted) return;
+    final accepted = await confirmBulkImport(context);
+    if (!accepted || !mounted) return;
+    await runBulkImport(context, ref);
+  }
+
   Future<void> _setBiometric(bool value) async {
     final ok = await ref
         .read(authControllerProvider.notifier)
@@ -96,6 +112,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const BackupRestorePage()),
             ),
+          ),
+          const SizedBox(height: 4),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.inbox_outlined),
+            title: const Text('Import existing messages'),
+            subtitle: const Text(
+              'Scan your SMS inbox and create records with the on-device model',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _importInbox,
           ),
           const Divider(height: 32),
           Text('Background delivery', style: theme.textTheme.titleMedium),

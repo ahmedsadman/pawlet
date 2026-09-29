@@ -233,23 +233,32 @@ void main() {
 
     await service(inbox, local).run();
 
-    expect((await db.query('sms_records')).single['ignore_reason'], 'local_none');
+    expect(
+      (await db.query('sms_records')).single['ignore_reason'],
+      'local_none',
+    );
     expect(await count('banks'), 0);
   });
 
-  test('a card bill with no matching card creates neither bill nor card', () async {
-    final inbox = _FakeInbox([_msg('City Bank', billBody, 1000)]);
-    final local = _FakeLocal({
-      billBody: _pred('bill', 'DUE', billBody, '5000.00'),
-    });
+  test(
+    'a card bill with no matching card creates neither bill nor card',
+    () async {
+      final inbox = _FakeInbox([_msg('City Bank', billBody, 1000)]);
+      final local = _FakeLocal({
+        billBody: _pred('bill', 'DUE', billBody, '5000.00'),
+      });
 
-    final result = await service(inbox, local).run();
+      final result = await service(inbox, local).run();
 
-    expect(result.saved, 0);
-    expect(await count('bills'), 0);
-    expect(await count('banks'), 0);
-    expect((await db.query('sms_records')).single['ignore_reason'], 'no_record');
-  });
+      expect(result.saved, 0);
+      expect(await count('bills'), 0);
+      expect(await count('banks'), 0);
+      expect(
+        (await db.query('sms_records')).single['ignore_reason'],
+        'no_record',
+      );
+    },
+  );
 
   test('re-running after the card is added back-fills the bill once', () async {
     final inbox = _FakeInbox([_msg('City Bank', billBody, 1000)]);
@@ -456,35 +465,38 @@ void main() {
     expect(local.calls, isEmpty);
   });
 
-  test('normalizes CRLF so a listener-captured message is recognized', () async {
-    const stored = 'Purchase of 1250.00\nat a shop';
-    final id = (await sms.insertIfNew(
-      SmsRecord(
-        sender: 'EBL',
-        content: stored,
-        timestamp: 1000,
-        updatedAt: 1000,
-      ),
-    ))!;
-    // Mark it done, as the live pipeline would have.
-    await sms.markBulkProcessed(
-      id,
-      status: SmsStatus.success,
-      now: 1000,
-      category: 'transaction',
-    );
+  test(
+    'normalizes CRLF so a listener-captured message is recognized',
+    () async {
+      const stored = 'Purchase of 1250.00\nat a shop';
+      final id = (await sms.insertIfNew(
+        SmsRecord(
+          sender: 'EBL',
+          content: stored,
+          timestamp: 1000,
+          updatedAt: 1000,
+        ),
+      ))!;
+      // Mark it done, as the live pipeline would have.
+      await sms.markBulkProcessed(
+        id,
+        status: SmsStatus.success,
+        now: 1000,
+        category: 'transaction',
+      );
 
-    // The inbox hands back the same message with CRLF line endings.
-    final inbox = _FakeInbox([
-      _msg('EBL', 'Purchase of 1250.00\r\nat a shop', 1000),
-    ]);
-    final local = _FakeLocal(const {});
+      // The inbox hands back the same message with CRLF line endings.
+      final inbox = _FakeInbox([
+        _msg('EBL', 'Purchase of 1250.00\r\nat a shop', 1000),
+      ]);
+      final local = _FakeLocal(const {});
 
-    final result = await service(inbox, local).run();
+      final result = await service(inbox, local).run();
 
-    expect(result.saved, 0);
-    // Recognized as the same message rather than inserted a second time.
-    expect(await count('sms_records'), 1);
-    expect(local.calls, isEmpty);
-  });
+      expect(result.saved, 0);
+      // Recognized as the same message rather than inserted a second time.
+      expect(await count('sms_records'), 1);
+      expect(local.calls, isEmpty);
+    },
+  );
 }

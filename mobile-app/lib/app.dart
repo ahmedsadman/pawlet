@@ -9,6 +9,7 @@ import 'services/permissions.dart';
 import 'state/auth_providers.dart';
 import 'state/providers.dart';
 import 'theme/catppuccin_theme.dart';
+import 'ui/bulk_import_flow.dart';
 import 'ui/finance_page.dart';
 import 'ui/messages_page.dart';
 import 'ui/security/lock_screen.dart';
@@ -113,6 +114,10 @@ class _RootShellState extends ConsumerState<RootShell>
     with WidgetsBindingObserver {
   static const _defaultPages = [FinancePage(), MessagesPage(), SettingsPage()];
 
+  /// How long the first-run offer waits at the lock screen before giving up.
+  /// Settings → Data still has the action, so nothing is lost by bailing.
+  static const _unlockWait = Duration(minutes: 5);
+
   List<Widget> get _pages => widget.pages ?? _defaultPages;
 
   @override
@@ -128,6 +133,50 @@ class _RootShellState extends ConsumerState<RootShell>
     await AppPermissions.requestAll();
     ref.read(smsListenerProvider).start();
     await ref.read(processingServiceProvider).process();
+    await _offerInboxImport();
+  }
+
+  /// One-time offer, on the first unlocked launch, to seed Pawlet from the SMS
+  /// inbox — the app only ever sees messages that arrive after install, so a
+  /// fresh device starts empty however long the user has banked by SMS.
+  ///
+  /// Deferred until the app is actually unlocked so the sheet isn't buried
+  /// under the PIN screen, and skipped without consuming the one shot when SMS
+  /// permission was denied (there'd be nothing to read).
+  Future<void> _offerInboxImport() async {
+    final settings = ref.read(settingsRepositoryProvider);
+    if (settings.bulkImportOffered) return;
+    if (!await AppPermissions.hasSms()) return;
+    if (!await _awaitUnlocked()) return;
+
+    // Marked before showing: a user who dismisses the sheet by swiping must not
+    // be asked again on every launch. Settings → Data keeps it reachable.
+    await settings.setBulkImportOffered(true);
+    if (!mounted) return;
+
+    final accepted = await confirmBulkImport(context);
+    if (!accepted || !mounted) return;
+    await runBulkImport(context, ref);
+  }
+
+  /// Completes true once the app is unlocked, false if it stays locked for
+  /// [_unlockWait] (so a lock screen left open doesn't keep a future alive).
+  Future<bool> _awaitUnlocked() async {
+    if (ref.read(authControllerProvider).status == AuthStatus.unlocked) {
+      return true;
+    }
+    final completer = Completer<bool>();
+    final sub = ref.listenManual<AuthState>(authControllerProvider, (_, next) {
+      if (next.status == AuthStatus.unlocked && !completer.isCompleted) {
+        completer.complete(true);
+      }
+    });
+    final unlocked = await completer.future.timeout(
+      _unlockWait,
+      onTimeout: () => false,
+    );
+    sub.close();
+    return unlocked;
   }
 
   /// Debug-only: lets `adb` inject a fake SMS (see MainActivity's

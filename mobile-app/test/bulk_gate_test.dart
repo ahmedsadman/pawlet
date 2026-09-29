@@ -28,7 +28,9 @@ void main() {
   });
 
   test('an existing bank sender passes with no catalog entry attached', () {
-    final banks = [_bank('My Credit Union', matchers: const ['mycu'])];
+    final banks = [
+      _bank('My Credit Union', matchers: const ['mycu']),
+    ];
     final match = bulkGate('MYCU-ALERT', 'debited 100', banks);
     expect(match, isNotNull);
     // Already a known bank — nothing to create.
@@ -39,7 +41,11 @@ void main() {
     final banks = [
       _bank('City Bank', accountType: 'credit', cardDigits: '4238|3241'),
     ];
-    final match = bulkGate('BANKMSG', 'Card 4238****3241 used for 90.00', banks);
+    final match = bulkGate(
+      'BANKMSG',
+      'Card 4238****3241 used for 90.00',
+      banks,
+    );
     expect(match, isNotNull);
     expect(match!.catalogEntry, isNull);
   });
@@ -54,16 +60,17 @@ void main() {
   test('an existing bank wins over the catalog so no duplicate is created', () {
     // The user already added EBL (perhaps renamed); the gate must not hand back
     // a catalog entry that would trigger a second account.
-    final banks = [_bank('EBL', matchers: const ['ebl'])];
+    final banks = [
+      _bank('EBL', matchers: const ['ebl']),
+    ];
     expect(bulkGate('EBL', 'debited 500', banks)!.catalogEntry, isNull);
   });
 
   test('an unrelated existing bank does not mask a catalog sender', () {
-    final banks = [_bank('My Credit Union', matchers: const ['mycu'])];
-    expect(
-      bulkGate('EBL', 'debited 500', banks)!.catalogEntry?.label,
-      'EBL',
-    );
+    final banks = [
+      _bank('My Credit Union', matchers: const ['mycu']),
+    ];
+    expect(bulkGate('EBL', 'debited 500', banks)!.catalogEntry?.label, 'EBL');
   });
 
   test('an ambiguous catalog sender does not pass', () {
