@@ -8,11 +8,16 @@ import '../../models/sms_record.dart';
 import '../classification/classifier.dart';
 import '../classification/local_classifier.dart';
 import '../classification/local_gate.dart';
+import '../classification/sender_matcher.dart';
 import '../finance/finance_matcher.dart';
 import '../finance/finance_writer.dart';
 import '../llm/llm_provider.dart';
 import 'bulk_gate.dart';
 import 'inbox_reader.dart';
+
+/// Marks a message as being about a card rather than a deposit account. Word
+/// boundaries keep "Mastercard" and "scorecard" out.
+final _cardWord = RegExp(r'\bcards?\b', caseSensitive: false);
 
 /// Totals for the post-import summary.
 class BulkImportResult {
@@ -123,6 +128,10 @@ class BulkImportService {
     }
     onProgress?.call(scanned, total);
 
+    // Accounts created during the walk did not exist for the messages that
+    // preceded them, so catch those up before anything reads bank_id.
+    await _relinkOrphans(banks);
+
     // Transfer pairing and bill linking are cross-row, so they run once over
     // everything the pass wrote rather than per message.
     //
@@ -228,7 +237,7 @@ class BulkImportService {
 
     final result = decision.result!;
     if (result.category == SmsCategory.transaction) {
-      await _ensureBank(gate.catalogEntry, banks);
+      await _ensureBank(gate.catalogEntry, content, banks);
     }
 
     final label = await financeWriter.apply(
@@ -270,20 +279,76 @@ class BulkImportService {
     return true;
   }
 
+  /// Attaches transactions that were written with no bank to an account that
+  /// exists now, using the writer's own resolution order.
+  ///
+  /// Two things leave rows orphaned. An account is created partway through an
+  /// oldest-first walk, so every earlier message from that sender was written
+  /// before it existed; and a card added *after* an import can never claim its
+  /// rows, because those messages are `success` and so are never re-processed.
+  /// Both are repaired here rather than by re-running the model.
+  ///
+  /// Balances are deliberately not recomputed: the extracted figure is not kept
+  /// on the transaction row, so there is nothing to replay. A deposit linked up
+  /// this way carries whatever balance later messages give it.
+  Future<void> _relinkOrphans(List<Bank> banks) async {
+    if (banks.isEmpty) return;
+    final orphans = await smsRepository.unlinkedTransactions();
+    for (final orphan in orphans) {
+      final bank = resolveTransactionBank(orphan.sender, orphan.content, banks);
+      if (bank == null) continue;
+      await smsRepository.setTransactionBank(orphan.transactionId, bank.id);
+    }
+  }
+
   /// Whether an already-stored row is worth running through the model again.
+  ///
+  /// Stated as an exclusion so the safe default for any reason added later is
+  /// "retry": the cost of retrying needlessly is inference, the cost of wrongly
+  /// skipping is a financial record the user never gets. Only the two verdicts
+  /// that mean *a model already read this and said it isn't financial* are
+  /// skipped — same model plus same text gives the same answer, and `llmNone`
+  /// came from a stronger model than this pass has.
+  ///
+  /// Everything else can genuinely flip:
+  /// - `gated`: the live gate rejected it for want of a matching bank, and the
+  ///   bulk gate is strictly wider (it knows the catalog). On an install with
+  ///   no banks this is *every* message the pipeline has seen.
+  /// - `noRecord`: the card may exist now.
+  /// - `localLowConfidence`: `decideLocal` rejects a USD amount when no
+  ///   exchange rate is available, which is simply the offline case.
+  /// - null: an earlier pass was interrupted before it recorded a verdict.
   static bool _isReattemptable(SmsRecord record) =>
       record.status == SmsStatus.ignored &&
-      (record.ignoreReason == null ||
-          record.ignoreReason == IgnoreReason.noRecord);
+      record.ignoreReason != IgnoreReason.localNone &&
+      record.ignoreReason != IgnoreReason.llmNone;
 
   /// Creates the deposit account for a catalog-recognized sender, at most once.
   ///
   /// Credit cards are never auto-created: a card is identified only by digits
   /// in the message body, so inventing one would attach records to an account
   /// the user never confirmed. A card bill whose card is missing is therefore
-  /// dropped, and the summary asks the user to add their cards.
-  Future<void> _ensureBank(BankCatalogEntry? entry, List<Bank> banks) async {
+  /// dropped, and the offer and summary both ask the user to add their cards.
+  ///
+  /// A body mentioning a card blocks creation. A card purchase SMS from, say,
+  /// "City Bank" matches the catalog exactly like a deposit alert does, and
+  /// creating a *deposit* for it would be worse than creating nothing:
+  /// `FinanceWriter`'s sender fallback would weld every card spend to a
+  /// phantom account, and a BALANCE span would record the card's available
+  /// limit as a cash balance. Neither undoes itself once the real card exists.
+  ///
+  /// The word is the discriminator rather than the presence of a masked number:
+  /// local deposit alerts print the account masked in exactly the card's shape
+  /// ("AC 123***456 is credited..."), so keying on masking blocks almost every
+  /// genuine deposit. Checked against this user's inbox, the word separates all
+  /// seven real senders correctly.
+  Future<void> _ensureBank(
+    BankCatalogEntry? entry,
+    String content,
+    List<Bank> banks,
+  ) async {
     if (entry == null) return;
+    if (_cardWord.hasMatch(content)) return;
     // Guards the partial unique index on (name) WHERE account_type = 'deposit':
     // a same-named deposit whose matchers were edited away would collide.
     if (banks.any((b) => b.isDeposit && b.name == entry.label)) return;

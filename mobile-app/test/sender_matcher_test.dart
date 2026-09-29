@@ -346,4 +346,74 @@ void main() {
       expect(gateBanks('RANDOM', '4238****3241', [depositWithDigits]), isEmpty);
     });
   });
+
+  group('hasGateBank', () {
+    test('agrees with gateBanks', () {
+      final banks = [mtb, ebl];
+      for (final probe in const [
+        ['MTB', 'debit 50'],
+        ['RANDOM', 'card 4238****3241 used'],
+        ['RANDOM', 'nothing here'],
+        ['MTB', 'card 4238****3241 used'],
+      ]) {
+        final sender = probe[0];
+        final content = probe[1];
+        expect(
+          hasGateBank(sender, content, banks),
+          gateBanks(sender, content, banks).isNotEmpty,
+          reason: 'disagreed on ($sender, $content)',
+        );
+      }
+    });
+
+    test('is false with no banks', () {
+      expect(hasGateBank('MTB', 'debit 50', const []), isFalse);
+    });
+  });
+
+  group('resolveTransactionBank', () {
+    test('an exact card match outranks a sender match', () {
+      // Both fit; eight matching digits are the stronger signal.
+      final deposit = _bank('Mutual Trust Bank', matchers: const ['mtb']);
+      expect(
+        resolveTransactionBank('MTB', 'card 4238****3241 used', [
+          deposit,
+          ebl,
+        ])?.name,
+        ebl.name,
+      );
+    });
+
+    test('a sender match outranks a loosely-masked card', () {
+      // A deposit alert printing a masked account number can look like a card,
+      // so the sender wins — otherwise the deposit balance silently stops
+      // updating.
+      final loose = _bank(
+        'Loose Card',
+        accountType: 'credit',
+        cardDigits: '0009|4111',
+      );
+      expect(
+        resolveTransactionBank('MTB', 'AC 000***111 credited', [
+          mtb,
+          loose,
+        ])?.name,
+        mtb.name,
+      );
+    });
+
+    test('is null when nothing matches', () {
+      expect(
+        resolveTransactionBank('RANDOM', 'nothing here', [mtb, ebl]),
+        isNull,
+      );
+      expect(resolveTransactionBank('MTB', 'debit 50', const []), isNull);
+    });
+
+    test('ambiguous senders resolve to null rather than guessing', () {
+      final a = _bank('Bank A', matchers: const ['shared']);
+      final b = _bank('Bank B', matchers: const ['shared']);
+      expect(resolveTransactionBank('SHARED', 'debit 50', [a, b]), isNull);
+    });
+  });
 }
