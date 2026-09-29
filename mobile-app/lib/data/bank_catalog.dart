@@ -30,6 +30,26 @@ BankCatalogEntry? bankCatalogByLabel(String label) {
   return null;
 }
 
+/// The single catalog entry whose matchers appear in [sender], or null when
+/// zero or more than one match.
+///
+/// Used only by the bulk inbox import, which may run before the user has set up
+/// any bank: it recognizes the sender from the built-in catalog so the account
+/// can be created on the spot. Ambiguity resolves to null — the import creates
+/// accounts on the user's behalf, so it must never guess which one.
+BankCatalogEntry? singleCatalogMatch(String sender) {
+  final lower = sender.toLowerCase();
+  BankCatalogEntry? found;
+  for (final entry in kBankCatalog) {
+    // Catalog matchers are stored lowercase, so only the sender needs folding.
+    if (entry.matchers.any(lower.contains)) {
+      if (found != null) return null;
+      found = entry;
+    }
+  }
+  return found;
+}
+
 /// Serializes a bank's matchers for the `matchers` column (newline-joined, since
 /// a matcher may contain spaces).
 String matchersToColumn(List<String> matchers) => matchers.join('\n');

@@ -31,4 +31,30 @@ void main() {
     expect(matchersFromColumn(null), isEmpty);
     expect(matchersFromColumn(''), isEmpty);
   });
+
+  test('singleCatalogMatch finds the bank behind a sender', () {
+    expect(singleCatalogMatch('EBL')?.label, 'EBL');
+    expect(singleCatalogMatch('city bank alert')?.label, 'City Bank');
+    // Matching is case-insensitive on the sender side.
+    expect(singleCatalogMatch('BRAC-BANK')?.label, 'BRAC Bank');
+    // A matcher containing spaces still works as a substring.
+    expect(singleCatalogMatch('EASTERN BANK LIMITED')?.label, 'EBL');
+  });
+
+  test('singleCatalogMatch is null for unknown senders', () {
+    expect(singleCatalogMatch('16247'), isNull);
+    expect(singleCatalogMatch('Amazon'), isNull);
+    expect(singleCatalogMatch(''), isNull);
+  });
+
+  test('singleCatalogMatch refuses to guess when two banks match', () {
+    // Contains both "mtb" and "scb" — no basis to pick one, so neither.
+    expect(singleCatalogMatch('mtb-scb-gateway'), isNull);
+  });
+
+  test('singleCatalogMatch counts one entry once, not per matcher', () {
+    // Both EBL matchers are present; that is still a single bank, not an
+    // ambiguity.
+    expect(singleCatalogMatch('EBL (Eastern Bank Limited)')?.label, 'EBL');
+  });
 }
