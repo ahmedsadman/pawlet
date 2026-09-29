@@ -8,7 +8,6 @@ import '../../models/sms_record.dart';
 import '../classification/classifier.dart';
 import '../classification/local_classifier.dart';
 import '../classification/local_gate.dart';
-import '../classification/sender_matcher.dart';
 import '../finance/finance_matcher.dart';
 import '../finance/finance_writer.dart';
 import '../llm/llm_provider.dart';
@@ -106,9 +105,15 @@ class BulkImportService {
         cancelled = true;
         break;
       }
-      if (await _importOne(message, banks, cur, rate)) {
-        saved++;
-        oldestSaved ??= message.timestamp;
+      try {
+        if (await _importOne(message, banks, cur, rate)) {
+          saved++;
+          oldestSaved ??= message.timestamp;
+        }
+      } catch (_) {
+        // One malformed message must not cost the rest of the inbox. The row
+        // was inserted `ignored`, so the next run re-attempts exactly this one
+        // while everything already imported stays put.
       }
       scanned++;
       if (scanned % reportEvery == 0) {
@@ -130,7 +135,10 @@ class BulkImportService {
         since: oldestSaved - FinanceMatcher.billWindow.inMilliseconds,
       );
     }
-    if (scanned > 0) await smsRepository.bumpDataRevision();
+    // Only a written record changes anything the UI shows: ignored rows appear
+    // in neither History nor the Queue, so a pass that saved nothing has no
+    // reason to wake every isolate's poller.
+    if (saved > 0) await smsRepository.bumpDataRevision();
 
     return BulkImportResult(
       scanned: scanned,
@@ -164,21 +172,36 @@ class BulkImportService {
         sender: sender,
         content: content,
         timestamp: message.timestamp,
+        // Born terminal, NOT queued. `dueForDelivery` only selects `queued`,
+        // so this row is invisible to every isolate for the whole inference
+        // window that follows. A `queued` row would be claimable the moment it
+        // lands: the background-SMS and WorkManager isolates build their own
+        // ProcessingService and never see our pause(), and `dueForDelivery`
+        // orders by timestamp ASC, which puts a just-imported 2024 message at
+        // the FRONT of their next pass — sending it to the LLM and breaking
+        // the on-device-only promise this whole feature is sold on. It would
+        // also outlive a crash: an abandoned `queued` row is LLM'd forever
+        // after. `ignored` with no reason is the correct resting state for a
+        // half-imported row — the next run re-attempts exactly those.
+        status: SmsStatus.ignored,
         updatedAt: now,
       ),
     );
     if (id == null) {
-      // Already stored. Re-attempt only rows that hold no finance record;
-      // success rows are done, and queued/sending/failure rows belong to the
-      // live queue, which must stay the single writer for them.
+      // Already stored. Re-attempt only rows that hold no finance record AND
+      // whose verdict could actually differ this time: `noRecord` (the card
+      // may exist now) and a reason-less row (an interrupted earlier pass).
+      // Re-running the same model over a `localLowConfidence` / `localNone`
+      // row would burn inference to reach the identical verdict, which is
+      // what makes a second import near-instant instead of a full replay.
+      // Success rows are done; queued/sending/failure rows belong to the live
+      // queue, which must stay their single writer.
       final existing = await smsRepository.findByIdentity(
         sender: sender,
         timestamp: message.timestamp,
         content: content,
       );
-      if (existing?.id == null || existing!.status != SmsStatus.ignored) {
-        return false;
-      }
+      if (existing?.id == null || !_isReattemptable(existing!)) return false;
       id = existing.id!;
     }
 
@@ -205,7 +228,7 @@ class BulkImportService {
 
     final result = decision.result!;
     if (result.category == SmsCategory.transaction) {
-      await _ensureBank(gate.catalogEntry, sender, banks);
+      await _ensureBank(gate.catalogEntry, banks);
     }
 
     final label = await financeWriter.apply(
@@ -247,19 +270,20 @@ class BulkImportService {
     return true;
   }
 
+  /// Whether an already-stored row is worth running through the model again.
+  static bool _isReattemptable(SmsRecord record) =>
+      record.status == SmsStatus.ignored &&
+      (record.ignoreReason == null ||
+          record.ignoreReason == IgnoreReason.noRecord);
+
   /// Creates the deposit account for a catalog-recognized sender, at most once.
   ///
   /// Credit cards are never auto-created: a card is identified only by digits
   /// in the message body, so inventing one would attach records to an account
   /// the user never confirmed. A card bill whose card is missing is therefore
   /// dropped, and the summary asks the user to add their cards.
-  Future<void> _ensureBank(
-    BankCatalogEntry? entry,
-    String sender,
-    List<Bank> banks,
-  ) async {
+  Future<void> _ensureBank(BankCatalogEntry? entry, List<Bank> banks) async {
     if (entry == null) return;
-    if (singleSenderMatch(sender, banks) != null) return;
     // Guards the partial unique index on (name) WHERE account_type = 'deposit':
     // a same-named deposit whose matchers were edited away would collide.
     if (banks.any((b) => b.isDeposit && b.name == entry.label)) return;

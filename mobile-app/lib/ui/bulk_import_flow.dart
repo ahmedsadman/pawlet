@@ -27,10 +27,6 @@ Future<bool> confirmBulkImport(BuildContext context) async {
 /// The queue is paused for the duration and the dialog is barrier-locked with
 /// back disabled, so this really is the only thing happening in the app.
 Future<void> runBulkImport(BuildContext context, WidgetRef ref) async {
-  // Not disposed on the way out: the dialog's ValueListenableBuilder is still
-  // attached through the pop animation and would remove its listener from a
-  // disposed notifier. It holds no resources, so letting it fall out of scope
-  // once the dialog is gone is the correct teardown.
   final progress = ValueNotifier<_Progress>(const _Progress(0, 0));
   var cancelled = false;
 
@@ -40,6 +36,8 @@ Future<void> runBulkImport(BuildContext context, WidgetRef ref) async {
   final processing = ref.read(processingServiceProvider)..pause();
   // showDialog pushes synchronously, so the route is on the stack before the
   // first await below — the pop in `finally` can never hit the wrong route.
+  // Disposal is tied to the route's own completion rather than the pop, so the
+  // notifier outlives the dialog's teardown.
   unawaited(
     showDialog<void>(
       context: context,
@@ -48,10 +46,13 @@ Future<void> runBulkImport(BuildContext context, WidgetRef ref) async {
         progress: progress,
         onCancel: () => cancelled = true,
       ),
-    ),
+    ).whenComplete(progress.dispose),
   );
 
-  final BulkImportResult result;
+  // Null when the pass threw. Per-message errors are already absorbed inside
+  // run(), so reaching here means something pass-level failed (reading the
+  // inbox, the bank list, the closing matcher sweep).
+  BulkImportResult? result;
   try {
     result = await ref
         .read(bulkImportServiceProvider)
@@ -59,20 +60,41 @@ Future<void> runBulkImport(BuildContext context, WidgetRef ref) async {
           onProgress: (done, total) => progress.value = _Progress(done, total),
           isCancelled: () => cancelled,
         );
+  } catch (_) {
+    // Swallowed deliberately: the message could quote SMS content, which must
+    // not reach a screenshot. The user gets a generic sheet below.
   } finally {
     processing.resume();
+    // A resume/incoming-SMS trigger that fired while we held the pause was
+    // dropped by process()'s early return, so nothing would re-arm the queue
+    // until the next one. Kick it once; process() swallows its own errors.
+    unawaited(processing.process());
     navigator.pop();
   }
 
   // The import wrote straight to the database from outside the pipeline, so the
-  // read-once finance/messages providers have to be told.
+  // read-once finance/messages providers have to be told — including on the
+  // failure path, where a partial pass still left rows behind.
   refreshAllFinance(ref);
   ref.invalidate(queuedProvider);
   ref.invalidate(historyProvider);
   ref.read(dataRevisionProvider.notifier).bump();
 
   if (!context.mounted) return;
+  if (result == null) {
+    await _showImportError(context);
+    return;
+  }
   await showBulkImportSummary(context, result);
+}
+
+Future<void> _showImportError(BuildContext context) {
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (_) => const _ImportErrorSheet(),
+  );
 }
 
 /// Shows the post-import summary sheet. Public so it can be tested on its own.
@@ -327,6 +349,52 @@ class _ImportSummarySheet extends StatelessWidget {
                   );
                 },
                 child: const Text('Manage Banks & Cards'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ImportErrorSheet extends StatelessWidget {
+  const _ImportErrorSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _SheetIcon(Icons.error_outline),
+            const SizedBox(height: 16),
+            Text(
+              "Import couldn't finish",
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Something went wrong partway through. Everything imported '
+              'before that point has been kept, and running the import again '
+              'will carry on from where it stopped.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.outline,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Done'),
               ),
             ),
           ],

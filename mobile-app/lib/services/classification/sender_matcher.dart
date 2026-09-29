@@ -161,13 +161,18 @@ Bank? matchLooseCreditCardInContent(String content, List<Bank> banks) {
 /// match gates the SMS in without any ambiguity check, because a false positive
 /// here costs one LLM call while a false negative discards a real bill unseen.
 List<Bank> gateBanks(String sender, String content, List<Bank> banks) {
-  return banks
-      .where(
-        (b) =>
-            senderMatchesBank(sender, b) ||
-            (b.isCredit &&
-                (contentMatchesCardDigits(content, b.cardDigits) ||
-                    contentLooselyMatchesCardDigits(content, b.cardDigits))),
-      )
-      .toList();
+  return banks.where((b) => _gateMatches(sender, content, b)).toList();
 }
+
+/// Whether the SMS belongs to *any* of [banks] — [gateBanks]'s rule without
+/// materializing the matches. The bulk inbox import asks this once per message
+/// across a whole inbox and only needs the yes/no, so the per-message list
+/// allocation is pure waste there.
+bool hasGateBank(String sender, String content, List<Bank> banks) =>
+    banks.any((b) => _gateMatches(sender, content, b));
+
+bool _gateMatches(String sender, String content, Bank bank) =>
+    senderMatchesBank(sender, bank) ||
+    (bank.isCredit &&
+        (contentMatchesCardDigits(content, bank.cardDigits) ||
+            contentLooselyMatchesCardDigits(content, bank.cardDigits)));

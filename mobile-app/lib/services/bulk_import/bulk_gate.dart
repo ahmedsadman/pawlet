@@ -25,9 +25,7 @@ class BulkGateMatch {
 BulkGateMatch? bulkGate(String sender, String content, List<Bank> banks) {
   // A bank the user actually set up always wins: reporting a catalog entry here
   // would invite a duplicate account for a bank they may have renamed.
-  if (gateBanks(sender, content, banks).isNotEmpty) {
-    return const BulkGateMatch();
-  }
+  if (hasGateBank(sender, content, banks)) return const BulkGateMatch();
   final entry = singleCatalogMatch(sender);
   return entry == null ? null : BulkGateMatch(catalogEntry: entry);
 }
