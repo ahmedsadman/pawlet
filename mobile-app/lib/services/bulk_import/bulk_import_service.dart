@@ -197,14 +197,9 @@ class BulkImportService {
       ),
     );
     if (id == null) {
-      // Already stored. Re-attempt only rows that hold no finance record AND
-      // whose verdict could actually differ this time: `noRecord` (the card
-      // may exist now) and a reason-less row (an interrupted earlier pass).
-      // Re-running the same model over a `localLowConfidence` / `localNone`
-      // row would burn inference to reach the identical verdict, which is
-      // what makes a second import near-instant instead of a full replay.
-      // Success rows are done; queued/sending/failure rows belong to the live
-      // queue, which must stay their single writer.
+      // Already stored. Success rows are done; queued/sending/failure rows
+      // belong to the live queue, which must stay their single writer. What is
+      // left — the ignored ones — is filtered by [_isReattemptable].
       final existing = await smsRepository.findByIdentity(
         sender: sender,
         timestamp: message.timestamp,
