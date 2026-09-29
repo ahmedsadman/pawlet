@@ -146,6 +146,116 @@ void main() {
       await db.close();
     });
 
+    test('a loose card match yields to a confident sender match', () async {
+      // A deposit SMS printing a masked account number can loosely resemble a
+      // card. The sender is the stronger signal, so it wins — otherwise the
+      // row lands on the card and the deposit's balance silently stops
+      // updating (_maybeUpdateBalance skips credit accounts).
+      final db = await openTestDb();
+      final repo = BanksRepository(db);
+      final checking = await repo.create(
+        name: 'Checking',
+        matchers: const ['brac'],
+        lastBalance: '1000.00',
+        lastBalanceAt: _jan,
+      );
+      final card = await repo.create(
+        name: 'Brac Card',
+        accountType: 'credit',
+        cardDigits: '1234|5678',
+      );
+      final rec = await seedSms(
+        db,
+        sender: 'BRAC',
+        content: 'A/C 123***678 debited BDT 50. Bal 950.00',
+      );
+      await FinanceWriter(db, nowMs: () => 0).apply(
+        record: rec,
+        outcome: tx(
+          const MetadataResult(
+            balance: '950.00',
+            amount: '50',
+            originalAmount: '50',
+            transactionType: 'expense',
+            originalCurrency: 'BDT',
+          ),
+        ),
+        banks: [checking, card],
+        currency: 'BDT',
+      );
+      expect((await db.query('transactions')).first['bank_id'], checking.id);
+      final bank = (await db.query(
+        'banks',
+        where: 'id = ?',
+        whereArgs: [checking.id],
+      )).first;
+      expect(bank['last_balance'], '950.00');
+      await db.close();
+    });
+
+    test('an exact card match still beats a sender match', () async {
+      final db = await openTestDb();
+      final repo = BanksRepository(db);
+      final checking = await repo.create(
+        name: 'Checking',
+        matchers: const ['ebl'],
+      );
+      final card = await repo.create(
+        name: 'EBL Card',
+        accountType: 'credit',
+        cardDigits: '4238|3241',
+      );
+      final rec = await seedSms(
+        db,
+        sender: 'EBL',
+        content: 'purchase 4238****3241 for 200',
+      );
+      await FinanceWriter(db, nowMs: () => 0).apply(
+        record: rec,
+        outcome: tx(
+          const MetadataResult(
+            amount: '200',
+            originalAmount: '200',
+            transactionType: 'expense',
+            originalCurrency: 'BDT',
+          ),
+        ),
+        banks: [checking, card],
+        currency: 'BDT',
+      );
+      expect((await db.query('transactions')).first['bank_id'], card.id);
+      await db.close();
+    });
+
+    test('a loose card match still wins when no sender matches', () async {
+      final db = await openTestDb();
+      final card = await BanksRepository(db).create(
+        name: 'Brac Card',
+        accountType: 'credit',
+        cardDigits: '0009|4111',
+      );
+      final rec = await seedSms(
+        db,
+        sender: 'RANDOM',
+        content: 'purchase 000***111 for 200',
+      );
+      await FinanceWriter(db, nowMs: () => 0).apply(
+        record: rec,
+        outcome: tx(
+          const MetadataResult(
+            amount: '200',
+            originalAmount: '200',
+            transactionType: 'expense',
+            originalCurrency: 'BDT',
+          ),
+        ),
+        banks: [card],
+        currency: 'BDT',
+      );
+      expect((await db.query('transactions')).first['bank_id'], card.id);
+      await db.close();
+    });
+
     test('records the transaction unlinked when no bank matches', () async {
       final db = await openTestDb();
       final checking = await BanksRepository(
@@ -402,6 +512,60 @@ void main() {
         await db.close();
       },
     );
+
+    test('records a bill whose card is masked to 3 visible digits', () async {
+      final db = await openTestDb();
+      final card = await BanksRepository(db).create(
+        name: 'Brac Card',
+        accountType: 'credit',
+        cardDigits: '0009|4111',
+      );
+      final rec = await seedSms(
+        db,
+        sender: 'BRAC',
+        content: 'Monthly bill 000***111 Total Due 8020',
+      );
+      final cat = await FinanceWriter(db, nowMs: () => 0).apply(
+        record: rec,
+        outcome: bill(billMeta),
+        banks: [card],
+        currency: 'BDT',
+      );
+      expect(cat, 'bill');
+      final rows = await db.query('bills');
+      expect(rows.length, 1);
+      expect(rows.first['bank_id'], card.id);
+      await db.close();
+    });
+
+    test('drops a 3-digit-masked bill that fits two cards', () async {
+      final db = await openTestDb();
+      final repo = BanksRepository(db);
+      final a = await repo.create(
+        name: 'Card A',
+        accountType: 'credit',
+        cardDigits: '0009|4111',
+      );
+      final b = await repo.create(
+        name: 'Card B',
+        accountType: 'credit',
+        cardDigits: '0008|3111',
+      );
+      final rec = await seedSms(
+        db,
+        sender: 'BRAC',
+        content: 'Monthly bill 000***111 Total Due 8020',
+      );
+      final cat = await FinanceWriter(db, nowMs: () => 0).apply(
+        record: rec,
+        outcome: bill(billMeta),
+        banks: [a, b],
+        currency: 'BDT',
+      );
+      expect(cat, isNot('bill'));
+      expect(await db.query('bills'), isEmpty);
+      await db.close();
+    });
 
     test('ignores a bill with no matching card digits', () async {
       final db = await openTestDb();
