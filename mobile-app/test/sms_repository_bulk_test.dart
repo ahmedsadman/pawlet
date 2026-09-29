@@ -116,68 +116,74 @@ void main() {
     expect(row['next_attempt_at'], isNull);
   });
 
-  test('markBulkProcessed clears a stale ignore reason on re-processing', () async {
-    final id = await seed();
-    await repo.markBulkProcessed(
-      id,
-      status: SmsStatus.ignored,
-      now: 2000,
-      ignoreReason: IgnoreReason.noRecord,
-    );
-    expect(
-      (await db.query(
+  test(
+    'markBulkProcessed clears a stale ignore reason on re-processing',
+    () async {
+      final id = await seed();
+      await repo.markBulkProcessed(
+        id,
+        status: SmsStatus.ignored,
+        now: 2000,
+        ignoreReason: IgnoreReason.noRecord,
+      );
+      expect(
+        (await db.query(
+          'sms_records',
+          where: 'id = ?',
+          whereArgs: [id],
+        )).first['ignore_reason'],
+        'no_record',
+      );
+
+      // A later import run, once the missing card exists, succeeds — the old
+      // reason must not linger on a success row.
+      await repo.markBulkProcessed(
+        id,
+        status: SmsStatus.success,
+        now: 3000,
+        category: 'bill',
+      );
+      final row = (await db.query(
         'sms_records',
         where: 'id = ?',
         whereArgs: [id],
-      )).first['ignore_reason'],
-      'no_record',
-    );
+      )).first;
+      expect(row['status'], 'success');
+      expect(row['ignore_reason'], isNull);
+      expect(row['category'], 'bill');
+    },
+  );
 
-    // A later import run, once the missing card exists, succeeds — the old
-    // reason must not linger on a success row.
-    await repo.markBulkProcessed(
-      id,
-      status: SmsStatus.success,
-      now: 3000,
-      category: 'bill',
-    );
-    final row = (await db.query(
-      'sms_records',
-      where: 'id = ?',
-      whereArgs: [id],
-    )).first;
-    expect(row['status'], 'success');
-    expect(row['ignore_reason'], isNull);
-    expect(row['category'], 'bill');
-  });
+  test(
+    'markBulkProcessed resets retry bookkeeping from a failed row',
+    () async {
+      final id = await seed();
+      await repo.updateStatus(
+        id,
+        SmsStatus.failure,
+        attempts: 9,
+        lastError: 'boom',
+        failureReason: FailureReason.retryExhausted,
+        updatedAt: 1500,
+        nextAttemptAt: 9999,
+      );
 
-  test('markBulkProcessed resets retry bookkeeping from a failed row', () async {
-    final id = await seed();
-    await repo.updateStatus(
-      id,
-      SmsStatus.failure,
-      attempts: 9,
-      lastError: 'boom',
-      failureReason: FailureReason.retryExhausted,
-      updatedAt: 1500,
-      nextAttemptAt: 9999,
-    );
+      await repo.markBulkProcessed(
+        id,
+        status: SmsStatus.success,
+        now: 3000,
+        category: 'transaction',
+      );
 
-    await repo.markBulkProcessed(
-      id,
-      status: SmsStatus.success,
-      now: 3000,
-      category: 'transaction',
-    );
-
-    final row = (await db.query(
-      'sms_records',
-      where: 'id = ?',
-      whereArgs: [id],
-    )).first;
-    expect(row['attempts'], 0);
-    expect(row['last_error'], isNull);
-    expect(row['failure_reason'], isNull);
-    expect(row['next_attempt_at'], isNull);
-  });
+      final row = (await db.query(
+        'sms_records',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).first;
+      expect(row['attempts'], 0);
+      expect(row['last_error'], isNull);
+      expect(row['failure_reason'], isNull);
+      expect(row['next_attempt_at'], isNull);
+    },
+  );
 }

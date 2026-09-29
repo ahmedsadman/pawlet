@@ -13,6 +13,71 @@ Implementation lives in `lib/services/backup_service.dart` (serialize + validate
 restore), `lib/data/settings_repository.dart` (the settings half), and
 `lib/ui/backup_restore_page.dart` (the screen).
 
+## Importing existing messages
+
+Pawlet only sees SMS that arrive while it is installed, so a fresh install starts
+empty even on a phone with years of bank messages behind it. **Import existing
+messages** reads the device inbox once and back-fills from it.
+
+You are offered it automatically the first time the app is unlocked, and it lives
+permanently under Settings → Data. Implementation is in
+`lib/services/bulk_import/` (the inbox reader, the gate, the engine) and
+`lib/ui/bulk_import_flow.dart` (the offer, progress and summary sheets).
+
+### How this pass differs from the live pipeline
+
+It does **not** use the normal queue. Messages are read, classified and written
+one at a time while a progress window blocks the rest of the app, and the queue's
+background drain is paused for the duration.
+
+- **On-device model only.** The pass never calls the LLM. Where the live pipeline
+  would fall back to the cloud because the model wasn't confident, this one drops
+  the message instead — which is what the offer warns about up front.
+- **Only bank-looking messages cost anything.** A message whose sender matches
+  none of your accounts and none of the built-in bank catalog is skipped without
+  a database write, so an inbox full of OTPs and promotions stays out of Pawlet
+  entirely.
+- **Banks are created for you, cards are not.** When a message comes from a
+  sender the built-in catalog recognises and the model confidently reads a
+  transaction out of it, the deposit account is created on the spot. Credit cards
+  are never created: a card is identified only by digits printed in the message
+  body, so Pawlet would be guessing. Card messages are still classified as bills —
+  they just have nowhere to land until you add the card yourself.
+- **Relationships are matched at the end.** Transfer pairing and bill linking run
+  once over everything the pass wrote, rather than per message. That sweep
+  normally only looks at the last 45 days of records, which is right for live
+  processing and useless for a back-fill, so the import widens it to reach back
+  to the oldest record it imported. The matching rules themselves don't change:
+  a payment still has to land within 45 days of its statement, and a card
+  payment within 15 minutes of the bank debit that funded it — those windows are
+  measured from each record's own date, so they work the same in 2024 as today.
+- **Oldest first.** Messages are replayed in the order they were received, so a
+  deposit's stored balance ends up at the newest figure rather than an arbitrary
+  one.
+
+### Running it more than once is safe
+
+The pass is idempotent. It reuses the same identity key as live capture — sender,
+received time and body text — so a message already in Pawlet is recognised and
+skipped rather than imported twice. `transactions` and `bills` additionally allow
+only one row per message, so even a race can't double-count.
+
+Re-running is also *useful*, not just harmless. A message an earlier pass had to
+drop — a card statement with no matching card, say — is retried, because it holds
+no financial record yet. So the intended recovery from the credit-card caveat is:
+add your cards under **Manage Banks & Cards**, then run the import again. Anything
+already saved stays exactly as it is.
+
+### What the summary tells you
+
+Two numbers: how many inbox messages were walked, and how many financial records
+came out. The gap is normal and mostly consists of messages that were never bank
+messages at all. The two caveats printed underneath are the ones worth acting on —
+messages dropped for low confidence, and card messages skipped for want of a card.
+
+Stopping mid-run keeps everything already written; the summary then reports only
+the part that ran, and re-running picks up where it left off.
+
 ## What is and isn't included
 
 Included:
@@ -118,6 +183,7 @@ table is a snapshot — verify there if precision matters.
 | `processed_at` | INTEGER | nullable |
 | `ignore_reason` | TEXT | nullable; internal |
 | `failure_reason` | TEXT | nullable; internal |
+| `parse_source` | TEXT | nullable; `local` or `llm` — which engine parsed the row |
 
 **`banks`** — user's banks and cards.
 

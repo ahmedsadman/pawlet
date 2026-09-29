@@ -32,7 +32,8 @@ update these docs to provide the latest and accurate info
   partially-masked cards) and which records belong together (transfer pairing, bill
   linking).
 - [Backup & Restore](backup-restore.md) — exporting all local data to a JSON file and
-  restoring it (replace-all, IDs preserved), including the expected file format.
+  restoring it (replace-all, IDs preserved), including the expected file format, plus
+  the one-off import that back-fills records from the messages already on the phone.
 
 ## RED FLAGS - STOP
 
