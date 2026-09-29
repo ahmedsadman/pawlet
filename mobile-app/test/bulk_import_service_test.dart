@@ -39,6 +39,14 @@ class _FakeLocal implements LocalClassifier {
   }
 }
 
+/// Blows up on every message, standing in for a platform/model failure midway
+/// through a pass.
+class _ThrowingLocal implements LocalClassifier {
+  @override
+  Future<LocalPrediction?> infer(String content) async =>
+      throw StateError('model exploded');
+}
+
 /// A confident single-span prediction whose span points at [value] inside
 /// [content], mirroring what the real model emits.
 LocalPrediction _pred(
@@ -89,7 +97,7 @@ void main() {
 
   tearDown(() => db.close());
 
-  BulkImportService service(_FakeInbox inbox, _FakeLocal local) =>
+  BulkImportService service(_FakeInbox inbox, LocalClassifier local) =>
       BulkImportService(
         inbox: inbox,
         smsRepository: sms,
@@ -218,6 +226,69 @@ void main() {
     expect(await count('transactions'), 0);
     // A bill/transaction was never written, so no account was invented either.
     expect(await count('banks'), 0);
+  });
+
+  test('never leaves a row the LLM queue could claim', () async {
+    // The whole on-device promise rests on this: a row visible to
+    // dueForDelivery (status 'queued') can be claimed by the background-SMS or
+    // WorkManager isolate, which build their own ProcessingService and never
+    // see pause() — and would then post the message body to OpenRouter.
+    final inbox = _FakeInbox([
+      _msg('EBL', expenseBody, 1000),
+      _msg('EBL', 'Your EBL balance may have changed', 2000),
+    ]);
+    final local = _FakeLocal({
+      expenseBody: _pred('expense', 'AMOUNT', expenseBody, '1250.00'),
+    });
+
+    await service(inbox, local).run();
+
+    expect(await sms.dueForDelivery(now), isEmpty);
+    expect(await sms.countQueued(), 0);
+  });
+
+  test('an interrupted row is left re-attemptable, not queued', () async {
+    // The model throws partway, so the row never reaches markBulkProcessed.
+    final inbox = _FakeInbox([_msg('EBL', expenseBody, 1000)]);
+    final local = _ThrowingLocal();
+
+    final result = await service(inbox, local).run();
+
+    // The pass survived the throw and still reported honestly.
+    expect(result.scanned, 1);
+    expect(result.saved, 0);
+
+    final row = (await db.query('sms_records')).single;
+    expect(row['status'], 'ignored');
+    expect(row['ignore_reason'], isNull);
+    expect(await sms.dueForDelivery(now), isEmpty);
+
+    // A later run picks exactly that row back up.
+    final retryLocal = _FakeLocal({
+      expenseBody: _pred('expense', 'AMOUNT', expenseBody, '1250.00'),
+    });
+    final second = await service(inbox, retryLocal).run();
+    expect(second.saved, 1);
+    expect(await count('transactions'), 1);
+  });
+
+  test('a re-run does not re-infer a low-confidence message', () async {
+    const body = 'Your EBL balance may have changed';
+    final inbox = _FakeInbox([_msg('EBL', body, 1000)]);
+    final local = _FakeLocal({
+      body: const LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.42,
+        spans: [],
+      ),
+    });
+
+    await service(inbox, local).run();
+    expect(local.calls, [body]);
+
+    // Same model, same text — the verdict cannot change, so don't pay for it.
+    await service(inbox, local).run();
+    expect(local.calls, [body]);
   });
 
   test('a confident non-financial message is ignored as such', () async {

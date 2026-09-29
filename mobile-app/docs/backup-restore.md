@@ -27,8 +27,11 @@ permanently under Settings → Data. Implementation is in
 ### How this pass differs from the live pipeline
 
 It does **not** use the normal queue. Messages are read, classified and written
-one at a time while a progress window blocks the rest of the app, and the queue's
-background drain is paused for the duration.
+one at a time while a progress window blocks the rest of the app, and the
+foreground drain is paused for the duration. Imported messages are written
+straight to a finished state and are never parked in the queue, so a background
+catch-up running at the same time has nothing of theirs to pick up — which is
+what makes the on-device-only promise hold even mid-import or after a crash.
 
 - **On-device model only.** The pass never calls the LLM. Where the live pipeline
   would fall back to the cloud because the model wasn't confident, this one drops
@@ -63,10 +66,16 @@ skipped rather than imported twice. `transactions` and `bills` additionally allo
 only one row per message, so even a race can't double-count.
 
 Re-running is also *useful*, not just harmless. A message an earlier pass had to
-drop — a card statement with no matching card, say — is retried, because it holds
-no financial record yet. So the intended recovery from the credit-card caveat is:
-add your cards under **Manage Banks & Cards**, then run the import again. Anything
+drop **for a reason that a re-run could change** is retried — specifically a card
+statement that had no matching card, and any message a pass was interrupted
+partway through. So the intended recovery from the credit-card caveat is: add
+your cards under **Manage Banks & Cards**, then run the import again. Anything
 already saved stays exactly as it is.
+
+Messages dropped because the model wasn't confident are *not* retried. The same
+model reading the same text would reach the same verdict, so re-running skips
+them rather than paying for the inference twice — which is why a second import
+finishes far faster than the first.
 
 ### What the summary tells you
 
