@@ -16,6 +16,7 @@ class SettingsRepository {
   static const _kTxSort = 'tx_sort';
   static const _kTxTypeHintSeen = 'tx_type_hint_seen';
   static const _kHistoryHintSeen = 'history_hint_seen';
+  static const _kBulkImportOffered = 'bulk_import_offered';
 
   /// OpenRouter models tried in order (static ordered fallback in one request).
   /// All are structured-outputs-capable, so `response_format: json_schema` is
@@ -60,6 +61,15 @@ class SettingsRepository {
   bool get historyHintSeen => _prefs.getBool(_kHistoryHintSeen) ?? false;
   Future<void> setHistoryHintSeen(bool value) =>
       _prefs.setBool(_kHistoryHintSeen, value);
+
+  /// Whether the one-time "import your existing messages" offer has been shown.
+  ///
+  /// Deliberately outside Backup & Restore (see [_backupBoolKeys]): it is
+  /// onboarding state for *this* install, so restoring a backup onto a fresh
+  /// device should still offer the import there.
+  bool get bulkImportOffered => _prefs.getBool(_kBulkImportOffered) ?? false;
+  Future<void> setBulkImportOffered(bool value) =>
+      _prefs.setBool(_kBulkImportOffered, value);
 
   /// Keys included in Backup & Restore, grouped by value type so [exportAll]
   /// and [importAll] round-trip them with the correct SharedPreferences

@@ -53,4 +53,21 @@ void main() {
     await r.importAll(const {}); // empty snapshot
     expect(r.historyHintSeen, isFalse); // reset to its default
   });
+
+  test('bulkImportOffered defaults false and persists', () async {
+    final r = await repo();
+    expect(r.bulkImportOffered, isFalse);
+    await r.setBulkImportOffered(true);
+    expect(r.bulkImportOffered, isTrue);
+  });
+
+  test('bulkImportOffered is install-local, not part of a backup', () async {
+    final r = await repo();
+    await r.setBulkImportOffered(true);
+    expect(r.exportAll().containsKey('bulk_import_offered'), isFalse);
+
+    // And a restore must not clear it either — it is not a managed key.
+    await r.importAll(const {});
+    expect(r.bulkImportOffered, isTrue);
+  });
 }
