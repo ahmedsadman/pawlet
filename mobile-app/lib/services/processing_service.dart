@@ -95,11 +95,24 @@ class ProcessingService {
   static const Duration staleAfter = Duration(minutes: 3);
 
   bool _running = false;
+  bool _paused = false;
+
+  /// Suspends the drain. The bulk inbox import holds this for the length of its
+  /// pass so an LLM round-trip can't compete with the on-device model for the
+  /// database and the CPU while the user is watching a progress bar.
+  ///
+  /// UI-isolate only: the background-SMS and WorkManager isolates build their
+  /// own bundle and won't see it. That's acceptable — the import writes terminal
+  /// rows directly and never takes the queue's single in-flight slot, so a
+  /// concurrent background pass is wasteful, not incorrect.
+  void pause() => _paused = true;
+
+  void resume() => _paused = false;
 
   /// Processes every due record. Safe to call concurrently within one isolate
   /// (overlaps are ignored); cross-isolate safety comes from the atomic claim.
   Future<void> process() async {
-    if (_running) return;
+    if (_paused || _running) return;
     _running = true;
     try {
       if (!await isOnline()) {
