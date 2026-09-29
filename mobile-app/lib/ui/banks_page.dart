@@ -290,9 +290,12 @@ class _BankFormPageState extends ConsumerState<BankFormPage> {
     Navigator.of(context).pop(true);
   }
 
+  static final _fourDigits = RegExp(r'^\d{4}$');
+
   String? _validate4(String? v) {
-    final t = (v ?? '').trim();
-    if (t.length != 4 || int.tryParse(t) == null) return '4 digits';
+    // Must agree with _parseCardDigits in sender_matcher.dart; int.tryParse
+    // would accept "+123", which the matcher then rejects as malformed.
+    if (!_fourDigits.hasMatch((v ?? '').trim())) return '4 digits';
     return null;
   }
 
