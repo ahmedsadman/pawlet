@@ -494,4 +494,61 @@ void main() {
     );
     await db.close();
   });
+
+  test('runPending(since:) reaches rows older than the default look-back', () async {
+    final db = await openTestDb();
+    final now = DateTime(2026, 7, 10, 12, 0);
+    // Two years back — far outside the default `now - 45 days` floor.
+    final billAt = DateTime(2024, 3, 1);
+    final pay = DateTime(2024, 3, 11);
+
+    final ebl = await insertBank(
+      db,
+      name: 'EBL',
+      accountType: 'credit',
+      cardDigits: '4238|3241',
+    );
+    final billMsg = await insertSms(
+      db,
+      sender: 'EBL',
+      ts: billAt.millisecondsSinceEpoch,
+    );
+    final bill = await insertBill(
+      db,
+      messageId: billMsg,
+      bankId: ebl,
+      totalDue: '8020',
+    );
+    final transfer = await tx(
+      db,
+      bankId: ebl,
+      amount: '8020',
+      type: 'transfer',
+      date: pay,
+    );
+
+    final matcher = FinanceMatcher(db, nowMs: () => now.millisecondsSinceEpoch);
+
+    // The default sweep cannot see these rows at all.
+    await matcher.runPending();
+    expect((await txRow(db, transfer))['bill_id'], isNull);
+
+    // Floored at the oldest row (minus the bill window, so a payment can still
+    // reach a statement that predates it), the same pass links them.
+    await matcher.runPending(
+      since:
+          billAt.millisecondsSinceEpoch -
+          FinanceMatcher.billWindow.inMilliseconds,
+    );
+    expect((await txRow(db, transfer))['bill_id'], bill);
+    expect(
+      (await db.query(
+        'bills',
+        where: 'id = ?',
+        whereArgs: [bill],
+      )).first['paid_at'],
+      pay.millisecondsSinceEpoch,
+    );
+    await db.close();
+  });
 }

@@ -33,8 +33,14 @@ class FinanceMatcher {
   /// than that can no longer pair (its ±15 min counterpart would long since have
   /// been processed), and this generous bound still lets a late-arriving
   /// counterpart pair with a transfer created up to 45 days earlier.
-  Future<void> runPending() async {
-    final cutoff = _nowMs() - billWindow.inMilliseconds;
+  ///
+  /// [since] (epoch ms) overrides that floor. The bulk inbox import passes it
+  /// because it back-fills rows that are months or years old, which the default
+  /// floor would skip entirely. Only the set of rows considered moves — the
+  /// ±15 min and ±45 day match windows are measured from each row's own date
+  /// and are unaffected.
+  Future<void> runPending({int? since}) async {
+    final cutoff = since ?? _nowMs() - billWindow.inMilliseconds;
 
     for (final id in await _ids(
       "type = 'transfer' AND paired_with_id IS NULL AND date >= ?",
