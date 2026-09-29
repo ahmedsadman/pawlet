@@ -272,13 +272,44 @@ void main() {
     expect(await count('transactions'), 1);
   });
 
-  test('a re-run does not re-infer a low-confidence message', () async {
-    const body = 'Your EBL balance may have changed';
+  test('picks up messages the live pipeline gated out', () async {
+    // Before any bank exists the live gate rejects everything as `gated`. The
+    // bulk gate knows the catalog, so those are exactly the rows an import is
+    // for — skipping them would make Settings → Data a no-op on a fresh
+    // install, which is the main way this feature gets used.
+    final id = (await sms.insertIfNew(
+      SmsRecord(
+        sender: 'EBL',
+        content: expenseBody,
+        timestamp: 1000,
+        updatedAt: 1000,
+      ),
+    ))!;
+    await sms.updateStatus(
+      id,
+      SmsStatus.ignored,
+      updatedAt: 1000,
+      ignoreReason: IgnoreReason.gated,
+    );
+
+    final inbox = _FakeInbox([_msg('EBL', expenseBody, 1000)]);
+    final local = _FakeLocal({
+      expenseBody: _pred('expense', 'AMOUNT', expenseBody, '1250.00'),
+    });
+
+    final result = await service(inbox, local).run();
+
+    expect(result.saved, 1);
+    expect(await count('transactions'), 1);
+  });
+
+  test('does not re-infer what a model already called non-financial', () async {
+    const body = 'EBL wishes you a happy new year';
     final inbox = _FakeInbox([_msg('EBL', body, 1000)]);
     final local = _FakeLocal({
       body: const LocalPrediction(
-        classLabel: 'expense',
-        classConfidence: 0.42,
+        classLabel: 'null',
+        classConfidence: 0.98,
         spans: [],
       ),
     });
@@ -286,7 +317,7 @@ void main() {
     await service(inbox, local).run();
     expect(local.calls, [body]);
 
-    // Same model, same text — the verdict cannot change, so don't pay for it.
+    // Same model, same text, a confident verdict — nothing to gain.
     await service(inbox, local).run();
     expect(local.calls, [body]);
   });
@@ -377,6 +408,128 @@ void main() {
     expect(result.scanned, 1);
     expect(result.saved, 1);
     expect(await count('transactions'), 1);
+  });
+
+  test('never invents a deposit account from a card message', () async {
+    // "City Bank" matches the catalog exactly as a deposit alert would, but
+    // this is a card purchase. Creating a deposit here would both fabricate an
+    // account and weld the card spend to it, and neither unwinds when the user
+    // later adds the real card.
+    const cardBody = 'Your card 4238****3241 was used for 1250.00 at a shop';
+    final inbox = _FakeInbox([_msg('City Bank', cardBody, 1000)]);
+    final local = _FakeLocal({
+      cardBody: _pred('expense', 'AMOUNT', cardBody, '1250.00'),
+    });
+
+    final result = await service(inbox, local).run();
+
+    expect(await count('banks'), 0);
+    // The spend is still captured, just unattributed.
+    expect(result.saved, 1);
+    expect((await db.query('transactions')).single['bank_id'], isNull);
+  });
+
+  test('creates the deposit from a masked account alert', () async {
+    // The local deposit format masks the account number in exactly a card's
+    // shape. Treating masking as "this is a card" blocked essentially every
+    // real deposit, so only the word "card" may block creation.
+    const acBody = 'AC 123***456 is credited with BDT 1250.00. Balance 9000.00';
+    final inbox = _FakeInbox([_msg('EBL', acBody, 1000)]);
+    final local = _FakeLocal({
+      acBody: LocalPrediction(
+        classLabel: 'income',
+        classConfidence: 0.99,
+        spans: [
+          LocalSpan(
+            entity: 'AMOUNT',
+            text: '1250.00',
+            confidence: 0.99,
+            start: acBody.indexOf('1250.00'),
+            end: acBody.indexOf('1250.00') + 7,
+          ),
+          LocalSpan(
+            entity: 'BALANCE',
+            text: '9000.00',
+            confidence: 0.99,
+            start: acBody.indexOf('9000.00'),
+            end: acBody.indexOf('9000.00') + 7,
+          ),
+        ],
+      ),
+    });
+
+    final result = await service(inbox, local).run();
+
+    expect(result.saved, 1);
+    final bank = (await banks.list()).single;
+    expect(bank.name, 'EBL');
+    expect(bank.accountType, 'deposit');
+    // Linked, and the balance actually landed.
+    expect((await db.query('transactions')).single['bank_id'], bank.id);
+    expect(bank.lastBalance, '9000.00');
+  });
+
+  test('relinks rows written before their account existed', () async {
+    // Oldest-first: the card message arrives before the deposit alert that
+    // creates the account, so it is written unlinked. Once "EBL" exists the
+    // closing relink must claim it.
+    const cardBody = 'EBL card purchase of 300.00 at a shop';
+    const acBody = 'AC 123***456 is credited with BDT 1250.00';
+    final inbox = _FakeInbox([
+      _msg('EBL', cardBody, 1000),
+      _msg('EBL', acBody, 2000),
+    ]);
+    final local = _FakeLocal({
+      cardBody: _pred('expense', 'AMOUNT', cardBody, '300.00'),
+      acBody: _pred('income', 'AMOUNT', acBody, '1250.00'),
+    });
+
+    final result = await service(inbox, local).run();
+
+    expect(result.saved, 2);
+    final bank = (await banks.list()).single;
+    final linked = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM transactions WHERE bank_id = ?',
+      [bank.id],
+    );
+    expect(linked.first['c'], 2);
+  });
+
+  test('relinks a card transaction once the card is added', () async {
+    // The user imports, then adds the card, then re-runs. The card's rows are
+    // already `success` so they are never re-processed — only the relink can
+    // rescue them.
+    const cardBody = 'Your card 4238****3241 was charged 300.00';
+    final inbox = _FakeInbox([_msg('City Bank', cardBody, 1000)]);
+    final local = _FakeLocal({
+      cardBody: _pred('expense', 'AMOUNT', cardBody, '300.00'),
+    });
+
+    await service(inbox, local).run();
+    expect((await db.query('transactions')).single['bank_id'], isNull);
+
+    final card = await banks.create(
+      name: 'City Bank',
+      accountType: 'credit',
+      cardDigits: '4238|3241',
+    );
+    await service(inbox, local).run();
+
+    expect((await db.query('transactions')).single['bank_id'], card.id);
+  });
+
+  test('leaves an orphan alone when no account fits', () async {
+    const cardBody = 'Your card 4238****3241 was charged 300.00';
+    final inbox = _FakeInbox([_msg('City Bank', cardBody, 1000)]);
+    final local = _FakeLocal({
+      cardBody: _pred('expense', 'AMOUNT', cardBody, '300.00'),
+    });
+    // An unrelated account exists, so the relink runs but must not grab this.
+    await banks.create(name: 'MTB', matchers: const ['mtb']);
+
+    await service(inbox, local).run();
+
+    expect((await db.query('transactions')).single['bank_id'], isNull);
   });
 
   test('two senders of the same catalog bank share one account', () async {

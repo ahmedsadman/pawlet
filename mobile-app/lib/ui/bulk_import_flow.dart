@@ -36,8 +36,12 @@ Future<void> runBulkImport(BuildContext context, WidgetRef ref) async {
   final processing = ref.read(processingServiceProvider)..pause();
   // showDialog pushes synchronously, so the route is on the stack before the
   // first await below — the pop in `finally` can never hit the wrong route.
-  // Disposal is tied to the route's own completion rather than the pop, so the
-  // notifier outlives the dialog's teardown.
+  //
+  // whenComplete fires at the pop, NOT after the exit animation, so the
+  // ValueListenableBuilder is still mounted when dispose runs. That is safe on
+  // two counts: ChangeNotifier.removeListener is explicitly documented to
+  // tolerate a disposed instance, and nothing writes progress.value once run()
+  // has returned.
   unawaited(
     showDialog<void>(
       context: context,
@@ -82,13 +86,14 @@ Future<void> runBulkImport(BuildContext context, WidgetRef ref) async {
 
   if (!context.mounted) return;
   if (result == null) {
-    await _showImportError(context);
+    await showBulkImportError(context);
     return;
   }
   await showBulkImportSummary(context, result);
 }
 
-Future<void> _showImportError(BuildContext context) {
+/// Shown when the pass itself failed. Public so it can be tested on its own.
+Future<void> showBulkImportError(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
@@ -123,63 +128,73 @@ class _ImportOfferSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SheetIcon(Icons.inbox_outlined),
-            const SizedBox(height: 16),
-            Text(
-              'Import existing messages',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Do you want Pawlet to read your existing messages and create '
-              'financial records now (recommended)? This pass only uses the '
-              'on-device model for metadata extraction. Messages with low '
-              'confidence score will be skipped.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.outline,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 20),
-            const _NoteRow(
-              icon: Icons.phone_android,
-              text: 'Runs entirely on this device — nothing is sent to an LLM.',
-            ),
-            const SizedBox(height: 10),
-            const _NoteRow(
-              icon: Icons.hourglass_empty,
-              text:
-                  'Keep Pawlet open while it runs; the rest of the app pauses '
-                  'until it finishes.',
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Import now'),
-              ),
-            ),
-            const SizedBox(height: 4),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Not now'),
-              ),
-            ),
-          ],
+    return _SheetBody(
+      children: [
+        const _SheetIcon(Icons.inbox_outlined),
+        const SizedBox(height: 16),
+        Text(
+          'Import existing messages',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
         ),
-      ),
+        const SizedBox(height: 8),
+        Text(
+          'Do you want Pawlet to read your existing messages and create '
+          'financial records now?',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.outline,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 20),
+        const _NoteRow(
+          icon: Icons.phone_android,
+          text:
+              'This pass uses only the on-device model. Messages with low '
+              'confidence score will be skipped.',
+        ),
+        const SizedBox(height: 10),
+        const _NoteRow(
+          icon: Icons.credit_card_outlined,
+          text:
+              'Pawlet does its best to create bank accounts as it goes, '
+              'but never credit cards. Transactions are recorded either '
+              'way — only balances and card bills need the account to '
+              'exist. Add yours under "Manage Banks & Cards" and run this '
+              'again any time.',
+        ),
+        const SizedBox(height: 10),
+        const _NoteRow(
+          icon: Icons.hourglass_empty,
+          text:
+              'Keep Pawlet open while it runs; the rest of the app pauses '
+              'until it finishes.',
+        ),
+        const SizedBox(height: 10),
+        const _NoteRow(
+          icon: Icons.settings_outlined,
+          text:
+              'Find this again under Settings → Data → Import existing '
+              'messages.',
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Import now'),
+          ),
+        ),
+        const SizedBox(height: 4),
+        SizedBox(
+          width: double.infinity,
+          child: TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Not now'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -277,83 +292,76 @@ class _ImportSummarySheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return _SheetBody(
+      children: [
+        _SheetIcon(
+          result.cancelled ? Icons.pause_circle_outline : Icons.task_alt,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          result.cancelled ? 'Import stopped' : 'Import complete',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
           children: [
-            _SheetIcon(
-              result.cancelled ? Icons.pause_circle_outline : Icons.task_alt,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              result.cancelled ? 'Import stopped' : 'Import complete',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
+            Expanded(
+              child: _StatTile(
+                label: 'Messages processed',
+                value: '${result.scanned}',
               ),
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _StatTile(
-                    label: 'Messages processed',
-                    value: '${result.scanned}',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _StatTile(
-                    label: 'Records saved',
-                    value: '${result.saved}',
-                    highlight: true,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            const _NoteRow(
-              icon: Icons.memory,
-              text:
-                  'Only the on-device model was used, no LLM. Some messages '
-                  'might get dropped due to lower confidence.',
-            ),
-            const SizedBox(height: 10),
-            const _NoteRow(
-              icon: Icons.credit_card_off_outlined,
-              text:
-                  'Credit card linking with non-existent credit accounts was '
-                  'skipped. Please add all your credit cards under "Manage '
-                  'Banks & Cards" for the best experience.',
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Done'),
-              ),
-            ),
-            const SizedBox(height: 4),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: () {
-                  // Captured before the pop, since this context dies with it.
-                  final navigator = Navigator.of(context);
-                  navigator.pop();
-                  navigator.push(
-                    MaterialPageRoute<void>(builder: (_) => const BanksPage()),
-                  );
-                },
-                child: const Text('Manage Banks & Cards'),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _StatTile(
+                label: 'Records saved',
+                value: '${result.saved}',
+                highlight: true,
               ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 20),
+        const _NoteRow(
+          icon: Icons.memory,
+          text:
+              'Only the on-device model was used, no LLM. Some messages '
+              'might get dropped due to lower confidence.',
+        ),
+        const SizedBox(height: 10),
+        const _NoteRow(
+          icon: Icons.credit_card_off_outlined,
+          text:
+              'Credit card linking with non-existent credit accounts was '
+              'skipped. Please add all your credit cards under "Manage '
+              'Banks & Cards" for the best experience.',
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Done'),
+          ),
+        ),
+        const SizedBox(height: 4),
+        SizedBox(
+          width: double.infinity,
+          child: TextButton(
+            onPressed: () {
+              // Captured before the pop, since this context dies with it.
+              final navigator = Navigator.of(context);
+              navigator.pop();
+              navigator.push(
+                MaterialPageRoute<void>(builder: (_) => const BanksPage()),
+              );
+            },
+            child: const Text('Manage Banks & Cards'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -364,44 +372,60 @@ class _ImportErrorSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SafeArea(
+    return _SheetBody(
+      children: [
+        const _SheetIcon(Icons.error_outline),
+        const SizedBox(height: 16),
+        Text(
+          "Import couldn't finish",
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Something went wrong partway through. Everything imported '
+          'before that point has been kept, and running the import again '
+          'will carry on from where it stopped.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.outline,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Done'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Shared body for the three sheets: safe-area inset, consistent padding, and
+/// scrollable — the offer sheet already runs close to the height of a short
+/// screen, and a large font scale pushes any of them over.
+class _SheetBody extends StatelessWidget {
+  const _SheetBody({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SheetIcon(Icons.error_outline),
-            const SizedBox(height: 16),
-            Text(
-              "Import couldn't finish",
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Something went wrong partway through. Everything imported '
-              'before that point has been kept, and running the import again '
-              'will carry on from where it stopped.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.outline,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Done'),
-              ),
-            ),
-          ],
+          children: children,
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _SheetIcon extends StatelessWidget {

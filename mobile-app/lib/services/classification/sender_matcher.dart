@@ -153,6 +153,22 @@ Bank? matchLooseCreditCardInContent(String content, List<Bank> banks) {
   return found;
 }
 
+/// The account a transaction SMS belongs to, or null when nothing fits.
+///
+/// Bank identity is deterministic (no model guesses it): a full card-digit
+/// match in the content wins, then the single bank whose matchers match the
+/// sender, then a partially-masked card. The sender outranks the masked card
+/// because a deposit SMS printing a masked account number can resemble one,
+/// and landing on a card would silently stop the deposit's balance from
+/// updating. Ambiguous resolves to null, leaving the row unlinked.
+///
+/// Shared so the writer and the bulk import's orphan relink cannot drift apart
+/// — a relink that resolved differently would move rows between accounts.
+Bank? resolveTransactionBank(String sender, String content, List<Bank> banks) =>
+    matchExactCreditCardInContent(content, banks) ??
+    singleSenderMatch(sender, banks) ??
+    matchLooseCreditCardInContent(content, banks);
+
 /// Layer-1 gate: the banks an SMS plausibly belongs to — sender-token match, or
 /// (for credit cards) card digits found in the content. An empty result means
 /// the SMS is ignored with no LLM call.

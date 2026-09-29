@@ -16,76 +16,37 @@ restore), `lib/data/settings_repository.dart` (the settings half), and
 ## Importing existing messages
 
 Pawlet only sees SMS that arrive while it is installed, so a fresh install starts
-empty even on a phone with years of bank messages behind it. **Import existing
-messages** reads the device inbox once and back-fills from it.
+empty. **Import existing messages** reads the device inbox once and back-fills
+from it — offered on first unlock, and permanently under Settings → Data. It
+reports how many messages it walked against how many records came out; the gap is
+mostly messages that were never bank messages. Stopping mid-run keeps whatever
+already landed. Implementation is in `lib/services/bulk_import/` and
+`lib/ui/bulk_import_flow.dart`.
 
-You are offered it automatically the first time the app is unlocked, and it lives
-permanently under Settings → Data. Implementation is in
-`lib/services/bulk_import/` (the inbox reader, the gate, the engine) and
-`lib/ui/bulk_import_flow.dart` (the offer, progress and summary sheets).
+It bypasses the queue: messages are read, classified and written one at a time
+behind a blocking progress window, and imported rows go straight to a finished
+state so a background catch-up never picks them up.
 
-### How this pass differs from the live pipeline
+- **On-device model only** — never the LLM. Where the live pipeline would fall
+  back to the cloud, this drops the message instead.
+- **Non-bank senders cost nothing.** A sender matching neither your accounts nor
+  the built-in catalog is skipped with no database write.
+- **Banks are created for you, cards are not** — a card is identified only by
+  digits in the body, so Pawlet would be guessing. A message mentioning a *card*
+  therefore creates nothing. Masking can't be the test: local deposit alerts mask
+  the account in exactly a card's shape (`AC 123***456 is credited`).
+- **Oldest first**, so a deposit's stored balance lands on the newest figure.
+- **Matching runs once at the end**, with its usual 45-day look-back floored at
+  the oldest imported record so it can reach historical rows. The ±45 day and
+  ±15 min match windows themselves are unchanged.
 
-It does **not** use the normal queue. Messages are read, classified and written
-one at a time while a progress window blocks the rest of the app, and the
-foreground drain is paused for the duration. Imported messages are written
-straight to a finished state and are never parked in the queue, so a background
-catch-up running at the same time has nothing of theirs to pick up — which is
-what makes the on-device-only promise hold even mid-import or after a crash.
-
-- **On-device model only.** The pass never calls the LLM. Where the live pipeline
-  would fall back to the cloud because the model wasn't confident, this one drops
-  the message instead — which is what the offer warns about up front.
-- **Only bank-looking messages cost anything.** A message whose sender matches
-  none of your accounts and none of the built-in bank catalog is skipped without
-  a database write, so an inbox full of OTPs and promotions stays out of Pawlet
-  entirely.
-- **Banks are created for you, cards are not.** When a message comes from a
-  sender the built-in catalog recognises and the model confidently reads a
-  transaction out of it, the deposit account is created on the spot. Credit cards
-  are never created: a card is identified only by digits printed in the message
-  body, so Pawlet would be guessing. Card messages are still classified as bills —
-  they just have nowhere to land until you add the card yourself.
-- **Relationships are matched at the end.** Transfer pairing and bill linking run
-  once over everything the pass wrote, rather than per message. That sweep
-  normally only looks at the last 45 days of records, which is right for live
-  processing and useless for a back-fill, so the import widens it to reach back
-  to the oldest record it imported. The matching rules themselves don't change:
-  a payment still has to land within 45 days of its statement, and a card
-  payment within 15 minutes of the bank debit that funded it — those windows are
-  measured from each record's own date, so they work the same in 2024 as today.
-- **Oldest first.** Messages are replayed in the order they were received, so a
-  deposit's stored balance ends up at the newest figure rather than an arbitrary
-  one.
-
-### Running it more than once is safe
-
-The pass is idempotent. It reuses the same identity key as live capture — sender,
-received time and body text — so a message already in Pawlet is recognised and
-skipped rather than imported twice. `transactions` and `bills` additionally allow
-only one row per message, so even a race can't double-count.
-
-Re-running is also *useful*, not just harmless. A message an earlier pass had to
-drop **for a reason that a re-run could change** is retried — specifically a card
-statement that had no matching card, and any message a pass was interrupted
-partway through. So the intended recovery from the credit-card caveat is: add
-your cards under **Manage Banks & Cards**, then run the import again. Anything
-already saved stays exactly as it is.
-
-Messages dropped because the model wasn't confident are *not* retried. The same
-model reading the same text would reach the same verdict, so re-running skips
-them rather than paying for the inference twice — which is why a second import
-finishes far faster than the first.
-
-### What the summary tells you
-
-Two numbers: how many inbox messages were walked, and how many financial records
-came out. The gap is normal and mostly consists of messages that were never bank
-messages at all. The two caveats printed underneath are the ones worth acting on —
-messages dropped for low confidence, and card messages skipped for want of a card.
-
-Stopping mid-run keeps everything already written; the summary then reports only
-the part that ran, and re-running picks up where it left off.
+Re-running is safe and useful. Dedup uses the same `(sender, timestamp, content)`
+identity as live capture, so nothing imports twice; meanwhile anything that
+produced no record is retried, and records left attached to no account are
+re-checked against the accounts that exist now. So the fix for a missing card is
+to add it and import again. Only messages a model already judged non-financial
+are skipped. Balances are the exception — the figure is not stored on the record,
+so a late-attached account only picks one up from later messages.
 
 ## What is and isn't included
 

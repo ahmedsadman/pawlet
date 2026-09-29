@@ -27,6 +27,20 @@ const String kDataRevKey = 'data_rev';
 /// Financial categories that appear in History (alongside failures).
 const List<String> kHistoryCategories = ['transaction', 'bill'];
 
+/// A transaction with no bank attached, paired with the text of its backing
+/// SMS so the account can be re-resolved without a second query.
+class UnlinkedTransaction {
+  const UnlinkedTransaction({
+    required this.transactionId,
+    required this.sender,
+    required this.content,
+  });
+
+  final int transactionId;
+  final String sender;
+  final String content;
+}
+
 /// CRUD + queue/history queries for captured SMS.
 class SmsRepository {
   SmsRepository(this._db);
@@ -61,6 +75,38 @@ class SmsRepository {
       limit: 1,
     );
     return rows.isEmpty ? null : SmsRecord.fromDbMap(rows.first);
+  }
+
+  /// Transactions carrying no bank, with the sender and body of the SMS they
+  /// came from so a caller can re-resolve the account. Manual entries (no
+  /// backing message) are excluded — they have no sender to match on.
+  Future<List<UnlinkedTransaction>> unlinkedTransactions() async {
+    final rows = await _db.rawQuery('''
+      SELECT t.id AS tx_id, s.sender AS sender, s.content AS content
+      FROM ${AppDatabase.transactionsTable} t
+      JOIN $_table s ON s.id = t.message_id
+      WHERE t.bank_id IS NULL
+    ''');
+    return rows
+        .map(
+          (r) => UnlinkedTransaction(
+            transactionId: r['tx_id'] as int,
+            sender: r['sender'] as String,
+            content: r['content'] as String,
+          ),
+        )
+        .toList();
+  }
+
+  /// Attaches a transaction to a bank. Guarded on the row still being unlinked
+  /// so a concurrent write from the live pipeline is never overwritten.
+  Future<void> setTransactionBank(int transactionId, int bankId) async {
+    await _db.update(
+      AppDatabase.transactionsTable,
+      {'bank_id': bankId},
+      where: 'id = ? AND bank_id IS NULL',
+      whereArgs: [transactionId],
+    );
   }
 
   /// Writes the terminal state of a bulk-imported record, overwriting every

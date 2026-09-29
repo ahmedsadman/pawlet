@@ -76,16 +76,7 @@ class FinanceWriter {
       return false;
     }
 
-    // Bank identity is deterministic (the LLM no longer guesses it): a full
-    // card-digit match in the content wins, then the single bank whose matchers
-    // match the sender, then a partially-masked card. The sender outranks the
-    // masked card because a deposit SMS printing a masked account number can
-    // resemble one, and landing on a card would silently stop the deposit's
-    // balance from updating. Ambiguous → null (unlinked).
-    final bank =
-        matchExactCreditCardInContent(record.content, banks) ??
-        singleSenderMatch(record.sender, banks) ??
-        matchLooseCreditCardInContent(record.content, banks);
+    final bank = resolveTransactionBank(record.sender, record.content, banks);
 
     await _maybeUpdateBalance(db, bank, meta, record, currency);
 
