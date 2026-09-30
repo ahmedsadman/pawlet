@@ -176,37 +176,57 @@ class BulkImportService {
     if (gate == null) return false;
 
     final now = _clock();
-    var id = await smsRepository.insertIfNew(
-      SmsRecord(
-        sender: sender,
-        content: content,
-        timestamp: message.timestamp,
-        // Born terminal, NOT queued. `dueForDelivery` only selects `queued`,
-        // so this row is invisible to every isolate for the whole inference
-        // window that follows. A `queued` row would be claimable the moment it
-        // lands: the background-SMS and WorkManager isolates build their own
-        // ProcessingService and never see our pause(), and `dueForDelivery`
-        // orders by timestamp ASC, which puts a just-imported 2024 message at
-        // the FRONT of their next pass — sending it to the LLM and breaking
-        // the on-device-only promise this whole feature is sold on. It would
-        // also outlive a crash: an abandoned `queued` row is LLM'd forever
-        // after. `ignored` with no reason is the correct resting state for a
-        // half-imported row — the next run re-attempts exactly those.
-        status: SmsStatus.ignored,
-        updatedAt: now,
-      ),
+    // Look for an existing capture BEFORE inserting. The live listener records
+    // the carrier's timestamp and the inbox gives Android's receipt time, so
+    // the same SMS arrives here with a timestamp a second or so off the stored
+    // one and an exact-key lookup never matches. See [kSmsDedupWindow].
+    final existing = await smsRepository.findNearDuplicate(
+      sender: sender,
+      timestamp: message.timestamp,
+      content: content,
     );
-    if (id == null) {
+
+    final int id;
+    // The timestamp the row actually carries, so finance rows written below
+    // agree with the `sms_records` row they reference.
+    final int timestamp;
+    if (existing != null) {
       // Already stored. Success rows are done; queued/sending/failure rows
       // belong to the live queue, which must stay their single writer. What is
       // left — the ignored ones — is filtered by [_isReattemptable].
-      final existing = await smsRepository.findByIdentity(
-        sender: sender,
-        timestamp: message.timestamp,
-        content: content,
-      );
-      if (existing?.id == null || !_isReattemptable(existing!)) return false;
+      if (existing.id == null || !_isReattemptable(existing)) return false;
       id = existing.id!;
+      timestamp = existing.timestamp;
+    } else {
+      final inserted = await smsRepository.insertIfNew(
+        SmsRecord(
+          sender: sender,
+          content: content,
+          timestamp: message.timestamp,
+          // Born terminal, NOT queued. `dueForDelivery` only selects `queued`,
+          // so this row is invisible to every isolate for the whole inference
+          // window that follows. A `queued` row would be claimable the moment
+          // it lands: the background-SMS and WorkManager isolates build their
+          // own ProcessingService and never see our pause(), and
+          // `dueForDelivery` orders by timestamp ASC, which puts a
+          // just-imported 2024 message at the FRONT of their next pass —
+          // sending it to the LLM and breaking the on-device-only promise this
+          // whole feature is sold on. It would also outlive a crash: an
+          // abandoned `queued` row is LLM'd forever after. `ignored` with no
+          // reason is the correct resting state for a half-imported row — the
+          // next run re-attempts exactly those.
+          status: SmsStatus.ignored,
+          updatedAt: now,
+        ),
+      );
+      // Null means a row with this exact (sender, timestamp, content) landed
+      // between the lookup above and here. The window lookup already caught
+      // the live listener's copy, which carries a different clock's timestamp,
+      // so this is the narrower case of an identical key — a concurrent pass,
+      // or the same message twice in the inbox. Either way it is not ours.
+      if (inserted == null) return false;
+      id = inserted;
+      timestamp = message.timestamp;
     }
 
     final decision = await runLocalModel(
@@ -244,7 +264,7 @@ class BulkImportService {
         id: id,
         sender: sender,
         content: content,
-        timestamp: message.timestamp,
+        timestamp: timestamp,
         updatedAt: now,
       ),
       outcome: ClassificationOutcome(
