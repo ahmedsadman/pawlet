@@ -55,53 +55,6 @@ void main() {
     await db.close();
   });
 
-  test('claim is atomic; reclaimStale returns orphaned sending rows', () async {
-    final db = await openTestDb();
-    final repo = SmsRepository(db);
-    final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
-
-    expect(await repo.claim(id, 100), isTrue);
-    expect(await repo.claim(id, 200), isFalse); // already sending
-
-    await repo.reclaimStale(150); // updated_at (100) < 150 → back to queued
-    expect(await repo.claim(id, 300), isTrue);
-    await db.close();
-  });
-
-  test(
-    'oldestSendingAt returns the oldest in-flight updated_at, or null',
-    () async {
-      final db = await openTestDb();
-      final repo = SmsRepository(db);
-      final a = (await repo.insertIfNew(_sms('A', ts: 1)))!;
-      expect(await repo.oldestSendingAt(), isNull);
-
-      await repo.claim(a, 100); // queued -> sending, updated_at = 100
-      expect(await repo.oldestSendingAt(), 100);
-
-      await repo.updateStatus(a, SmsStatus.success, updatedAt: 200);
-      expect(await repo.oldestSendingAt(), isNull);
-      await db.close();
-    },
-  );
-
-  test('claim enforces a single global in-flight row', () async {
-    final db = await openTestDb();
-    final repo = SmsRepository(db);
-    final a = (await repo.insertIfNew(_sms('A', ts: 1)))!;
-    final b = (await repo.insertIfNew(_sms('B', ts: 2)))!;
-
-    // First claim wins the single slot.
-    expect(await repo.claim(a, 100), isTrue);
-    // A different queued row cannot be claimed while one is already sending.
-    expect(await repo.claim(b, 110), isFalse);
-
-    // Free the slot (A reaches a terminal state), then B can claim.
-    await repo.updateStatus(a, SmsStatus.success, updatedAt: 120);
-    expect(await repo.claim(b, 130), isTrue);
-    await db.close();
-  });
-
   test('dueForDelivery breaks timestamp ties by id ascending', () async {
     final db = await openTestDb();
     final repo = SmsRepository(db);
@@ -348,7 +301,8 @@ void main() {
     test('includes in-flight (sending) rows', () async {
       final repo = await seedQueued(1);
       final id = (await repo.queuedPage()).single.id!;
-      await repo.claim(id, 1); // queued -> sending
+      await repo.claimLocal(id, 1);
+      await repo.acquireLlmSlot(id, 2); // queued -> processing -> sending
       final page = await repo.queuedPage();
       expect(page.single.status, SmsStatus.sending);
       expect(await repo.countQueued(), 1);

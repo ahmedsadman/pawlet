@@ -531,27 +531,6 @@ class SmsRepository {
     return rows.isNotEmpty;
   }
 
-  /// Atomically claims a queued row for processing (queued -> sending), but only
-  /// when no other row is already `sending`. This enforces a single global
-  /// in-flight message across every isolate (main, background-SMS, WorkManager),
-  /// so at most one LLM call runs at a time — the per-isolate `_running` guard
-  /// alone can't serialize across isolates. Returns true only if this caller won
-  /// the claim: the row was still queued AND the single slot was free. Because
-  /// sqflite shares one native connection process-wide, concurrent claims from
-  /// different isolates serialize, so two can never both win. Orphaned `sending`
-  /// rows (a killed holder) are freed by [reclaimStale].
-  Future<bool> claim(int id, int updatedAt) async {
-    final count = await _db.update(
-      _table,
-      {'status': SmsStatus.sending.name, 'updated_at': updatedAt},
-      where:
-          'id = ? AND status = ? '
-          'AND NOT EXISTS (SELECT 1 FROM $_table WHERE status = ?)',
-      whereArgs: [id, SmsStatus.queued.name, SmsStatus.sending.name],
-    );
-    return count == 1;
-  }
-
   /// Requeues rows stuck mid-processing (orphaned by a killed isolate) whose
   /// last update predates [olderThan] (epoch ms). Covers both in-flight states:
   /// `processing` (died during on-device work) and `sending` (died holding the
