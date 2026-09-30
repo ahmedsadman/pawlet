@@ -82,6 +82,10 @@ class _FnLocal implements LocalClassifier {
 
 /// Fake on-device classifier that runs an async side effect before declining,
 /// so a test can steal the row out from under the holder mid-inference.
+///
+/// Declines with a low-confidence prediction rather than null: null is the
+/// model-unavailable state, which never sets `needs_llm`, so the flag
+/// assertion in the theft test would hold for the wrong reason.
 class _StealingLocal implements LocalClassifier {
   _StealingLocal(this.onInfer);
   final Future<void> Function() onInfer;
@@ -89,9 +93,18 @@ class _StealingLocal implements LocalClassifier {
   @override
   Future<LocalPrediction?> infer(String content) async {
     await onInfer();
-    return null;
+    return _localUnsure;
   }
 }
+
+/// A prediction the gate turns down on confidence. Distinct from a null
+/// prediction: the model ran and had an opinion, it just was not good enough —
+/// the only rejection that may be remembered in `needs_llm`.
+const _localUnsure = LocalPrediction(
+  classLabel: 'expense',
+  classConfidence: 0.4,
+  spans: [],
+);
 
 /// A confident "expense, amount 50" prediction over a `debit 50 ...` body.
 LocalPrediction _localExpense(String content) => LocalPrediction(
@@ -886,7 +899,11 @@ void main() {
   test('offline, an LLM-bound row waits without burning an attempt', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(result: _expense());
-    await service(llm, online: false).process();
+    await service(
+      llm,
+      online: false,
+      local: _FakeLocal(_localUnsure),
+    ).process();
 
     final r = await row(id);
     expect(r['status'], 'queued'); // still due, not backed off
@@ -895,6 +912,75 @@ void main() {
     expect(r['needs_llm'], 1);
     expect(llm.calls, 0);
     await db.close();
+  });
+
+  // `needs_llm` is never cleared, so it may only record a verdict the model
+  // actually reached. A model that fails to load returns null for every
+  // message; flagging on that would route the whole backlog to the paid LLM
+  // permanently, and offline those rows are skipped before the claim, so
+  // nothing would ever revisit them.
+  group('needs_llm records a decline, not a missing answer', () {
+    test('a low-confidence prediction flags the row', () async {
+      final id = await queue('CHK');
+      final llm = _FakeLlm(result: _expense());
+      final local = _FnLocal((_) => _localUnsure);
+      await service(llm, online: false, local: local).process();
+
+      expect(local.calls, 1);
+      expect((await row(id))['needs_llm'], 1);
+      await db.close();
+    });
+
+    test('an unwired model does not flag the row', () async {
+      final id = await queue('CHK');
+      final llm = _FakeLlm(result: _expense());
+      await service(llm, online: false).process();
+
+      final r = await row(id);
+      expect(r['status'], 'queued'); // still deferred, just not written off
+      expect(r['needs_llm'], 0);
+      await db.close();
+    });
+
+    test('a model that returns nothing does not flag the row', () async {
+      final id = await queue('CHK');
+      final llm = _FakeLlm(result: _expense());
+      final local = _FnLocal((_) => null);
+      await service(llm, online: false, local: local).process();
+
+      expect((await row(id))['needs_llm'], 0);
+      await db.close();
+    });
+
+    test('so a later pass retries the inference it never got', () async {
+      await queue('CHK');
+      final llm = _FakeLlm(result: _expense());
+      // Broken for the first pass, working for the second — the row must still
+      // be reachable on-device for the recovery to land.
+      var broken = true;
+      final local = _FnLocal((c) => broken ? null : _localExpense(c));
+      await service(llm, online: false, local: local).process();
+      broken = false;
+      await service(llm, online: false, local: local).process();
+
+      expect(local.calls, 2);
+      expect((await db.query('transactions')).length, 1);
+      expect(llm.calls, 0);
+      await db.close();
+    });
+
+    test('a slot-contended deferral is judged the same way', () async {
+      // Online but blocked on the single LLM slot: the deferral is identical,
+      // so the unavailable model must not be written off here either.
+      final held = await queue('CHK', content: 'held', timestamp: now - 1000);
+      await holdLlmSlot(held);
+      final id = await queue('CHK', content: 'waiting');
+      final llm = _FakeLlm(result: _expense());
+      await service(llm, local: _FnLocal((_) => null)).process();
+
+      expect((await row(id))['needs_llm'], 0);
+      await db.close();
+    });
   });
 
   test('offline, a deferral alone does not bump the data revision', () async {
@@ -917,7 +1003,9 @@ void main() {
       );
       final behind = await queue('CHK', content: content);
       final llm = _FakeLlm(result: _expense());
-      final local = _FnLocal((c) => c == content ? _localExpense(c) : null);
+      final local = _FnLocal(
+        (c) => c == content ? _localExpense(c) : _localUnsure,
+      );
       await service(llm, online: false, local: local).process();
 
       final h = await row(head);
@@ -932,7 +1020,7 @@ void main() {
   test('a flagged row skips the model on later offline passes', () async {
     await queue('CHK');
     final llm = _FakeLlm(result: _expense());
-    final local = _FnLocal((_) => null);
+    final local = _FnLocal((_) => _localUnsure);
     for (var i = 0; i < 3; i++) {
       await service(llm, online: false, local: local).process();
     }
@@ -944,7 +1032,7 @@ void main() {
   test('a flagged row goes straight to the LLM once online', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(result: _expense());
-    final local = _FnLocal((_) => null);
+    final local = _FnLocal((_) => _localUnsure);
     await service(llm, online: false, local: local).process();
     await service(llm, local: local).process();
 
@@ -971,7 +1059,11 @@ void main() {
   test('a flagged row whose bank was deleted is still gated out', () async {
     final id = await queue('CHK');
     final llm = _FakeLlm(result: _expense());
-    await service(llm, online: false).process();
+    await service(
+      llm,
+      online: false,
+      local: _FakeLocal(_localUnsure),
+    ).process();
     expect((await row(id))['needs_llm'], 1);
 
     for (final b in await banks.list()) {
@@ -991,7 +1083,7 @@ void main() {
     await holdLlmSlot(held);
     final id = await queue('CHK', content: 'waiting');
     final llm = _FakeLlm(result: _expense());
-    await service(llm).process();
+    await service(llm, local: _FakeLocal(_localUnsure)).process();
 
     final r = await row(id);
     expect(r['status'], 'queued');

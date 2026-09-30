@@ -45,6 +45,13 @@ enum IgnoreReason {
   /// LLM, whereas the import is on-device only and drops the message instead.
   localLowConfidence('local_low_confidence'),
 
+  /// The on-device model never produced a prediction (it failed to load, or the
+  /// run itself failed), so nothing judged this message. Also import-only, and
+  /// kept apart from [localLowConfidence] because the two call for opposite
+  /// diagnoses: a handful of these is a hard message, a whole inbox of them is
+  /// a broken model.
+  localUnavailable('local_unavailable'),
+
   /// The LLM ran and classified it as not financial.
   llmNone('llm_none'),
 

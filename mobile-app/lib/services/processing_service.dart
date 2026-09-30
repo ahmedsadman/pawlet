@@ -22,8 +22,9 @@ Future<Decimal?> _noRate() async => null;
 /// The first two touch no network, so the pass runs offline and still drains
 /// everything they can decide. A record that reaches the third layer while
 /// offline, or while another isolate holds the single global LLM slot, is left
-/// `queued` and still due — unchanged apart from the `needs_llm` flag, which
-/// tells later passes to skip the inference that already declined it.
+/// `queued` and still due — unchanged apart from the `needs_llm` flag, which is
+/// set only when the model actually ran and declined, and tells later passes to
+/// skip an inference whose answer is already known.
 ///
 /// Failures are rescheduled with a capped-exponential backoff persisted in
 /// `next_attempt_at`; the existing triggers (foreground resume, incoming-SMS
@@ -236,20 +237,31 @@ class ProcessingService {
       // `_running` stays true for this isolate's lifetime, and `_rescheduleNext`
       // never fires. The isolate's drain is wedged until app restart; other
       // isolates still drain.
+
+      // Seeded from the flag rather than false: an already-flagged row skips
+      // the inference below, and a second deferral must not read as "the model
+      // never ran" for a row on which it demonstrably did.
+      var declined = record.needsLlm;
       if (!record.needsLlm) {
         final local = await classifier.classifyLocal(
           content: record.content,
           currency: cur,
           usdRate: usdRate,
         );
-        if (local != null) return _finish(record, local, banks, cur, heldSince);
+        final localOutcome = local.outcome;
+        if (localOutcome != null) {
+          return _finish(record, localOutcome, banks, cur, heldSince);
+        }
+        declined = local.declined;
       }
 
       // Layer 3.
-      if (!await isOnline()) return _deferForLlm(record, heldSince);
+      if (!await isOnline()) {
+        return _deferForLlm(record, heldSince, declined: declined);
+      }
       final slotAt = _clock();
       if (!await smsRepository.acquireLlmSlot(id, slotAt)) {
-        return _deferForLlm(record, heldSince);
+        return _deferForLlm(record, heldSince, declined: declined);
       }
       heldSince = slotAt; // the promotion rewrote `updated_at`
 
@@ -361,15 +373,26 @@ class ProcessingService {
     return statusWritten || label != 'ignored';
   }
 
-  /// Releases a claimed row back to the queue, unchanged and still due, flagged
-  /// so later passes skip the on-device inference that already declined it.
+  /// Releases a claimed row back to the queue, unchanged and still due.
+  ///
+  /// [declined] is flagged onto the row so later passes skip the on-device
+  /// inference that already turned it down. It is false when the model never
+  /// produced a prediction — there is no verdict to remember, and stamping the
+  /// permanent flag on a model that failed to load would send every message
+  /// deferred during that pass to the paid LLM forever. Retrying inference next
+  /// pass costs almost nothing: a model that failed to load stays failed for
+  /// the isolate and returns immediately.
   ///
   /// Waiting for connectivity, or for the single LLM slot, is not a failed
   /// attempt: `attempts` and `next_attempt_at` are preserved, so a message that
   /// arrives mid-flight does not burn its retry budget before anyone has tried
   /// it. Always returns false — the pass decided nothing about this row.
-  Future<bool> _deferForLlm(SmsRecord record, int heldSince) async {
-    await smsRepository.releaseLocal(record.id!, heldSince, needsLlm: true);
+  Future<bool> _deferForLlm(
+    SmsRecord record,
+    int heldSince, {
+    required bool declined,
+  }) async {
+    await smsRepository.releaseLocal(record.id!, heldSince, needsLlm: declined);
     return false;
   }
 

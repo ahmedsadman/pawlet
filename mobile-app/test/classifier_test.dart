@@ -47,18 +47,32 @@ LocalSpan _lspan(String ent, String text, double conf, int start) => LocalSpan(
 
 void main() {
   group('classifyLocal', () {
-    test('returns null when no model is wired', () async {
+    test('no model wired: no outcome, and NOT a decline', () async {
       final llm = _FakeLlm(const ClassifyResult.none());
       final classifier = Classifier(llm);
-      final outcome = await classifier.classifyLocal(
+      final local = await classifier.classifyLocal(
         content: 'debit 50 BDT',
         currency: 'BDT',
       );
-      expect(outcome, isNull);
+      expect(local.outcome, isNull);
+      // The caller stamps a permanent flag on a decline; nothing judged this.
+      expect(local.declined, isFalse);
       expect(llm.calls, 0);
     });
 
-    test('returns null for a low-confidence prediction', () async {
+    test('a model that returns nothing is not a decline either', () async {
+      final llm = _FakeLlm(const ClassifyResult.none());
+      final classifier = Classifier(llm, local: _FakeLocal(null));
+      final local = await classifier.classifyLocal(
+        content: 'debit 50 BDT',
+        currency: 'BDT',
+      );
+      expect(local.outcome, isNull);
+      expect(local.declined, isFalse);
+      expect(llm.calls, 0);
+    });
+
+    test('a low-confidence prediction is a decline', () async {
       final llm = _FakeLlm(const ClassifyResult.none());
       final local = _FakeLocal(
         const LocalPrediction(
@@ -68,11 +82,12 @@ void main() {
         ),
       );
       final classifier = Classifier(llm, local: local);
-      final outcome = await classifier.classifyLocal(
+      final result = await classifier.classifyLocal(
         content: 'debit 50 BDT',
         currency: 'BDT',
       );
-      expect(outcome, isNull);
+      expect(result.outcome, isNull);
+      expect(result.declined, isTrue);
       expect(llm.calls, 0);
     });
 
@@ -89,11 +104,13 @@ void main() {
           ),
         );
         final classifier = Classifier(llm, local: local);
-        final outcome = await classifier.classifyLocal(
+        final result = await classifier.classifyLocal(
           content: content,
           currency: 'BDT',
         );
+        final outcome = result.outcome;
         expect(outcome, isNotNull);
+        expect(result.declined, isFalse);
         expect(outcome!.parseSource, ParseSource.local);
         expect(outcome.category, SmsCategory.transaction);
         expect(outcome.transaction!.amount, '50');
@@ -111,10 +128,11 @@ void main() {
         ),
       );
       final classifier = Classifier(llm, local: local);
-      final outcome = await classifier.classifyLocal(
+      final result = await classifier.classifyLocal(
         content: 'Your OTP is 1234',
         currency: 'BDT',
       );
+      final outcome = result.outcome;
       expect(outcome, isNotNull);
       expect(outcome!.category, SmsCategory.none);
       expect(outcome.parseSource, ParseSource.local);

@@ -26,7 +26,7 @@ class _FakeInbox implements InboxReader {
 }
 
 /// Canned predictions keyed by message body; an absent key means "the model had
-/// nothing for this message" (null), which the import treats as low confidence.
+/// nothing for this message" (null), i.e. the model-unavailable state.
 class _FakeLocal implements LocalClassifier {
   _FakeLocal(this.byContent);
   final Map<String, LocalPrediction> byContent;
@@ -226,6 +226,23 @@ void main() {
     expect(await count('transactions'), 0);
     // A bill/transaction was never written, so no account was invented either.
     expect(await count('banks'), 0);
+  });
+
+  test('a message the model never read is tagged as such', () async {
+    // Separated from local_low_confidence so a model that failed to load —
+    // which ignores the whole inbox — is diagnosable after the fact instead of
+    // looking like thousands of individually hard messages.
+    const body = 'Your EBL balance may have changed';
+    final inbox = _FakeInbox([_msg('EBL', body, 1000)]);
+    final local = _FakeLocal(const {}); // infers null for everything
+
+    final result = await service(inbox, local).run();
+
+    expect(result.saved, 0);
+    final row = (await db.query('sms_records')).single;
+    expect(row['status'], 'ignored');
+    expect(row['ignore_reason'], 'local_unavailable');
+    expect(row['next_attempt_at'], isNull);
   });
 
   test('never leaves a row the LLM queue could claim', () async {
