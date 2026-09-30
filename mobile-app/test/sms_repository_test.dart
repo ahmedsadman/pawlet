@@ -736,6 +736,34 @@ void main() {
     },
   );
 
+  test(
+    'a reclaimed row rejects its old holder before anyone re-claims it',
+    () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+      await repo.claimLocal(id, 100);
+      // reclaimStale writes only `status`, so updated_at stays 100 — the stale
+      // holder's token still matches and `status` is the sole guard here.
+      await repo.reclaimStale(200);
+
+      expect(
+        await repo.updateStatus(
+          id,
+          SmsStatus.success,
+          updatedAt: 400,
+          heldSince: 100,
+        ),
+        isFalse,
+      );
+      expect(await repo.releaseLocal(id, 100), isFalse);
+
+      final row = (await repo.dueForDelivery(500)).single;
+      expect(row.status, SmsStatus.queued);
+      await db.close();
+    },
+  );
+
   group('pruneIfDue', () {
     Future<int> addIgnored(
       SmsRepository repo,

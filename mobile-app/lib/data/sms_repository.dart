@@ -362,13 +362,17 @@ class SmsRepository {
 
   /// Writes a status transition. Returns whether a row was actually updated.
   ///
-  /// Pass [heldSince] — the `updated_at` this caller stamped when it claimed
-  /// the row (or acquired the LLM slot) — to make the write conditional on
-  /// still holding the claim. A frozen holder can have its row reclaimed by
-  /// [reclaimStale] and re-claimed by another isolate; without this guard its
-  /// late write lands on the new holder's row. The dangerous case is a release
-  /// writing `queued` over a live `sending` row, which frees the global LLM
-  /// slot mid-call and admits a second concurrent request.
+  /// Pass [heldSince] — the `updated_at` this caller last wrote to the row —
+  /// to make the write conditional on still holding the claim. A frozen holder
+  /// can have its row reclaimed by [reclaimStale] and re-claimed by another
+  /// isolate; without this guard its late write lands on the new holder's row.
+  /// The dangerous case is a release writing `queued` over a live `sending`
+  /// row, which frees the global LLM slot mid-call and admits a second
+  /// concurrent request.
+  ///
+  /// Because [acquireLlmSlot] and each guarded [updateStatus] rebase
+  /// `updated_at`, a caller making successive guarded writes must carry the new
+  /// value forward.
   ///
   /// Omit it only for writes on a row this caller does not hold (seeding a
   /// queued row, a manual requeue).
@@ -469,7 +473,8 @@ class SmsRepository {
     return count == 1;
   }
 
-  /// Returns a row this caller holds to the queue, unchanged and still due.
+  /// Returns a row this caller holds to the queue, unchanged apart from the
+  /// `needs_llm` deferral flag.
   ///
   /// The counterpart to a failed [acquireLlmSlot]: the row could not get the
   /// single LLM slot, so it goes back rather than parking in `processing`
