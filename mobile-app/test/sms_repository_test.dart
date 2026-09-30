@@ -414,6 +414,25 @@ void main() {
     await db.close();
   });
 
+  test('claimLocal refuses a row that is not due yet', () async {
+    // Two isolates can walk the same `dueForDelivery` snapshot. If one backs a
+    // row off after a rate-limit, the other's stale snapshot must not re-claim
+    // it and hit the provider again before the backoff elapses.
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    await repo.updateStatus(
+      id,
+      SmsStatus.queued,
+      updatedAt: 100,
+      nextAttemptAt: 500,
+    );
+
+    expect(await repo.claimLocal(id, 200), isFalse); // backoff not elapsed
+    expect(await repo.claimLocal(id, 500), isTrue); // due exactly now
+    await db.close();
+  });
+
   test('claimLocal does NOT block on another row being in flight', () async {
     final db = await openTestDb();
     final repo = SmsRepository(db);
@@ -732,6 +751,33 @@ void main() {
       )).first;
       expect(row['status'], SmsStatus.processing.name);
       expect(row['updated_at'], 300);
+      await db.close();
+    },
+  );
+
+  test(
+    'stillHeld tracks the fencing token through both in-flight states',
+    () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+      expect(await repo.stillHeld(id, 100), isFalse); // queued, never claimed
+
+      await repo.claimLocal(id, 100);
+      expect(await repo.stillHeld(id, 100), isTrue);
+      expect(
+        await repo.stillHeld(id, 90),
+        isFalse,
+      ); // some other holder's token
+
+      await repo.acquireLlmSlot(id, 110); // rebases the token
+      expect(await repo.stillHeld(id, 100), isFalse);
+      expect(await repo.stillHeld(id, 110), isTrue);
+
+      // Reclaimed back to `queued` leaves updated_at alone, so the status half of
+      // the guard is what rejects the old holder here.
+      await repo.reclaimStale(200);
+      expect(await repo.stillHeld(id, 110), isFalse);
       await db.close();
     },
   );

@@ -430,8 +430,8 @@ class SmsRepository {
     return count == 1;
   }
 
-  /// Atomically takes a queued row for on-device work (queued -> processing).
-  /// Returns true only if this caller won it.
+  /// Atomically takes a queued row for on-device work (queued -> processing) at
+  /// time [updatedAt]. Returns true only if this caller won it.
   ///
   /// Per-row mutual exclusion ONLY: unlike the LLM slot, any number of rows may
   /// be `processing` at once across isolates. Local classification makes no
@@ -441,12 +441,20 @@ class SmsRepository {
   /// connection process-wide, concurrent claims on the SAME row serialize, so
   /// two callers can never both win. Orphaned rows (a killed holder) are freed
   /// by [reclaimStale].
+  ///
+  /// Carries the same `next_attempt_at` predicate as [dueForDelivery] because a
+  /// caller walks a snapshot of that query and the snapshot goes stale: while
+  /// one isolate is mid-pass, another can back a row off to a future retry, and
+  /// without the predicate the first isolate's snapshot would re-claim it at
+  /// once and hammer the provider it was just rate-limited by.
   Future<bool> claimLocal(int id, int updatedAt) async {
     final count = await _db.update(
       _table,
       {'status': SmsStatus.processing.name, 'updated_at': updatedAt},
-      where: 'id = ? AND status = ?',
-      whereArgs: [id, SmsStatus.queued.name],
+      where:
+          'id = ? AND status = ? '
+          'AND (next_attempt_at IS NULL OR next_attempt_at <= ?)',
+      whereArgs: [id, SmsStatus.queued.name, updatedAt],
     );
     return count == 1;
   }
@@ -493,6 +501,28 @@ class SmsRepository {
       whereArgs: [id, SmsStatus.processing.name, heldSince],
     );
     return count == 1;
+  }
+
+  /// Whether this caller still holds [id] under the [heldSince] fencing token.
+  ///
+  /// Checked immediately before an irreversible write. The long awaits — model
+  /// inference, the LLM round trip — all happen before that point, so a claim
+  /// confirmed here is still held microseconds later when the write lands,
+  /// against a reclaim window measured in minutes.
+  Future<bool> stillHeld(int id, int heldSince) async {
+    final rows = await _db.query(
+      _table,
+      columns: const ['id'],
+      where: 'id = ? AND status IN (?, ?) AND updated_at = ?',
+      whereArgs: [
+        id,
+        SmsStatus.processing.name,
+        SmsStatus.sending.name,
+        heldSince,
+      ],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
   }
 
   /// Atomically claims a queued row for processing (queued -> sending), but only
