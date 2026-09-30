@@ -506,9 +506,15 @@ class SmsRepository {
   /// Whether this caller still holds [id] under the [heldSince] fencing token.
   ///
   /// Checked immediately before an irreversible write. The long awaits — model
-  /// inference, the LLM round trip — all happen before that point, so a claim
-  /// confirmed here is still held microseconds later when the write lands,
-  /// against a reclaim window measured in minutes.
+  /// inference, the LLM round trip — all happen before that point, narrowing the
+  /// claim-loss window to the duration of FinanceWriter.apply (typically a few
+  /// milliseconds of database work). The window is not fully closed: losing the
+  /// claim during apply, or apply committing followed by a guarded status-write
+  /// rejection, both leave a finance row on a row the holder no longer owns —
+  /// the retry's apply then dedupes it to ignored/noRecord. Closing the window
+  /// would mean moving the status write into apply's transaction; deliberately
+  /// not done, as the residual requires the holder frozen past staleAfter AND a
+  /// concurrent reclaim landing inside apply's few milliseconds.
   Future<bool> stillHeld(int id, int heldSince) async {
     final rows = await _db.query(
       _table,
