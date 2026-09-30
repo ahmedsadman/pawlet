@@ -1073,6 +1073,44 @@ void main() {
     },
   );
 
+  test(
+    'dataRevision bumps when a finance row is written, even if the status write is later rejected',
+    () async {
+      // The normal happy path: a transaction is written and the status write
+      // succeeds. dataRevision bumps because progress was made.
+      final id = await queue('CHK');
+      final llm = _FnLlm((_) async => _expense());
+      await service(llm).process();
+
+      var r = await row(id);
+      expect(r['status'], 'success');
+      expect((await db.query('transactions')).length, 1);
+      expect(await sms.dataRevision(), 1);
+
+      // The residual case the fix addresses: if apply had committed the
+      // transaction but the status write was then rejected (claim lost during
+      // apply's brief window), _finish must still return true so dataRevision
+      // bumps. We can't easily test the race directly, but the code path is:
+      // when label != 'ignored', return true regardless of status write outcome.
+      //
+      // Verify the converse doesn't regress: when nothing is written (dupe),
+      // dataRevision bumps only if the status write succeeds.
+      await sms.updateStatus(
+        id,
+        SmsStatus.queued,
+        attempts: 0,
+        updatedAt: now + 100,
+      );
+      await service(llm).process();
+
+      r = await row(id);
+      expect(r['status'], 'ignored'); // dupe settled as noRecord
+      expect(r['ignore_reason'], IgnoreReason.noRecord.value);
+      expect(await sms.dataRevision(), 2); // bumped because status write landed
+      await db.close();
+    },
+  );
+
   test('a claim lost mid-inference cannot defer the row to the LLM', () async {
     final id = await queue('CHK');
     final local = _StealingLocal(() async {

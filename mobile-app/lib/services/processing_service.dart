@@ -208,7 +208,7 @@ class ProcessingService {
       // Layer 1. Re-run even for a `needs_llm` row: the user may since have
       // deleted the bank that let it through.
       if (gateBanks(record.sender, record.content, banks).isEmpty) {
-        await smsRepository.updateStatus(
+        return smsRepository.updateStatus(
           id,
           SmsStatus.ignored,
           attempts: record.attempts,
@@ -218,7 +218,6 @@ class ProcessingService {
           processedAt: _clock(),
           heldSince: heldSince,
         );
-        return true;
       }
 
       // Layer 2. Skipped once flagged: the model has already seen this exact
@@ -231,9 +230,12 @@ class ProcessingService {
       // stall would silently downgrade every later message in the process to
       // LLM-only. Treating the timeout as a decline would also set `needs_llm`,
       // which is never cleared, permanently sending a free message to a paid
-      // call. A run that overruns [staleAfter] is handled without any of that:
-      // its row is reclaimed, and the `heldSince` token makes its late writes
-      // no-ops rather than corruption.
+      // call. A run that overruns [staleAfter] is handled safely for the ROW —
+      // reclaimed, and the `heldSince` token makes late writes no-ops — but not
+      // for the PASS: `infer` never returns, so `process()` never returns,
+      // `_running` stays true for this isolate's lifetime, and `_rescheduleNext`
+      // never fires. The isolate's drain is wedged until app restart; other
+      // isolates still drain.
       if (!record.needsLlm) {
         final local = await classifier.classifyLocal(
           content: record.content,
@@ -260,7 +262,7 @@ class ProcessingService {
     } on LlmException catch (e) {
       if (!e.retryable) {
         // Fatal (bad key / bad request): fail immediately with a clear error.
-        await smsRepository.updateStatus(
+        return smsRepository.updateStatus(
           id,
           SmsStatus.failure,
           attempts: record.attempts + 1,
@@ -270,7 +272,6 @@ class ProcessingService {
           nextAttemptAt: null,
           heldSince: heldSince,
         );
-        return true;
       }
       return _reschedule(
         record,
@@ -286,8 +287,8 @@ class ProcessingService {
   }
 
   /// Writes the finance record for a decided [outcome] and closes the row out.
-  /// Returns whether the terminal status write landed; false means the claim
-  /// was lost and this pass decided nothing about the row.
+  /// Returns whether persistent state changed: true when the terminal status
+  /// write landed OR when FinanceWriter.apply actually wrote a finance row.
   ///
   /// The claim is re-checked BEFORE [FinanceWriter.apply], not left to the
   /// guarded status write alone, because `apply` is irreversible: it inserts
@@ -341,7 +342,7 @@ class ProcessingService {
         heldSince: heldSince,
       );
     }
-    return smsRepository.updateStatus(
+    final statusWritten = await smsRepository.updateStatus(
       id,
       SmsStatus.success,
       attempts: record.attempts,
@@ -352,6 +353,12 @@ class ProcessingService {
       processedAt: _clock(),
       heldSince: heldSince,
     );
+    // Count as progress when either the status write landed OR a finance row
+    // was committed: a written transaction/bill is persistent state change even
+    // if the status write was rejected, and must trigger the dataRevision bump
+    // so the UI re-reads and shows the new row. The retry's apply dedupes it to
+    // ignored/noRecord, so the SMS row eventually settles to match.
+    return statusWritten || label != 'ignored';
   }
 
   /// Releases a claimed row back to the queue, unchanged and still due, flagged
@@ -386,6 +393,8 @@ class ProcessingService {
     // Uses the guarded [SmsRepository.updateStatus] rather than
     // [SmsRepository.releaseLocal] because the row may be in `sending` here.
     if (!await isOnline()) {
+      // Offline release: still returns false (not progress) even if the status
+      // write lands — the row is unchanged, still due, exactly as it was.
       await smsRepository.updateStatus(
         id,
         SmsStatus.queued,
@@ -399,7 +408,7 @@ class ProcessingService {
 
     final attempts = record.attempts + 1;
     if (attempts >= maxAttempts) {
-      await smsRepository.updateStatus(
+      return smsRepository.updateStatus(
         id,
         SmsStatus.failure,
         attempts: attempts,
@@ -409,7 +418,6 @@ class ProcessingService {
         nextAttemptAt: null,
         heldSince: heldSince,
       );
-      return true;
     }
 
     // Fold any server hints into a single clamped floor, then take the max with
@@ -428,7 +436,7 @@ class ProcessingService {
     final backoff = _backoff(attempts);
     final delay = hint > backoff ? hint : backoff;
 
-    await smsRepository.updateStatus(
+    return smsRepository.updateStatus(
       id,
       SmsStatus.queued,
       attempts: attempts,
@@ -437,7 +445,6 @@ class ProcessingService {
       nextAttemptAt: now + delay.inMilliseconds,
       heldSince: heldSince,
     );
-    return true;
   }
 
   /// Computes the next background catch-up and hands it to [reschedule]: a delay
