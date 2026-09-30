@@ -244,7 +244,6 @@ class BulkImportService {
         category: result.category,
         transaction: result.transaction,
         bill: result.bill,
-        llmInvoked: false,
         parseSource: ParseSource.local,
       ),
       banks: banks,

@@ -7,16 +7,14 @@ import 'local_classifier.dart';
 import 'local_gate.dart';
 import 'sender_matcher.dart';
 
-/// The result of running an SMS through the pipeline: the decided category, the
-/// extracted metadata, and whether an LLM call was actually made ([llmInvoked]
-/// is false when Layer 1 gated the message out — used for cost/telemetry and
-/// tests).
+/// The result of running an SMS through the pipeline: the decided category and
+/// the extracted metadata. [parseSource] identifies which engine produced the
+/// outcome, or is null when the Layer-1 gate rejected it before any model ran.
 class ClassificationOutcome {
   const ClassificationOutcome({
     required this.category,
     this.transaction,
     this.bill,
-    required this.llmInvoked,
     this.parseSource,
   });
 
@@ -24,22 +22,21 @@ class ClassificationOutcome {
     : category = SmsCategory.none,
       transaction = null,
       bill = null,
-      llmInvoked = false,
       parseSource = null;
 
   final SmsCategory category;
   final MetadataResult? transaction;
   final BillMetadataResult? bill;
-  final bool llmInvoked;
 
   /// Which engine produced this outcome, or null when the Layer-1 gate rejected
   /// it before any model ran.
   final ParseSource? parseSource;
 }
 
-/// Orchestrates the pipeline: Layer-1 sender/card gate, then (only if it passes)
-/// the single fused classify+extract LLM call. Throws [LlmException] straight
-/// through so the processing queue can apply its retry/backoff policy.
+/// Orchestrates the classification pipeline in three parts: Layer-1 sender/card
+/// gate (now at the caller), on-device model ([classifyLocal]), and cloud LLM
+/// ([classifyRemote]). The combined [classify] method is retained for the
+/// processing queue until it is reworked to drive the two halves itself.
 class Classifier {
   // ignore: prefer_initializing_formals — a named param can't be private (_local).
   Classifier(this._llm, {LocalClassifier? local}) : _local = local;
@@ -47,6 +44,63 @@ class Classifier {
   final LlmProvider _llm;
   final LocalClassifier? _local;
 
+  /// The on-device pass. Returns null when the model is unavailable or not
+  /// confident enough — the caller must then either run [classifyRemote] or, if
+  /// it cannot reach the network, defer the message.
+  ///
+  /// Makes no network call under any circumstance, so it is safe to run while
+  /// offline. Deliberately does NOT apply the Layer-1 gate: a gate miss is a
+  /// terminal queue state rather than a classification, and only the caller can
+  /// tell it apart from "needs the LLM".
+  Future<ClassificationOutcome?> classifyLocal({
+    required String content,
+    required String currency,
+    Decimal? usdRate,
+  }) async {
+    final decision = await runLocalModel(
+      content,
+      local: _local,
+      currency: currency,
+      usdRate: usdRate,
+    );
+
+    if (!decision.accepted) return null;
+
+    final r = decision.result!;
+    return ClassificationOutcome(
+      category: r.category,
+      transaction: r.transaction,
+      bill: r.bill,
+      parseSource: ParseSource.local,
+    );
+  }
+
+  /// The single fused classify+extract LLM call. Throws [LlmException] straight
+  /// through so the caller can apply its retry/backoff policy.
+  Future<ClassificationOutcome> classifyRemote({
+    required String sender,
+    required String content,
+    required String currency,
+  }) async {
+    final result = await _llm.classifyAndExtract(
+      content: content,
+      sender: sender,
+      currency: currency,
+    );
+
+    return ClassificationOutcome(
+      category: result.category,
+      transaction: result.transaction,
+      bill: result.bill,
+      parseSource: ParseSource.llm,
+    );
+  }
+
+  /// Gate, then on-device, then the LLM — the whole pipeline in one call.
+  ///
+  /// Retained for the processing queue until it is reworked to drive the two
+  /// halves itself, which is what lets it defer an LLM-bound message while
+  /// offline instead of blocking on one.
   Future<ClassificationOutcome> classify({
     required String sender,
     required String content,
@@ -58,42 +112,16 @@ class Classifier {
       return const ClassificationOutcome.ignored();
     }
 
-    // On-device first: skip the network entirely when the model is confident.
-    final local = _local;
-    if (local != null) {
-      final prediction = await local.infer(content);
-      if (prediction != null) {
-        final decision = decideLocal(
-          prediction,
-          currency: currency,
-          content: content,
-          usdToBdtRate: usdRate,
-        );
-        if (decision.accepted) {
-          final r = decision.result!;
-          return ClassificationOutcome(
-            category: r.category,
-            transaction: r.transaction,
-            bill: r.bill,
-            llmInvoked: false,
-            parseSource: ParseSource.local,
-          );
-        }
-      }
+    final localOutcome = await classifyLocal(
+      content: content,
+      currency: currency,
+      usdRate: usdRate,
+    );
+
+    if (localOutcome != null) {
+      return localOutcome;
     }
 
-    final result = await _llm.classifyAndExtract(
-      content: content,
-      sender: sender,
-      currency: currency,
-    );
-
-    return ClassificationOutcome(
-      category: result.category,
-      transaction: result.transaction,
-      bill: result.bill,
-      llmInvoked: true,
-      parseSource: ParseSource.llm,
-    );
+    return classifyRemote(sender: sender, content: content, currency: currency);
   }
 }

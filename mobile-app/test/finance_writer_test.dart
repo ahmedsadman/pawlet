@@ -30,12 +30,12 @@ void main() {
   ClassificationOutcome tx(MetadataResult m) => ClassificationOutcome(
     category: SmsCategory.transaction,
     transaction: m,
-    llmInvoked: true,
+    parseSource: ParseSource.llm,
   );
   ClassificationOutcome bill(BillMetadataResult b) => ClassificationOutcome(
     category: SmsCategory.bill,
     bill: b,
-    llmInvoked: true,
+    parseSource: ParseSource.llm,
   );
 
   group('transactions', () {
