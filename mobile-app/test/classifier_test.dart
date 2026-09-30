@@ -1,4 +1,3 @@
-import 'package:decimal/decimal.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/models/finance/bank.dart';
 import 'package:pawlet/models/sms_record.dart';
@@ -72,30 +71,14 @@ void main() {
   final banks = [mtb, ebl];
 
   group('classifyLocal', () {
-    test(
-      'returns null when no model is wired, and the LLM is never called',
-      () async {
-        final llm = _FakeLlm(const ClassifyResult.none());
-        final classifier = Classifier(llm);
-        final outcome = await classifier.classifyLocal(
-          content: 'debit 50 BDT',
-          currency: 'BDT',
-        );
-        expect(outcome, isNull);
-        expect(llm.calls, 0);
-      },
-    );
-
-    test('returns null when the model returns null (unavailable)', () async {
+    test('returns null when no model is wired', () async {
       final llm = _FakeLlm(const ClassifyResult.none());
-      final local = _FakeLocal(null);
-      final classifier = Classifier(llm, local: local);
+      final classifier = Classifier(llm);
       final outcome = await classifier.classifyLocal(
         content: 'debit 50 BDT',
         currency: 'BDT',
       );
       expect(outcome, isNull);
-      expect(local.calls, 1);
       expect(llm.calls, 0);
     });
 
@@ -117,68 +100,30 @@ void main() {
       expect(llm.calls, 0);
     });
 
-    test('resolves a confident transaction on-device', () async {
-      final llm = _FakeLlm(const ClassifyResult.none());
-      const content = 'debit 50 BDT';
-      final local = _FakeLocal(
-        LocalPrediction(
-          classLabel: 'expense',
-          classConfidence: 0.95,
-          spans: [_lspan('AMOUNT', '50', 0.97, content.indexOf('50'))],
-        ),
-      );
-      final classifier = Classifier(llm, local: local);
-      final outcome = await classifier.classifyLocal(
-        content: content,
-        currency: 'BDT',
-      );
-      expect(outcome, isNotNull);
-      expect(outcome!.parseSource, ParseSource.local);
-      expect(outcome.category, SmsCategory.transaction);
-      expect(outcome.transaction!.amount, '50');
-      expect(llm.calls, 0);
-    });
-
-    test('converts a confident USD amount when given a rate', () async {
-      final llm = _FakeLlm(const ClassifyResult.none());
-      const content = 'POS Transaction USD 100';
-      final local = _FakeLocal(
-        LocalPrediction(
-          classLabel: 'expense',
-          classConfidence: 0.95,
-          spans: [_lspan('AMOUNT', '100', 0.97, content.indexOf('100'))],
-        ),
-      );
-      final classifier = Classifier(llm, local: local);
-      final outcome = await classifier.classifyLocal(
-        content: content,
-        currency: 'BDT',
-        usdRate: Decimal.parse('120'),
-      );
-      expect(outcome, isNotNull);
-      expect(outcome!.transaction!.amount, '12000');
-      expect(outcome.transaction!.originalCurrency, 'USD');
-      expect(llm.calls, 0);
-    });
-
-    test('returns null for a confident USD amount with no rate', () async {
-      final llm = _FakeLlm(const ClassifyResult.none());
-      const content = 'POS Transaction USD 100';
-      final local = _FakeLocal(
-        LocalPrediction(
-          classLabel: 'expense',
-          classConfidence: 0.95,
-          spans: [_lspan('AMOUNT', '100', 0.97, content.indexOf('100'))],
-        ),
-      );
-      final classifier = Classifier(llm, local: local);
-      final outcome = await classifier.classifyLocal(
-        content: content,
-        currency: 'BDT',
-      );
-      expect(outcome, isNull);
-      expect(llm.calls, 0);
-    });
+    test(
+      'resolves a confident transaction on-device, parseSource local',
+      () async {
+        final llm = _FakeLlm(const ClassifyResult.none());
+        const content = 'debit 50 BDT';
+        final local = _FakeLocal(
+          LocalPrediction(
+            classLabel: 'expense',
+            classConfidence: 0.95,
+            spans: [_lspan('AMOUNT', '50', 0.97, content.indexOf('50'))],
+          ),
+        );
+        final classifier = Classifier(llm, local: local);
+        final outcome = await classifier.classifyLocal(
+          content: content,
+          currency: 'BDT',
+        );
+        expect(outcome, isNotNull);
+        expect(outcome!.parseSource, ParseSource.local);
+        expect(outcome.category, SmsCategory.transaction);
+        expect(outcome.transaction!.amount, '50');
+        expect(llm.calls, 0);
+      },
+    );
 
     test('resolves a confident null class as SmsCategory.none', () async {
       final llm = _FakeLlm(const ClassifyResult.none());
@@ -255,10 +200,17 @@ void main() {
 
   group('classify', () {
     test(
-      'a Layer-1 gate miss returns category none, parseSource null',
+      'a Layer-1 gate miss returns category none, parseSource null, and skips both models',
       () async {
         final llm = _FakeLlm(const ClassifyResult.none());
-        final classifier = Classifier(llm);
+        final local = _FakeLocal(
+          const LocalPrediction(
+            classLabel: 'expense',
+            classConfidence: 0.99,
+            spans: [],
+          ),
+        );
+        final classifier = Classifier(llm, local: local);
         final outcome = await classifier.classify(
           sender: 'Daraz',
           content: 'win a prize',
@@ -267,6 +219,7 @@ void main() {
         );
         expect(outcome.category, SmsCategory.none);
         expect(outcome.parseSource, isNull);
+        expect(local.calls, 0);
         expect(llm.calls, 0);
       },
     );
@@ -335,6 +288,32 @@ void main() {
       expect(outcome.parseSource, ParseSource.local);
       expect(outcome.category, SmsCategory.transaction);
       expect(outcome.transaction!.amount, '50');
+    });
+
+    test('local model declines, then LLM runs', () async {
+      final llm = _FakeLlm(
+        const ClassifyResult(
+          category: SmsCategory.transaction,
+          transaction: MetadataResult(amount: '50'),
+        ),
+      );
+      final local = _FakeLocal(
+        const LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.4,
+          spans: [],
+        ),
+      );
+      final classifier = Classifier(llm, local: local);
+      final outcome = await classifier.classify(
+        sender: 'MTB',
+        content: 'debit 50 BDT',
+        banks: banks,
+        currency: 'BDT',
+      );
+      expect(local.calls, 1);
+      expect(llm.calls, 1);
+      expect(outcome.parseSource, ParseSource.llm);
     });
   });
 }

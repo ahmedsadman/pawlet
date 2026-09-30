@@ -8,8 +8,7 @@ import 'local_gate.dart';
 import 'sender_matcher.dart';
 
 /// The result of running an SMS through the pipeline: the decided category and
-/// the extracted metadata. [parseSource] identifies which engine produced the
-/// outcome, or is null when the Layer-1 gate rejected it before any model ran.
+/// the extracted metadata.
 class ClassificationOutcome {
   const ClassificationOutcome({
     required this.category,
@@ -34,9 +33,12 @@ class ClassificationOutcome {
 }
 
 /// Orchestrates the classification pipeline in three parts: Layer-1 sender/card
-/// gate (now at the caller), on-device model ([classifyLocal]), and cloud LLM
-/// ([classifyRemote]). The combined [classify] method is retained for the
-/// processing queue until it is reworked to drive the two halves itself.
+/// gate, on-device model ([classifyLocal]), and cloud LLM ([classifyRemote]).
+///
+/// The new two-method path ([classifyLocal] + [classifyRemote]) requires the
+/// caller to apply the gate. The retained [classify] method still runs the gate
+/// internally for the processing queue until it is reworked to drive the two
+/// halves itself.
 class Classifier {
   // ignore: prefer_initializing_formals — a named param can't be private (_local).
   Classifier(this._llm, {LocalClassifier? local}) : _local = local;
@@ -46,7 +48,10 @@ class Classifier {
 
   /// The on-device pass. Returns null when the model is unavailable or not
   /// confident enough — the caller must then either run [classifyRemote] or, if
-  /// it cannot reach the network, defer the message.
+  /// it cannot reach the network, defer the message. Null deliberately does not
+  /// distinguish "no model" from "not confident" — the queue only needs to know
+  /// whether to spend an LLM call, and [runLocalModel] exposes the structured
+  /// result if that ever changes.
   ///
   /// Makes no network call under any circumstance, so it is safe to run while
   /// offline. Deliberately does NOT apply the Layer-1 gate: a gate miss is a
