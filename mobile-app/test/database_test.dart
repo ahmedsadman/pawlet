@@ -40,15 +40,20 @@ Future<List<Map<String, Object?>>> _columnSpecs(
 
 /// Index name -> its CREATE statement, so a same-named index rebuilt over
 /// different columns is caught rather than passing a names-only comparison.
-Future<Map<String, Object?>> _indexDdl(Database db, String table) async {
+///
+/// Whitespace is collapsed because the frozen v5 fixture writes its index DDL
+/// on one line while createSchema uses multi-line blocks; SQL whitespace is
+/// insignificant here, so normalizing it compares structure rather than layout.
+Future<Map<String, String>> _indexDdl(Database db, String table) async {
   final rows = await db.rawQuery(
     "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=?",
     [table],
   );
   return {
     for (final r in rows)
-      r['name'] as String:
-          (r['sql'] as String?)?.replaceAll(RegExp(r'\s+'), ' ').trim() ?? '',
+      r['name'] as String: (r['sql'] as String)
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim(),
   };
 }
 
@@ -209,7 +214,7 @@ void main() {
 
   group('destructive onUpgrade (unmigrated version jumps)', () {
     test(
-      'any version bump drops old tables and rebuilds the current schema',
+      'a pre-release version drops old tables and rebuilds the current schema',
       () async {
         // Simulate an old install: a legacy transactions table with a NOT NULL
         // message_id and a stray row. onUpgrade must wipe and rebuild.
@@ -387,7 +392,7 @@ void main() {
       await db.close();
     });
 
-    test('any other version jump still rebuilds destructively', () async {
+    test('a pre-release version still rebuilds destructively', () async {
       final db = await openV5();
       await db.insert('sms_records', {
         'sender': 'OLD',

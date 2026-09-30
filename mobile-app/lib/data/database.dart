@@ -187,6 +187,8 @@ class AppDatabase {
         await db.execute('DROP TABLE IF EXISTS $table');
       }
       await createSchema(db, newVersion);
+      // Load-bearing, not a stylistic early exit: falling through would ALTER
+      // a needs_llm column that createSchema just created.
       return;
     }
 
