@@ -44,6 +44,11 @@ Future<List<Map<String, Object?>>> _columnSpecs(
 /// Whitespace is collapsed because the frozen v5 fixture writes its index DDL
 /// on one line while createSchema uses multi-line blocks; SQL whitespace is
 /// insignificant here, so normalizing it compares structure rather than layout.
+///
+/// Indexes SQLite creates for itself (a PRIMARY KEY or UNIQUE constraint in the
+/// table body, e.g. `app_meta.key`) carry a null `sql`. They are still worth
+/// comparing by name — losing one means the constraint went with it — so they
+/// are kept under a marker rather than dropped.
 Future<Map<String, String>> _indexDdl(Database db, String table) async {
   final rows = await db.rawQuery(
     "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=?",
@@ -51,9 +56,9 @@ Future<Map<String, String>> _indexDdl(Database db, String table) async {
   );
   return {
     for (final r in rows)
-      r['name'] as String: (r['sql'] as String)
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim(),
+      r['name'] as String:
+          (r['sql'] as String?)?.replaceAll(RegExp(r'\s+'), ' ').trim() ??
+          '<implicit>',
   };
 }
 
@@ -68,6 +73,14 @@ void main() {
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+  });
+
+  test('a schema bump needs a migration branch and a parity test', () {
+    // Deliberately brittle. onUpgrade falls through to a silent no-op for any
+    // version pair it has no branch for, so a bump that forgets its branch
+    // ships a database the app queries with the wrong schema and no failing
+    // test. Update this only together with the branch and its parity test.
+    expect(AppDatabase.version, 6);
   });
 
   test('schema creates all tables', () async {
@@ -274,15 +287,18 @@ void main() {
   });
 
   group('needs_llm migration (v5 -> v6)', () {
-    // The v5 shape, frozen here because createSchema now describes v6: an
-    // upgrade test needs the schema it is upgrading FROM. Full fidelity for
-    // sms_records (the table being altered), and just enough of banks to prove
-    // unrelated rows survive.
+    // The complete v5 shape, frozen here because createSchema now describes
+    // v6: an upgrade test needs the schema it is upgrading FROM. Every table
+    // is reproduced, not just the one v6 alters — the parity check below is
+    // only as wide as this fixture, and a future migration that forgets to
+    // touch `banks`/`transactions`/`bills`/`app_meta` has to have something to
+    // drift away from.
     Future<Database> openV5() async {
       final db = await databaseFactory.openDatabase(
         inMemoryDatabasePath,
         options: OpenDatabaseOptions(singleInstance: false),
       );
+      // The only table whose v5 shape differs from v6: no needs_llm.
       await db.execute('''
         CREATE TABLE sms_records (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -312,6 +328,14 @@ void main() {
       await db.execute(
         'CREATE INDEX idx_sms_status_next ON sms_records (status, next_attempt_at)',
       );
+
+      await db.execute('''
+        CREATE TABLE app_meta (
+          key TEXT PRIMARY KEY,
+          value INTEGER NOT NULL
+        )
+      ''');
+
       await db.execute('''
         CREATE TABLE banks (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -324,6 +348,56 @@ void main() {
           matchers TEXT
         )
       ''');
+      await db.execute(
+        "CREATE UNIQUE INDEX idx_banks_deposit ON banks (name) "
+        "WHERE account_type = 'deposit'",
+      );
+      await db.execute(
+        "CREATE UNIQUE INDEX idx_banks_credit ON banks (name, card_digits) "
+        "WHERE account_type = 'credit'",
+      );
+
+      await db.execute('''
+        CREATE TABLE transactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id INTEGER,
+          bank_id INTEGER,
+          paired_with_id INTEGER,
+          bill_id INTEGER,
+          normalized_amount TEXT NOT NULL,
+          normalized_currency TEXT NOT NULL,
+          original_amount TEXT,
+          original_currency TEXT,
+          type TEXT NOT NULL,
+          date INTEGER NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+        'CREATE UNIQUE INDEX idx_tx_message ON transactions (message_id)',
+      );
+      await db.execute('CREATE INDEX idx_tx_date ON transactions (date)');
+
+      await db.execute('''
+        CREATE TABLE bills (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id INTEGER NOT NULL,
+          bank_id INTEGER,
+          normalized_total_due TEXT NOT NULL,
+          normalized_currency TEXT NOT NULL,
+          original_amount TEXT,
+          original_currency TEXT,
+          statement_period INTEGER,
+          paid_at INTEGER,
+          created_at INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+        'CREATE UNIQUE INDEX idx_bill_message ON bills (message_id)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_bill_bank_period ON bills (bank_id, statement_period)',
+      );
       return db;
     }
 
@@ -357,18 +431,32 @@ void main() {
     });
 
     test('lands on the same shape as a fresh v6 create', () async {
+      // Every table, not just the altered one: onUpgrade silently no-ops for a
+      // version pair it has no branch for, so a future migration that forgets
+      // a branch leaves whichever table it meant to change behind. Checking
+      // only sms_records would pass right through that.
       final migrated = await openV5();
       await AppDatabase.onUpgrade(migrated, 5, 6);
       final fresh = await openTestDb();
 
-      expect(
-        await _columnSpecs(migrated, 'sms_records'),
-        await _columnSpecs(fresh, 'sms_records'),
-      );
-      expect(
-        await _indexDdl(migrated, 'sms_records'),
-        await _indexDdl(fresh, 'sms_records'),
-      );
+      for (final table in const [
+        'sms_records',
+        'banks',
+        'transactions',
+        'bills',
+        'app_meta',
+      ]) {
+        expect(
+          await _columnSpecs(migrated, table),
+          await _columnSpecs(fresh, table),
+          reason: 'columns of $table drifted from a fresh create',
+        );
+        expect(
+          await _indexDdl(migrated, table),
+          await _indexDdl(fresh, table),
+          reason: 'indexes of $table drifted from a fresh create',
+        );
+      }
       await migrated.close();
       await fresh.close();
     });

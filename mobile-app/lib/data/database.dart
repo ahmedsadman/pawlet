@@ -19,13 +19,15 @@ class AppDatabase {
   /// Key/value store for small operational metadata (e.g. the last prune time).
   static const String metaTable = 'app_meta';
 
-  static const int _version = 6;
+  /// Schema version. Every bump needs a matching [onUpgrade] branch and a
+  /// parity test — see the guard in `test/database_test.dart`.
+  static const int version = 6;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), fileName);
     return openDatabase(
       path,
-      version: _version,
+      version: version,
       onCreate: createSchema,
       onUpgrade: onUpgrade,
     );
@@ -165,7 +167,7 @@ class AppDatabase {
   /// exact (old, new) match: a device that skips releases arrives with an
   /// arbitrarily old version and must still run every intervening step. An
   /// exact-pair match would silently drop such a device into the destructive
-  /// rebuild the moment [_version] moves again.
+  /// rebuild the moment [version] moves again.
   ///
   /// Every new step needs a test in `test/database_test.dart` covering both
   /// halves: that rows survive, and that the resulting schema matches what
