@@ -419,15 +419,26 @@ void main() {
     },
   );
 
-  test('gates out an unregistered sender as ignored/gated, no LLM', () async {
+  test('gates out an unregistered sender before any model runs', () async {
     final id = await queue('DARAZ', content: 'win a prize');
     final llm = _FakeLlm(result: const ClassifyResult.none());
-    await service(llm).process();
+    // Wired with a confident model on purpose: Layer 1 must short-circuit
+    // BEFORE inference, so non-bank spam never costs a 26 MB model run.
+    // Without the local.calls assertion, moving the gate after Layer 2 passes.
+    final local = _FnLocal(
+      (_) => const LocalPrediction(
+        classLabel: 'expense',
+        classConfidence: 0.99,
+        spans: [],
+      ),
+    );
+    await service(llm, local: local).process();
 
     final r = await row(id);
     expect(r['status'], 'ignored');
     expect(r['category'], isNull);
     expect(r['ignore_reason'], IgnoreReason.gated.value);
+    expect(local.calls, 0);
     expect(llm.calls, 0);
     await db.close();
   });
