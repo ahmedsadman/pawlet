@@ -48,6 +48,11 @@ Capture then does, in order:
 2. **Persist, deduped** — insert into the queue. A unique index on
    `(sender, timestamp, content)` means overlapping foreground / background / cold-start
    reads of the *same* SMS collapse to one row (duplicate inserts are ignored).
+   Those reads all share one timestamp, so an exact key is enough here. The bulk
+   inbox import cannot use it: it reads Android's `Telephony.Sms.DATE` (device
+   receipt time) while the live listener stores the carrier's stamp from the
+   PDU, and the two differ by around a second for the same message. The import
+   matches on `(sender, content)` within `kSmsDedupWindow` instead.
 3. **Kick off processing** — call the queue drain immediately.
 
 A freshly captured row starts in status **`queued`**. Storage cleanup no longer runs on

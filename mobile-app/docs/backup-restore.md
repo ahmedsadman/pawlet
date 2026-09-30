@@ -40,13 +40,15 @@ state so a background catch-up never picks them up.
   the oldest imported record so it can reach historical rows. The ±45 day and
   ±15 min match windows themselves are unchanged.
 
-Re-running is safe and useful. Dedup uses the same `(sender, timestamp, content)`
-identity as live capture, so nothing imports twice; meanwhile anything that
-produced no record is retried, and records left attached to no account are
-re-checked against the accounts that exist now. So the fix for a missing card is
-to add it and import again. Only messages a model already judged non-financial
-are skipped. Balances are the exception — the figure is not stored on the record,
-so a late-attached account only picks one up from later messages.
+Re-running is safe and useful. A message already captured is recognised by
+sender and body within a 15-second window — wide enough to absorb the clock
+difference between the live listener and the inbox — so nothing imports twice;
+meanwhile anything that produced no record is retried, and records left attached
+to no account are re-checked against the accounts that exist now. So the fix for
+a missing card is to add it and import again. Only messages a model already
+judged non-financial are skipped. Balances are the exception — the figure is not
+stored on the record, so a late-attached account only picks one up from later
+messages.
 
 ## What is and isn't included
 
