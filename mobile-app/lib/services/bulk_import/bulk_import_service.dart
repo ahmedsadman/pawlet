@@ -218,11 +218,18 @@ class BulkImportService {
     if (!decision.accepted) {
       // A rejection here would send the live pipeline to the LLM. This pass has
       // no LLM, so the message is dropped and the user is told so afterwards.
+      //
+      // Both reasons re-attempt on the next run, so the distinction buys no
+      // behaviour — it buys a diagnosis. A model that fails to load ignores the
+      // entire inbox, and tagging that as "low confidence" would blame the
+      // model's judgement for a message it never read.
       await smsRepository.markBulkProcessed(
         id,
         status: SmsStatus.ignored,
         now: now,
-        ignoreReason: IgnoreReason.localLowConfidence,
+        ignoreReason: decision.declined
+            ? IgnoreReason.localLowConfidence
+            : IgnoreReason.localUnavailable,
       );
       return false;
     }
@@ -308,6 +315,7 @@ class BulkImportService {
   /// - `noRecord`: the card may exist now.
   /// - `localLowConfidence`: `decideLocal` rejects a USD amount when no
   ///   exchange rate is available, which is simply the offline case.
+  /// - `localUnavailable`: the model never ran, so there is no verdict at all.
   /// - null: an earlier pass was interrupted before it recorded a verdict.
   static bool _isReattemptable(SmsRecord record) =>
       record.status == SmsStatus.ignored &&

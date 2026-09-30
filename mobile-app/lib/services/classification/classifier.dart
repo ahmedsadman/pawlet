@@ -34,18 +34,22 @@ class Classifier {
   final LlmProvider _llm;
   final LocalClassifier? _local;
 
-  /// The on-device pass. Returns null when the model is unavailable or not
-  /// confident enough — the caller must then either run [classifyRemote] or, if
-  /// it cannot reach the network, defer the message. Null deliberately does not
-  /// distinguish "no model" from "not confident" — the queue only needs to know
-  /// whether to spend an LLM call, and [runLocalModel] exposes the structured
-  /// result if that ever changes.
+  /// The on-device pass. A null `outcome` means the caller must either run
+  /// [classifyRemote] or, if it cannot reach the network, defer the message.
+  ///
+  /// `declined` separates the two ways that can happen: true only when the
+  /// model ran on this content and [decideLocal] turned the prediction down,
+  /// false when no prediction existed at all (no model wired, or the model
+  /// failed to load or crashed). The caller needs the distinction because it
+  /// persists the verdict in a flag it never clears: a message deferred while
+  /// the model was broken would otherwise be routed to the paid LLM forever,
+  /// with no way back on-device even though nothing ever judged it.
   ///
   /// Makes no network call under any circumstance, so it is safe to run while
   /// offline. Deliberately does NOT apply the Layer-1 gate: a gate miss is a
   /// terminal queue state rather than a classification, and only the caller can
   /// tell it apart from "needs the LLM".
-  Future<ClassificationOutcome?> classifyLocal({
+  Future<({ClassificationOutcome? outcome, bool declined})> classifyLocal({
     required String content,
     required String currency,
     Decimal? usdRate,
@@ -57,14 +61,19 @@ class Classifier {
       usdRate: usdRate,
     );
 
-    if (!decision.accepted) return null;
+    if (!decision.accepted) {
+      return (outcome: null, declined: decision.declined);
+    }
 
     final r = decision.result!;
-    return ClassificationOutcome(
-      category: r.category,
-      transaction: r.transaction,
-      bill: r.bill,
-      parseSource: ParseSource.local,
+    return (
+      outcome: ClassificationOutcome(
+        category: r.category,
+        transaction: r.transaction,
+        bill: r.bill,
+        parseSource: ParseSource.local,
+      ),
+      declined: false,
     );
   }
 

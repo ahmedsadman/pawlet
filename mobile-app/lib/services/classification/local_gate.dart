@@ -5,18 +5,41 @@ import 'local_classifier.dart';
 import 'local_model.dart';
 import 'local_parsers.dart';
 
-/// Outcome of the local-model gate: either an accepted [ClassifyResult] built
-/// entirely on-device, or a rejection that tells the pipeline to call the LLM.
+/// Outcome of the local-model gate. Three states, and callers that persist a
+/// verdict must tell the last two apart:
+/// - accepted: a [ClassifyResult] built entirely on-device ([accept]);
+/// - ran and declined: inference produced a prediction and [decideLocal]
+///   rejected it ([reject]) — a stable verdict on immutable content, so it is
+///   safe to remember;
+/// - never ran: no prediction exists ([unavailable]), because no model is wired
+///   or the model failed. Says nothing about the message, and the next pass may
+///   well get an answer.
 class LocalGateResult {
-  const LocalGateResult.accept(ClassifyResult this.result) : accepted = true;
-  const LocalGateResult.reject() : accepted = false, result = null;
+  const LocalGateResult.accept(ClassifyResult this.result)
+    : accepted = true,
+      ran = true;
+  const LocalGateResult.reject() : accepted = false, ran = true, result = null;
+  const LocalGateResult.unavailable()
+    : accepted = false,
+      ran = false,
+      result = null;
 
   final bool accepted;
+
+  /// Whether inference actually produced a prediction for [decideLocal] to
+  /// judge. False means the model never spoke, not that it said no.
+  final bool ran;
+
   final ClassifyResult? result;
+
+  /// The model ran on this content and turned it down — the only rejection a
+  /// caller may record permanently.
+  bool get declined => ran && !accepted;
 }
 
 /// Runs the on-device half of the pipeline end to end: inference, then
-/// [decideLocal]. A rejection means "this can only be answered by the LLM".
+/// [decideLocal]. Anything short of an acceptance means "this can only be
+/// answered by the LLM".
 ///
 /// Will be shared by the live queue and the bulk inbox import. It takes a
 /// [LocalClassifier] rather than the full pipeline deliberately: the import
@@ -24,16 +47,17 @@ class LocalGateResult {
 /// reference would permit.
 ///
 /// A null [local] (no model wired) and a null prediction (asset load or runtime
-/// failure — implementations never throw) are both rejections.
+/// failure — implementations never throw) are both [LocalGateResult.unavailable]
+/// rather than rejections: the model never judged the message.
 Future<LocalGateResult> runLocalModel(
   String content, {
   required LocalClassifier? local,
   required String currency,
   Decimal? usdRate,
 }) async {
-  if (local == null) return const LocalGateResult.reject();
+  if (local == null) return const LocalGateResult.unavailable();
   final prediction = await local.infer(content);
-  if (prediction == null) return const LocalGateResult.reject();
+  if (prediction == null) return const LocalGateResult.unavailable();
   return decideLocal(
     prediction,
     currency: currency,

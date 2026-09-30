@@ -99,8 +99,10 @@ Three internal, debug-only reason columns explain terminal non-success outcomes 
   (Layer-1 gate rejected it, nothing ran), `local_none` (the on-device model confidently
   said "not financial", no LLM call), `llm_none` (the LLM said "not financial"), and
   `no_record` (classified as financial but no row was written — missing metadata,
-  unmatched card, or a duplicate). The enum holds one more value, `local_low_confidence`,
-  which only the bulk inbox import writes (see [Backup & Restore](backup-restore.md)).
+  unmatched card, or a duplicate). The enum holds two more values that only the bulk
+  inbox import writes: `local_low_confidence` (the on-device model ran and was not
+  confident enough) and `local_unavailable` (the model produced no prediction at all, so
+  nothing judged the message). See [Backup & Restore](backup-restore.md).
 - **`parse_source`** on processed rows — `local` (parsed on-device) or `llm` (fell back to
   the LLM). History shows a small, muted **"LLM"** marker on rows parsed by the LLM (i.e.
   where the on-device model was not confident); locally-parsed rows show nothing. Rows from
@@ -263,12 +265,18 @@ Being offline must also never *cost* a message an attempt. The guards:
   waiting is not a failed attempt, so a message that arrives during an outage does not
   burn its retry budget before anything has actually tried it. The same path handles a
   row that is online but loses the race for the single LLM slot.
-- **`needs_llm` remembers that verdict.** A deferred row is flagged so later passes skip
-  an inference whose answer is already known (the model has seen that exact content and
-  declined it). The flag is **set once and never cleared** — `content` is immutable, so
-  the verdict is stable. Offline, a flagged row is skipped before it is even claimed; the
-  Layer-1 gate still re-runs on it once online, so a bank deleted in the meantime is
-  honoured then.
+- **`needs_llm` remembers that verdict.** A row deferred *after the model ran and
+  declined it* is flagged, so later passes skip an inference whose answer is already
+  known. The flag is **set once and never cleared** — `content` is immutable, so the
+  verdict is stable. Precisely because it is permanent, it is **not** set when the model
+  never produced a prediction at all (none is bundled, or the model failed to load or
+  crashed): nothing judged that message, so writing it off would route it to the paid LLM
+  forever, and a single failed load in a background isolate would do that to the entire
+  backlog deferred during that pass. Such a row is simply deferred unflagged and its
+  inference is retried next pass, which costs almost nothing — a model that failed to
+  load stays failed for the isolate and returns immediately. Offline, a flagged row is
+  skipped before it is even claimed; the Layer-1 gate still re-runs on it once online, so
+  a bank deleted in the meantime is honoured then.
 - **A deferred row does not block the queue.** The pass carries on to the rows behind it,
   which may still be locally solvable (§3).
 - **A failure discovered to be offline is a transport drop, not an attempt.** If the LLM

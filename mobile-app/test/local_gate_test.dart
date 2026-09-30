@@ -360,18 +360,42 @@ void main() {
   });
 
   group('runLocalModel', () {
-    test('rejects when no model is wired', () async {
+    test('is unavailable, not a rejection, when no model is wired', () async {
       final r = await runLocalModel('debit 50', local: null, currency: 'BDT');
       expect(r.accepted, isFalse);
+      expect(r.ran, isFalse);
+      expect(r.declined, isFalse);
     });
 
-    test('rejects when the model returns null', () async {
+    test(
+      'is unavailable, not a rejection, when the model returns null',
+      () async {
+        final r = await runLocalModel(
+          'debit 50',
+          local: _StubLocal(null),
+          currency: 'BDT',
+        );
+        expect(r.accepted, isFalse);
+        expect(r.ran, isFalse);
+        expect(r.declined, isFalse);
+      },
+    );
+
+    test('a low-confidence prediction declines — the model ran', () async {
       final r = await runLocalModel(
         'debit 50',
-        local: _StubLocal(null),
+        local: _StubLocal(
+          const LocalPrediction(
+            classLabel: 'expense',
+            classConfidence: 0.4,
+            spans: [],
+          ),
+        ),
         currency: 'BDT',
       );
       expect(r.accepted, isFalse);
+      expect(r.ran, isTrue);
+      expect(r.declined, isTrue);
     });
 
     test('accepts a confident prediction', () async {
@@ -388,6 +412,7 @@ void main() {
         currency: 'BDT',
       );
       expect(r.accepted, isTrue);
+      expect(r.declined, isFalse);
       expect(r.result!.transaction!.amount, '50');
     });
 
