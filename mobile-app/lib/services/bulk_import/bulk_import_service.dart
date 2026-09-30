@@ -209,15 +209,12 @@ class BulkImportService {
       id = existing.id!;
     }
 
-    final prediction = await local.infer(content);
-    final decision = prediction == null
-        ? const LocalGateResult.reject()
-        : decideLocal(
-            prediction,
-            currency: cur,
-            content: content,
-            usdToBdtRate: rate,
-          );
+    final decision = await runLocalModel(
+      local,
+      content,
+      currency: cur,
+      usdRate: rate,
+    );
     if (!decision.accepted) {
       // A rejection here would send the live pipeline to the LLM. This pass has
       // no LLM, so the message is dropped and the user is told so afterwards.
