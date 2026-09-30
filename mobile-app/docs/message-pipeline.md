@@ -92,13 +92,15 @@ the split is internal scheduling, not something the user needs to tell apart.
 
 A **category label** (`transaction` / `bill`) is stored only on `success` rows.
 
-Two internal, debug-only reason columns explain terminal non-success outcomes (see
+Three internal, debug-only reason columns explain terminal non-success outcomes (see
 `lib/models/sms_record.dart`):
 
-- **`ignore_reason`** on `ignored` rows — `gated` (Layer-1 gate rejected it, nothing ran),
-  `local_none` (the on-device model confidently said "not financial", no LLM call),
-  `llm_none` (the LLM said "not financial"), or `no_record` (classified as financial but no
-  row was written — missing metadata, unmatched card, or a duplicate).
+- **`ignore_reason`** on `ignored` rows. The values this pipeline produces are `gated`
+  (Layer-1 gate rejected it, nothing ran), `local_none` (the on-device model confidently
+  said "not financial", no LLM call), `llm_none` (the LLM said "not financial"), and
+  `no_record` (classified as financial but no row was written — missing metadata,
+  unmatched card, or a duplicate). The enum holds one more value, `local_low_confidence`,
+  which only the bulk inbox import writes (see [Backup & Restore](backup-restore.md)).
 - **`parse_source`** on processed rows — `local` (parsed on-device) or `llm` (fell back to
   the LLM). History shows a small, muted **"LLM"** marker on rows parsed by the LLM (i.e.
   where the on-device model was not confident); locally-parsed rows show nothing. Rows from
