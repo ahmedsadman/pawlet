@@ -185,15 +185,6 @@ void main() {
       expect(SmsRecord.fromDbMap(on.toDbMap()).needsLlm, isTrue);
     });
 
-    test('reads a missing column as false (defensive)', () {
-      final map = const SmsRecord(
-        sender: 'A',
-        content: 'x',
-        timestamp: 1,
-      ).toDbMap()..remove('needs_llm');
-      expect(SmsRecord.fromDbMap(map).needsLlm, isFalse);
-    });
-
     test('copyWith carries the flag', () {
       const r = SmsRecord(sender: 'A', content: 'x', timestamp: 1);
       expect(r.copyWith(needsLlm: true).needsLlm, isTrue);

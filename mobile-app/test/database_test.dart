@@ -38,6 +38,20 @@ Future<List<Map<String, Object?>>> _columnSpecs(
       .toList();
 }
 
+/// Index name -> its CREATE statement, so a same-named index rebuilt over
+/// different columns is caught rather than passing a names-only comparison.
+Future<Map<String, Object?>> _indexDdl(Database db, String table) async {
+  final rows = await db.rawQuery(
+    "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=?",
+    [table],
+  );
+  return {
+    for (final r in rows)
+      r['name'] as String:
+          (r['sql'] as String?)?.replaceAll(RegExp(r'\s+'), ' ').trim() ?? '',
+  };
+}
+
 Future<Set<String>> _tableNames(Database db) async {
   final rows = await db.rawQuery(
     "SELECT name FROM sqlite_master WHERE type='table'",
@@ -223,7 +237,7 @@ void main() {
           'created_at': 5,
         });
 
-        await AppDatabase.onUpgrade(db, 1, 5);
+        await AppDatabase.onUpgrade(db, 1, 6);
 
         // Rebuilt from scratch: old row is gone, all current tables exist.
         final tables = await _tableNames(db);
@@ -256,8 +270,9 @@ void main() {
 
   group('needs_llm migration (v5 -> v6)', () {
     // The v5 shape, frozen here because createSchema now describes v6: an
-    // upgrade test needs the schema it is upgrading FROM. Mirrors what a real
-    // v5 install carries, indexes included.
+    // upgrade test needs the schema it is upgrading FROM. Full fidelity for
+    // sms_records (the table being altered), and just enough of banks to prove
+    // unrelated rows survive.
     Future<Database> openV5() async {
       final db = await databaseFactory.openDatabase(
         inMemoryDatabasePath,
@@ -346,11 +361,30 @@ void main() {
         await _columnSpecs(fresh, 'sms_records'),
       );
       expect(
-        await _indexNames(migrated, 'sms_records'),
-        await _indexNames(fresh, 'sms_records'),
+        await _indexDdl(migrated, 'sms_records'),
+        await _indexDdl(fresh, 'sms_records'),
       );
       await migrated.close();
       await fresh.close();
+    });
+
+    test('a version-skipping upgrade from v5 still preserves data', () async {
+      // The trap this guard exists for: once _version moves past 6, a device
+      // that skipped a release arrives as (5, 7) and must still migrate rather
+      // than get wiped.
+      final db = await openV5();
+      await db.insert('banks', {
+        'name': 'My Card',
+        'account_type': 'credit',
+        'card_digits': '4238|3241',
+        'created_at': 1,
+      });
+
+      await AppDatabase.onUpgrade(db, 5, 7);
+
+      expect((await db.query('banks')).single['name'], 'My Card');
+      expect(await _columnNames(db, 'sms_records'), contains('needs_llm'));
+      await db.close();
     });
 
     test('any other version jump still rebuilds destructively', () async {

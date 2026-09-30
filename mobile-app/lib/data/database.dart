@@ -153,41 +153,49 @@ class AppDatabase {
     ''');
   }
 
-  /// Upgrade policy: real, data-preserving migrations from the last shipped
-  /// version; a destructive rebuild only for jumps we have no path for.
+  /// Upgrade policy: walk forward one step at a time, preserving data from
+  /// every released version; rebuild destructively only from versions that
+  /// predate release and so have no migration path.
   ///
   /// Installs in the wild carry hand-configured accounts and cards that cannot
-  /// be re-derived from the SMS inbox, so any upgrade from a released version
-  /// needs an explicit branch here. Versions 1–4 predate release and keep the
-  /// old rebuild behavior.
+  /// be re-derived from the SMS inbox, so every step from v5 onward needs a
+  /// branch here.
   ///
-  /// Every new branch needs a test in `test/database_test.dart` that checks
-  /// both halves: that rows survive, and that the resulting schema matches what
+  /// Keyed on [oldVersion] alone, and deliberately cumulative rather than an
+  /// exact (old, new) match: a device that skips releases arrives with an
+  /// arbitrarily old version and must still run every intervening step. An
+  /// exact-pair match would silently drop such a device into the destructive
+  /// rebuild the moment [_version] moves again.
+  ///
+  /// Every new step needs a test in `test/database_test.dart` covering both
+  /// halves: that rows survive, and that the resulting schema matches what
   /// [createSchema] would have produced.
   static Future<void> onUpgrade(
     Database db,
     int oldVersion,
     int newVersion,
   ) async {
-    if (oldVersion == 5 && newVersion == 6) {
+    if (oldVersion < 5) {
+      for (final table in const [
+        smsTable,
+        banksTable,
+        transactionsTable,
+        billsTable,
+        metaTable,
+      ]) {
+        // Dropping a table also drops its indexes.
+        await db.execute('DROP TABLE IF EXISTS $table');
+      }
+      await createSchema(db, newVersion);
+      return;
+    }
+
+    if (oldVersion < 6) {
       // Purely additive; existing rows take the default.
       await db.execute(
         'ALTER TABLE $smsTable '
         'ADD COLUMN needs_llm INTEGER NOT NULL DEFAULT 0',
       );
-      return;
     }
-
-    for (final table in const [
-      smsTable,
-      banksTable,
-      transactionsTable,
-      billsTable,
-      metaTable,
-    ]) {
-      // Dropping a table also drops its indexes.
-      await db.execute('DROP TABLE IF EXISTS $table');
-    }
-    await createSchema(db, newVersion);
   }
 }
