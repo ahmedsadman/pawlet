@@ -1,5 +1,6 @@
 import 'package:decimal/decimal.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pawlet/services/classification/local_classifier.dart';
 import 'package:pawlet/services/classification/local_gate.dart';
 import 'package:pawlet/services/classification/local_model.dart';
 import 'package:pawlet/services/llm/llm_provider.dart';
@@ -357,4 +358,53 @@ void main() {
     expect(r.result!.transaction!.amount, '100');
     expect(r.result!.transaction!.originalCurrency, 'BDT');
   });
+
+  group('runLocalModel', () {
+    test('rejects when no model is wired', () async {
+      final r = await runLocalModel(null, 'debit 50', currency: 'BDT');
+      expect(r.accepted, isFalse);
+    });
+
+    test('rejects when the model returns null', () async {
+      final r = await runLocalModel(
+        _StubLocal(null),
+        'debit 50',
+        currency: 'BDT',
+      );
+      expect(r.accepted, isFalse);
+    });
+
+    test('accepts a confident prediction', () async {
+      const content = 'debit 50 BDT';
+      final r = await runLocalModel(
+        _StubLocal(
+          const LocalPrediction(
+            classLabel: 'expense',
+            classConfidence: 0.97,
+            spans: [
+              LocalSpan(
+                entity: 'AMOUNT',
+                text: '50',
+                confidence: 0.96,
+                start: 6,
+                end: 8,
+              ),
+            ],
+          ),
+        ),
+        content,
+        currency: 'BDT',
+      );
+      expect(r.accepted, isTrue);
+      expect(r.result!.transaction!.amount, '50');
+    });
+  });
+}
+
+class _StubLocal implements LocalClassifier {
+  _StubLocal(this.prediction);
+  final LocalPrediction? prediction;
+
+  @override
+  Future<LocalPrediction?> infer(String content) async => prediction;
 }

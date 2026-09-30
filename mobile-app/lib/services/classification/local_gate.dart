@@ -1,6 +1,7 @@
 import 'package:decimal/decimal.dart';
 
 import '../llm/llm_provider.dart';
+import 'local_classifier.dart';
 import 'local_model.dart';
 import 'local_parsers.dart';
 
@@ -12,6 +13,33 @@ class LocalGateResult {
 
   final bool accepted;
   final ClassifyResult? result;
+}
+
+/// Runs the on-device half of the pipeline end to end: inference, then
+/// [decideLocal]. A rejection means "this can only be answered by the LLM".
+///
+/// Shared by the live queue and the bulk inbox import. It takes a
+/// [LocalClassifier] rather than the full pipeline deliberately: the import
+/// must have no reachable path to the LLM, which a dependency on `Classifier`
+/// would hand it.
+///
+/// A null [local] (no model wired) and a null prediction (asset load or runtime
+/// failure — implementations never throw) are both rejections.
+Future<LocalGateResult> runLocalModel(
+  LocalClassifier? local,
+  String content, {
+  required String currency,
+  Decimal? usdRate,
+}) async {
+  if (local == null) return const LocalGateResult.reject();
+  final prediction = await local.infer(content);
+  if (prediction == null) return const LocalGateResult.reject();
+  return decideLocal(
+    prediction,
+    currency: currency,
+    content: content,
+    usdToBdtRate: usdRate,
+  );
 }
 
 /// Decides whether the on-device prediction clears the gate and, if so, builds
