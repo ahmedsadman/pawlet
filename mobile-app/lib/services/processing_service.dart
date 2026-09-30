@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:decimal/decimal.dart';
@@ -7,29 +8,27 @@ import '../data/sms_repository.dart';
 import '../models/finance/bank.dart';
 import '../models/sms_record.dart';
 import 'classification/classifier.dart';
+import 'classification/sender_matcher.dart';
 import 'finance/finance_writer.dart';
 import 'llm/llm_provider.dart';
 
-/// Outcome of processing one record, telling the drain loop whether to continue.
-enum _PassStep {
-  /// Reached a terminal state or was rescheduled; the slot is free — continue.
-  processed,
-
-  /// Device went offline; the row is left due — stop the pass.
-  offline,
-
-  /// Couldn't claim: the single global in-flight slot is held elsewhere (or the
-  /// row was taken by another isolate) — stop and let that isolate drain.
-  contended,
-}
-
 Future<Decimal?> _noRate() async => null;
 
-/// Drains the SMS queue, processing each due record atomically: Layer-1 gate +
-/// single fused LLM call + finance write. Failures are rescheduled with a
-/// capped-exponential backoff persisted in `next_attempt_at`; the existing
-/// triggers (foreground resume, incoming-SMS isolate, WorkManager tick) drive
-/// later retries.
+/// Drains the SMS queue, resolving each due record through three layers and
+/// writing the finance record for whichever one decides it:
+/// 1. the Layer-1 sender/card gate — a miss is terminal `ignored`;
+/// 2. the on-device model — a confident verdict is terminal;
+/// 3. the cloud LLM, for anything the first two could not settle.
+///
+/// The first two touch no network, so the pass runs offline and still drains
+/// everything they can decide. A record that reaches the third layer while
+/// offline, or while another isolate holds the single global LLM slot, is left
+/// `queued` and still due — unchanged apart from the `needs_llm` flag, which
+/// tells later passes to skip the inference that already declined it.
+///
+/// Failures are rescheduled with a capped-exponential backoff persisted in
+/// `next_attempt_at`; the existing triggers (foreground resume, incoming-SMS
+/// isolate, WorkManager tick) drive later retries.
 class ProcessingService {
   ProcessingService({
     required this.smsRepository,
@@ -53,8 +52,8 @@ class ProcessingService {
   final String Function() currency;
 
   /// Supplies the current USD→BDT rate (cached; null when unavailable). Called
-  /// once per online pass and threaded into classification so a confident USD
-  /// message is converted on-device instead of falling back to the LLM.
+  /// once per pass and threaded into classification so a confident USD message
+  /// is converted on-device instead of falling back to the LLM.
   final Future<Decimal?> Function() usdBdtRate;
 
   final int Function() _clock;
@@ -94,6 +93,11 @@ class ProcessingService {
   /// processing across isolates. See the guard in processing_service_test.
   static const Duration staleAfter = Duration(minutes: 3);
 
+  /// Ceiling on one on-device inference. Bounds Tier 2 the way
+  /// OpenRouterProvider.timeout bounds Tier 3, so a stalled local call cannot
+  /// outlive [staleAfter] and have its own row reclaimed underneath it.
+  static const Duration localTimeout = Duration(seconds: 30);
+
   bool _running = false;
   bool _paused = false;
 
@@ -115,30 +119,25 @@ class ProcessingService {
     if (_paused || _running) return;
     _running = true;
     try {
-      if (!await isOnline()) {
-        // Still (re)schedule so an offline backlog gets a connectivity-gated
-        // catch-up, then bail.
-        await _rescheduleNext();
-        return;
-      }
-
       await smsRepository.reclaimStale(_clock() - staleAfter.inMilliseconds);
 
       final banks = await banksRepository.list();
       final cur = currency();
       final rate = await usdBdtRate();
+      // Read once for the cheap pre-claim skip below; the decision to actually
+      // call out is re-checked per record, since a pass can span several
+      // two-minute LLM calls and lose the network partway through.
+      final online = await isOnline();
 
       final due = await smsRepository.dueForDelivery(_clock());
       var processedAny = false;
       for (final record in due) {
-        final step = await _processOne(record, banks, cur, rate);
-        if (step == _PassStep.processed) {
+        // Never break: a row another isolate claimed, or one parked waiting for
+        // the LLM, says nothing about the rows behind it — those may still be
+        // resolvable entirely on-device.
+        if (await _processOne(record, banks, cur, rate, online)) {
           processedAny = true;
-          continue;
         }
-        // Offline (resume later) or contended — another isolate holds the single
-        // global slot, so back off and let that isolate drain the queue.
-        break;
       }
 
       // Only the isolate that actually processed something runs the deferred
@@ -184,79 +183,89 @@ class ProcessingService {
     }
   }
 
-  /// Processes [record] once, returning how the pass should proceed:
-  /// - [_PassStep.offline]: went offline (row left queued and due) — stop.
-  /// - [_PassStep.contended]: couldn't claim — the single global slot is held by
-  ///   another isolate (or the row was taken) — stop and let that isolate drain.
-  /// - [_PassStep.processed]: reached a terminal state or was rescheduled —
-  ///   the slot is free again, so the caller may continue to the next record.
-  Future<_PassStep> _processOne(
+  /// Runs [record] through the three layers, returning whether it reached a
+  /// terminal state or was rescheduled. False means the pass decided nothing
+  /// about it: another isolate holds the row, or only the LLM can answer it and
+  /// the LLM is out of reach (offline, or its single slot is taken).
+  ///
+  /// [online] is the pass-level reading, used only to skip a row nothing
+  /// on-device can advance; the tier-3 branch re-reads connectivity itself.
+  Future<bool> _processOne(
     SmsRecord record,
     List<Bank> banks,
     String cur,
     Decimal? usdRate,
+    bool online,
   ) async {
-    if (!await isOnline()) return _PassStep.offline;
+    // A row the model already declined has nothing left to try offline, so drop
+    // it before claiming and save two writes plus the gate. The gate still runs
+    // on it the moment we are online again, so a bank deleted meanwhile is
+    // honoured then.
+    if (record.needsLlm && !online) return false;
 
     final id = record.id!;
-    if (!await smsRepository.claim(id, _clock())) return _PassStep.contended;
+    // The fencing token for every write below: the `updated_at` this caller
+    // last wrote. It has to be carried forward because each guarded write —
+    // and [SmsRepository.acquireLlmSlot] — rebases it.
+    var heldSince = _clock();
+    if (!await smsRepository.claimLocal(id, heldSince)) return false;
 
     try {
-      final outcome = await classifier.classify(
-        sender: record.sender,
-        content: record.content,
-        banks: banks,
-        currency: cur,
-        usdRate: usdRate,
-      );
-      final label = await financeWriter.apply(
-        record: record,
-        outcome: outcome,
-        banks: banks,
-        currency: cur,
-      );
-      if (label == 'ignored') {
-        // Terminal ignored: no category, tagged with an internal reason.
-        // - gate rejected it (no model ran)               → gated
-        // - on-device model said "not financial"          → localNone
-        // - LLM ran and said "not financial"              → llmNone
-        // - classified financial but no row was written   → noRecord
-        //   (missing metadata, unmatched card, or a dupe — FinanceWriter
-        //   returns a bare 'ignored' without saying which; lumped here).
-        final IgnoreReason reason;
-        if (outcome.parseSource == null) {
-          // Layer-1 gate rejected it; no model ran.
-          reason = IgnoreReason.gated;
-        } else if (outcome.category == SmsCategory.none) {
-          reason = outcome.parseSource == ParseSource.local
-              ? IgnoreReason.localNone
-              : IgnoreReason.llmNone;
-        } else {
-          reason = IgnoreReason.noRecord;
-        }
+      // Layer 1. Re-run even for a `needs_llm` row: the user may since have
+      // deleted the bank that let it through.
+      if (gateBanks(record.sender, record.content, banks).isEmpty) {
         await smsRepository.updateStatus(
           id,
           SmsStatus.ignored,
           attempts: record.attempts,
           updatedAt: _clock(),
           nextAttemptAt: null,
-          ignoreReason: reason,
-          parseSource: outcome.parseSource,
+          ignoreReason: IgnoreReason.gated,
           processedAt: _clock(),
+          heldSince: heldSince,
         );
-      } else {
-        await smsRepository.updateStatus(
-          id,
-          SmsStatus.success,
-          attempts: record.attempts,
-          updatedAt: _clock(),
-          nextAttemptAt: null,
-          category: label,
-          parseSource: outcome.parseSource,
-          processedAt: _clock(),
-        );
+        return true;
       }
-      return _PassStep.processed;
+
+      // Layer 2. Skipped once flagged: the model has already seen this exact
+      // content and declined it, and `content` never changes.
+      if (!record.needsLlm) {
+        ClassificationOutcome? local;
+        try {
+          local = await classifier
+              .classifyLocal(
+                content: record.content,
+                currency: cur,
+                usdRate: usdRate,
+              )
+              .timeout(localTimeout);
+        } on TimeoutException {
+          // A wedged inference is indistinguishable from a declined one as far
+          // as the queue is concerned, and treating it as an error would burn a
+          // retry on a message the LLM can answer right now.
+          local = null;
+        }
+        if (local != null) {
+          await _finish(record, local, banks, cur, heldSince);
+          return true;
+        }
+      }
+
+      // Layer 3.
+      if (!await isOnline()) return _deferForLlm(record, heldSince);
+      final slotAt = _clock();
+      if (!await smsRepository.acquireLlmSlot(id, slotAt)) {
+        return _deferForLlm(record, heldSince);
+      }
+      heldSince = slotAt; // the promotion rewrote `updated_at`
+
+      final outcome = await classifier.classifyRemote(
+        sender: record.sender,
+        content: record.content,
+        currency: cur,
+      );
+      await _finish(record, outcome, banks, cur, heldSince);
+      return true;
     } on LlmException catch (e) {
       if (!e.retryable) {
         // Fatal (bad key / bad request): fail immediately with a clear error.
@@ -268,37 +277,90 @@ class ProcessingService {
           lastError: _truncate(e.message),
           updatedAt: _clock(),
           nextAttemptAt: null,
+          heldSince: heldSince,
         );
-        return _PassStep.processed;
+        return true;
       }
-      return _rescheduleStep(
+      return _reschedule(
         record,
         e.message,
         retryAfter: e.retryAfter,
         resetAtEpochMs: e.resetAtEpochMs,
+        heldSince: heldSince,
       );
     } catch (e) {
       // Unexpected (e.g. a DB error): treat as transient and back off.
-      return _rescheduleStep(record, e.toString());
+      return _reschedule(record, e.toString(), heldSince: heldSince);
     }
   }
 
-  /// Wraps [_reschedule] into a [_PassStep]: a reschedule while offline leaves the
-  /// row due and stops the pass; otherwise the row backed off and the pass may
-  /// continue to the next record.
-  Future<_PassStep> _rescheduleStep(
+  /// Writes the finance record for a decided [outcome] and closes the row out.
+  Future<void> _finish(
     SmsRecord record,
-    String error, {
-    Duration? retryAfter,
-    int? resetAtEpochMs,
-  }) async {
-    final rescheduled = await _reschedule(
-      record,
-      error,
-      retryAfter: retryAfter,
-      resetAtEpochMs: resetAtEpochMs,
+    ClassificationOutcome outcome,
+    List<Bank> banks,
+    String cur,
+    int heldSince,
+  ) async {
+    final id = record.id!;
+    final label = await financeWriter.apply(
+      record: record,
+      outcome: outcome,
+      banks: banks,
+      currency: cur,
     );
-    return rescheduled ? _PassStep.processed : _PassStep.offline;
+    if (label == 'ignored') {
+      // Terminal ignored: no category, tagged with an internal reason.
+      // - on-device model said "not financial"          → localNone
+      // - LLM ran and said "not financial"              → llmNone
+      // - classified financial but no row was written   → noRecord
+      //   (missing metadata, unmatched card, or a dupe — FinanceWriter
+      //   returns a bare 'ignored' without saying which; lumped here).
+      // A gate miss never reaches here: it is terminal before any model runs.
+      final IgnoreReason reason;
+      if (outcome.category == SmsCategory.none) {
+        reason = outcome.parseSource == ParseSource.local
+            ? IgnoreReason.localNone
+            : IgnoreReason.llmNone;
+      } else {
+        reason = IgnoreReason.noRecord;
+      }
+      await smsRepository.updateStatus(
+        id,
+        SmsStatus.ignored,
+        attempts: record.attempts,
+        updatedAt: _clock(),
+        nextAttemptAt: null,
+        ignoreReason: reason,
+        parseSource: outcome.parseSource,
+        processedAt: _clock(),
+        heldSince: heldSince,
+      );
+    } else {
+      await smsRepository.updateStatus(
+        id,
+        SmsStatus.success,
+        attempts: record.attempts,
+        updatedAt: _clock(),
+        nextAttemptAt: null,
+        category: label,
+        parseSource: outcome.parseSource,
+        processedAt: _clock(),
+        heldSince: heldSince,
+      );
+    }
+  }
+
+  /// Releases a claimed row back to the queue, unchanged and still due, flagged
+  /// so later passes skip the on-device inference that already declined it.
+  ///
+  /// Waiting for connectivity, or for the single LLM slot, is not a failed
+  /// attempt: `attempts` and `next_attempt_at` are preserved, so a message that
+  /// arrives mid-flight does not burn its retry budget before anyone has tried
+  /// it. Always returns false — the pass decided nothing about this row.
+  Future<bool> _deferForLlm(SmsRecord record, int heldSince) async {
+    await smsRepository.releaseLocal(record.id!, heldSince, needsLlm: true);
+    return false;
   }
 
   Future<bool> _reschedule(
@@ -306,10 +368,20 @@ class ProcessingService {
     String error, {
     Duration? retryAfter,
     int? resetAtEpochMs,
+    int? heldSince,
   }) async {
     final id = record.id!;
     // A failure while offline is a transport drop, not a real attempt: release
     // the row unchanged (still due) so the next online pass retries it.
+    //
+    // Deliberately no `needsLlm`: this path also catches a DB error raised
+    // while writing a row the on-device model resolved, and flagging that row
+    // would send a future pass to the LLM for a message the model answers for
+    // free. A row that is only waiting for the LLM is flagged by
+    // [_deferForLlm] instead.
+    //
+    // Uses the guarded [SmsRepository.updateStatus] rather than
+    // [SmsRepository.releaseLocal] because the row may be in `sending` here.
     if (!await isOnline()) {
       await smsRepository.updateStatus(
         id,
@@ -317,6 +389,7 @@ class ProcessingService {
         attempts: record.attempts,
         updatedAt: _clock(),
         nextAttemptAt: record.nextAttemptAt,
+        heldSince: heldSince,
       );
       return false;
     }
@@ -331,6 +404,7 @@ class ProcessingService {
         lastError: _truncate(error),
         updatedAt: _clock(),
         nextAttemptAt: null,
+        heldSince: heldSince,
       );
       return true;
     }
@@ -358,6 +432,7 @@ class ProcessingService {
       lastError: error,
       updatedAt: now,
       nextAttemptAt: now + delay.inMilliseconds,
+      heldSince: heldSince,
     );
     return true;
   }
@@ -368,32 +443,40 @@ class ProcessingService {
   /// - the soonest queued retry (`next_attempt_at`), and
   /// - the stale-reclaim time of any in-flight row (`updated_at + staleAfter`).
   ///
-  /// The second source is essential under the single global slot: an orphaned
-  /// `sending` row (holder isolate died) blocks *every* other message, and if no
-  /// queued rows remain there'd otherwise be nothing scheduled to run
-  /// [SmsRepository.reclaimStale] — the whole queue would stall until the user
-  /// manually reopened the app. Due-now rows (or an offline backlog) yield zero.
+  /// The second source is essential: a row orphaned by a dead holder is never
+  /// returned to the queue unless some later pass runs
+  /// [SmsRepository.reclaimStale] on it, and with nothing queued there would be
+  /// nothing left to schedule that pass — an orphan in the LLM slot would also
+  /// block *every* other message. Due-now rows yield a zero delay.
   Future<void> _rescheduleNext() async {
     final cb = reschedule;
     if (cb == null) return;
     final now = _clock();
 
-    final int? wake;
-    final oldestSending = await smsRepository.oldestSendingAt();
-    if (oldestSending != null) {
-      // The single global slot is held by an in-flight row. While it is held, NO
-      // queued row can be claimed (see [SmsRepository.claim]), so the soonest a
-      // queued row can make progress is the stale-reclaim time — the point at
-      // which a dead holder's row is returned to the queue. Waking at the queued
-      // rows' due-now time instead would schedule a ~0-delay catch-up that
-      // WorkManager re-runs back-to-back (each pass reschedules itself), a
-      // livelock that pegs the device. A live holder drains the queue itself, so
-      // this wake is only the dead-holder safety net.
-      wake = oldestSending + staleAfter.inMilliseconds;
-    } else {
-      // No slot contention: wake when the soonest queued retry is due (null =
-      // nothing queued → cancel the catch-up).
-      wake = await smsRepository.soonestQueuedAttempt();
+    int? wake;
+
+    final soonestQueued = await smsRepository.soonestQueuedAttempt();
+    if (soonestQueued != null) {
+      // A due-now queued row is either LLM-bound — and then it cannot run while
+      // the single LLM slot is held — or locally solvable, in which case the
+      // pass that just ran already handled it. Either way, scheduling at its raw
+      // due time hands WorkManager a ~0 delay it re-runs back-to-back (every
+      // pass reschedules itself), a livelock that pegs the device. Wait for the
+      // slot's stale-reclaim time instead.
+      final slotHeldAt = await smsRepository.oldestSendingAt();
+      wake = slotHeldAt == null
+          ? soonestQueued
+          : max(soonestQueued, slotHeldAt + staleAfter.inMilliseconds);
+    }
+
+    // Safety net for a claimed row whose holder died. With nothing queued,
+    // nothing else would ever schedule the pass that calls reclaimStale on it,
+    // and the row would sit in `processing`/`sending` until the user reopened
+    // the app.
+    final inFlightAt = await smsRepository.oldestInFlightAt();
+    if (inFlightAt != null) {
+      final reclaimAt = inFlightAt + staleAfter.inMilliseconds;
+      wake = wake == null ? reclaimAt : min(wake, reclaimAt);
     }
 
     if (wake == null) {

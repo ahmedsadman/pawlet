@@ -66,6 +66,35 @@ class _FakeLocal implements LocalClassifier {
   Future<LocalPrediction?> infer(String content) async => prediction;
 }
 
+/// Fake on-device classifier that answers per message, so one pass can mix a
+/// locally-solvable row with an LLM-bound one. Counts every inference.
+class _FnLocal implements LocalClassifier {
+  _FnLocal(this.handler);
+  final LocalPrediction? Function(String content) handler;
+  int calls = 0;
+
+  @override
+  Future<LocalPrediction?> infer(String content) async {
+    calls++;
+    return handler(content);
+  }
+}
+
+/// A confident "expense, amount 50" prediction over a `debit 50 ...` body.
+LocalPrediction _localExpense(String content) => LocalPrediction(
+  classLabel: 'expense',
+  classConfidence: 0.97,
+  spans: [
+    LocalSpan(
+      entity: 'AMOUNT',
+      text: '50',
+      confidence: 0.96,
+      start: content.indexOf('50'),
+      end: content.indexOf('50') + 2,
+    ),
+  ],
+);
+
 void main() {
   setUpAll(() {
     sqfliteFfiInit();
@@ -89,13 +118,14 @@ void main() {
   ProcessingService service(
     LlmProvider llm, {
     bool online = true,
+    LocalClassifier? local,
     Future<bool> Function()? isOnline,
     Future<void> Function(int failed)? onCounts,
     Future<void> Function(Duration? delay)? reschedule,
   }) => ProcessingService(
     smsRepository: sms,
     banksRepository: banks,
-    classifier: Classifier(llm),
+    classifier: Classifier(llm, local: local),
     financeWriter: FinanceWriter(db, nowMs: () => now),
     isOnline: isOnline ?? () async => online,
     currency: () => 'BDT',
@@ -111,12 +141,13 @@ void main() {
     String sender, {
     String content = 'debit 50',
     int attempts = 0,
+    int? timestamp,
   }) async {
     final id = (await sms.insertIfNew(
       SmsRecord(
         sender: sender,
         content: content,
-        timestamp: now,
+        timestamp: timestamp ?? now,
         updatedAt: now,
       ),
     ))!;
@@ -129,6 +160,12 @@ void main() {
       );
     }
     return id;
+  }
+
+  /// Puts a row into the single global LLM slot, as an in-flight LLM call does.
+  Future<void> holdLlmSlot(int id) async {
+    await sms.claimLocal(id, now);
+    await sms.acquireLlmSlot(id, now);
   }
 
   test(
@@ -246,14 +283,6 @@ void main() {
     await db.close();
   });
 
-  test('does not bump the data revision when offline (pass bails)', () async {
-    await queue('CHK');
-    final llm = _FakeLlm(result: const ClassifyResult.none());
-    await service(llm, online: false).process();
-    expect(await sms.dataRevision(), 0);
-    await db.close();
-  });
-
   test(
     'never runs more than one LLM call at once across two isolates',
     () async {
@@ -308,7 +337,7 @@ void main() {
     'a fully contended pass skips afterPass and the change signal',
     () async {
       final held = await queue('CHK', content: 'held');
-      await sms.claim(held, now); // occupy the single global slot
+      await holdLlmSlot(held); // occupy the single global slot
       await queue('CHK', content: 'waiting'); // due, but the slot is busy
       var afterPassRuns = 0;
       final llm = _FnLlm((_) async => _expense());
@@ -333,7 +362,7 @@ void main() {
     'schedules a reclaim catch-up when only an orphaned sending row remains',
     () async {
       final held = await queue('CHK', content: 'held');
-      await sms.claim(held, now); // sending; no queued rows remain
+      await holdLlmSlot(held); // sending; no queued rows remain
       Duration? scheduled;
       var calls = 0;
       await service(
@@ -360,7 +389,7 @@ void main() {
       // — NOT at ~0. A ~0 delay makes WorkManager re-run the catch-up back-to-back
       // (it reschedules itself every pass), a livelock that janks the whole app.
       final held = await queue('CHK', content: 'held');
-      await sms.claim(held, now); // sending; occupies the single global slot
+      await holdLlmSlot(held); // occupies the single global slot
       await queue('CHK', content: 'waiting'); // queued, due now, but blocked
       Duration? scheduled;
       var calls = 0;
@@ -787,14 +816,194 @@ void main() {
     await db.close();
   });
 
-  test('does nothing while offline', () async {
-    final id = await queue('CHK');
+  // Layers 1 and 2 touch no network, so an offline pass still drains everything
+  // they can decide; only a genuinely LLM-bound row waits.
+
+  test('offline, an unregistered sender is gated out with no LLM', () async {
+    final id = await queue('DARAZ', content: 'win a prize');
     final llm = _FakeLlm(result: const ClassifyResult.none());
     await service(llm, online: false).process();
 
     final r = await row(id);
-    expect(r['status'], 'queued'); // untouched
+    expect(r['status'], 'ignored');
+    expect(r['ignore_reason'], IgnoreReason.gated.value);
     expect(llm.calls, 0);
+    await db.close();
+  });
+
+  test('offline, a confident local prediction succeeds on-device', () async {
+    const content = 'debit 50 BDT';
+    final id = await queue('CHK', content: content);
+    // The LLM would throw if reached; the local model must settle this.
+    final llm = _FakeLlm(
+      error: const LlmException('should not run', retryable: false),
+    );
+    await service(
+      llm,
+      online: false,
+      local: _FakeLocal(_localExpense(content)),
+    ).process();
+
+    final r = await row(id);
+    expect(r['status'], 'success');
+    expect(r['category'], 'transaction');
+    expect(r['parse_source'], ParseSource.local.value);
+    expect(
+      (await db.query(
+        'transactions',
+        where: 'message_id = ?',
+        whereArgs: [id],
+      )).length,
+      1,
+    );
+    await db.close();
+  });
+
+  test('offline, an LLM-bound row waits without burning an attempt', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(result: _expense());
+    await service(llm, online: false).process();
+
+    final r = await row(id);
+    expect(r['status'], 'queued'); // still due, not backed off
+    expect(r['attempts'], 0);
+    expect(r['next_attempt_at'], isNull);
+    expect(r['needs_llm'], 1);
+    expect(llm.calls, 0);
+    await db.close();
+  });
+
+  test('offline, a deferral alone does not bump the data revision', () async {
+    await queue('CHK');
+    final llm = _FakeLlm(result: _expense());
+    await service(llm, online: false).process();
+    expect(await sms.dataRevision(), 0);
+    await db.close();
+  });
+
+  test(
+    'offline, an LLM-bound head does not block a local row behind it',
+    () async {
+      const content = 'debit 50 BDT';
+      // Older timestamp → sorted first by dueForDelivery, so it is the head.
+      final head = await queue(
+        'CHK',
+        content: 'wire transfer, unclear',
+        timestamp: now - 1000,
+      );
+      final behind = await queue('CHK', content: content);
+      final llm = _FakeLlm(result: _expense());
+      final local = _FnLocal((c) => c == content ? _localExpense(c) : null);
+      await service(llm, online: false, local: local).process();
+
+      final h = await row(head);
+      expect(h['status'], 'queued');
+      expect(h['needs_llm'], 1);
+      expect((await row(behind))['status'], 'success');
+      expect(llm.calls, 0);
+      await db.close();
+    },
+  );
+
+  test('a flagged row skips the model on later offline passes', () async {
+    await queue('CHK');
+    final llm = _FakeLlm(result: _expense());
+    final local = _FnLocal((_) => null);
+    for (var i = 0; i < 3; i++) {
+      await service(llm, online: false, local: local).process();
+    }
+    // Flagged by the first pass; the verdict is stable, so never re-run.
+    expect(local.calls, 1);
+    await db.close();
+  });
+
+  test('a flagged row goes straight to the LLM once online', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(result: _expense());
+    final local = _FnLocal((_) => null);
+    await service(llm, online: false, local: local).process();
+    await service(llm, local: local).process();
+
+    expect(local.calls, 1); // not re-run online either
+    expect(llm.calls, 1);
+    expect((await row(id))['status'], 'success');
+    await db.close();
+  });
+
+  test('a deferred row is picked up by the next online pass', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(result: _expense());
+    await service(llm, online: false).process();
+    expect((await row(id))['status'], 'queued');
+
+    await service(llm).process();
+    final r = await row(id);
+    expect(r['status'], 'success');
+    expect(r['parse_source'], ParseSource.llm.value);
+    expect(llm.calls, 1);
+    await db.close();
+  });
+
+  test('a flagged row whose bank was deleted is still gated out', () async {
+    final id = await queue('CHK');
+    final llm = _FakeLlm(result: _expense());
+    await service(llm, online: false).process();
+    expect((await row(id))['needs_llm'], 1);
+
+    for (final b in await banks.list()) {
+      await banks.delete(b.id);
+    }
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['status'], 'ignored');
+    expect(r['ignore_reason'], IgnoreReason.gated.value);
+    expect(llm.calls, 0); // the gate runs ahead of the LLM, flagged or not
+    await db.close();
+  });
+
+  test('online, a row defers rather than blocking on a held slot', () async {
+    final held = await queue('CHK', content: 'held', timestamp: now - 1000);
+    await holdLlmSlot(held);
+    final id = await queue('CHK', content: 'waiting');
+    final llm = _FakeLlm(result: _expense());
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['status'], 'queued');
+    expect(r['attempts'], 0); // waiting for the slot is not an attempt
+    expect(r['next_attempt_at'], isNull);
+    expect(r['needs_llm'], 1);
+    expect(llm.calls, 0);
+    await db.close();
+  });
+
+  test('online, a local row behind a held slot still succeeds', () async {
+    const content = 'debit 50 BDT';
+    final held = await queue('CHK', content: 'held', timestamp: now - 1000);
+    await holdLlmSlot(held);
+    final id = await queue('CHK', content: content);
+    final llm = _FakeLlm(
+      error: const LlmException('should not run', retryable: false),
+    );
+    await service(llm, local: _FakeLocal(_localExpense(content))).process();
+
+    final r = await row(id);
+    expect(r['status'], 'success');
+    expect(r['parse_source'], ParseSource.local.value);
+    await db.close();
+  });
+
+  test('reclaims and processes a row orphaned in processing', () async {
+    final id = await queue('CHK');
+    await sms.claimLocal(id, now); // the holder dies right here
+    now += ProcessingService.staleAfter.inMilliseconds + 1;
+    final llm = _FakeLlm(result: _expense());
+    await service(llm).process();
+
+    final r = await row(id);
+    expect(r['status'], 'success');
+    expect(llm.calls, 1);
     await db.close();
   });
 
@@ -804,6 +1013,15 @@ void main() {
   // so a future edit to either constant can't silently reintroduce that race.
   test('provider timeout stays safely below the stale-reclaim threshold', () {
     expect(OpenRouterProvider.timeout, lessThan(ProcessingService.staleAfter));
+  });
+
+  // Same guard for Layer 2: a wedged on-device inference must be abandoned
+  // before its own row is reclaimed out from under it.
+  test('local timeout stays safely below the stale-reclaim threshold', () {
+    expect(
+      ProcessingService.localTimeout,
+      lessThan(ProcessingService.staleAfter),
+    );
   });
 
   test('a paused service does not drain the queue', () async {
