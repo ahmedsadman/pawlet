@@ -533,6 +533,209 @@ void main() {
     },
   );
 
+  test(
+    'updateStatus with matching heldSince applies and returns true',
+    () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+      await repo.claimLocal(id, 100);
+
+      final applied = await repo.updateStatus(
+        id,
+        SmsStatus.queued,
+        updatedAt: 110,
+        heldSince: 100,
+      );
+      expect(applied, isTrue);
+      final row = (await db.query(
+        'sms_records',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).first;
+      expect(row['status'], SmsStatus.queued.name);
+      expect(row['updated_at'], 110);
+      await db.close();
+    },
+  );
+
+  test(
+    'updateStatus with stale heldSince does NOT apply and returns false',
+    () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+
+      // First holder claims at t=100.
+      await repo.claimLocal(id, 100);
+      // Row is reclaimed and a second holder claims at t=300.
+      await repo.reclaimStale(200);
+      await repo.claimLocal(id, 300);
+
+      // First holder tries to write with its stale heldSince=100.
+      final applied = await repo.updateStatus(
+        id,
+        SmsStatus.queued,
+        updatedAt: 400,
+        heldSince: 100,
+      );
+      expect(applied, isFalse);
+
+      // Row is left as the new holder left it.
+      final row = (await db.query(
+        'sms_records',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).first;
+      expect(row['status'], SmsStatus.processing.name);
+      expect(row['updated_at'], 300);
+      await db.close();
+    },
+  );
+
+  test(
+    'updateStatus without heldSince still applies unconditionally',
+    () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+      await repo.claimLocal(id, 100);
+
+      // No heldSince → unconditional write.
+      final applied = await repo.updateStatus(
+        id,
+        SmsStatus.queued,
+        updatedAt: 200,
+      );
+      expect(applied, isTrue);
+      final row = (await db.query(
+        'sms_records',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).first;
+      expect(row['status'], SmsStatus.queued.name);
+      await db.close();
+    },
+  );
+
+  test(
+    'a stale holder cannot free the LLM slot out from under a live call',
+    () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+
+      // First holder claims local at t=100, then acquires the LLM slot at t=110.
+      await repo.claimLocal(id, 100);
+      await repo.acquireLlmSlot(id, 110);
+      // First holder freezes. Row is reclaimed and a second holder claims and
+      // acquires the slot again.
+      await repo.reclaimStale(200);
+      await repo.claimLocal(id, 300);
+      await repo.acquireLlmSlot(id, 310);
+
+      // Now the row is `sending` with updated_at=310. The frozen first holder
+      // wakes and tries to write `queued` with its stale heldSince=110.
+      final applied = await repo.updateStatus(
+        id,
+        SmsStatus.queued,
+        updatedAt: 400,
+        heldSince: 110,
+      );
+      expect(applied, isFalse);
+
+      // Critical: the row is still `sending`, so the LLM slot is still held.
+      final row = (await db.query(
+        'sms_records',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).first;
+      expect(row['status'], SmsStatus.sending.name);
+      expect(row['updated_at'], 310);
+      await db.close();
+    },
+  );
+
+  test(
+    'releaseLocal returns the row to queued and preserves attempts',
+    () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+
+      // Set some retry state before claiming.
+      await repo.updateStatus(
+        id,
+        SmsStatus.queued,
+        updatedAt: 50,
+        attempts: 2,
+        nextAttemptAt: 60,
+      );
+      await repo.claimLocal(id, 100);
+
+      // Release it back.
+      final released = await repo.releaseLocal(id, 100);
+      expect(released, isTrue);
+
+      final row = (await db.query(
+        'sms_records',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).first;
+      expect(row['status'], SmsStatus.queued.name);
+      expect(row['updated_at'], 100); // Not touched by releaseLocal.
+      expect(row['attempts'], 2); // Preserved.
+      expect(row['next_attempt_at'], 60); // Preserved.
+      await db.close();
+    },
+  );
+
+  test('releaseLocal can set needs_llm', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    await repo.claimLocal(id, 100);
+
+    await repo.releaseLocal(id, 100, needsLlm: true);
+
+    final row = (await db.query(
+      'sms_records',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).first;
+    expect(row['needs_llm'], 1);
+    await db.close();
+  });
+
+  test(
+    'releaseLocal with stale heldSince is a no-op returning false',
+    () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+
+      // First holder claims at t=100.
+      await repo.claimLocal(id, 100);
+      // Reclaim and second holder claims at t=300.
+      await repo.reclaimStale(200);
+      await repo.claimLocal(id, 300);
+
+      // First holder tries to release with stale heldSince=100.
+      final released = await repo.releaseLocal(id, 100);
+      expect(released, isFalse);
+
+      // Row still held by the new holder.
+      final row = (await db.query(
+        'sms_records',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).first;
+      expect(row['status'], SmsStatus.processing.name);
+      expect(row['updated_at'], 300);
+      await db.close();
+    },
+  );
+
   group('pruneIfDue', () {
     Future<int> addIgnored(
       SmsRepository repo,
