@@ -75,7 +75,12 @@ class AppServices {
       financeWriter: FinanceWriter(database),
       isOnline: connectivity.isOnline,
       currency: () => kBaseCurrency,
-      usdBdtRate: exchangeRate.usdToBdt,
+      // Offline, a fetch can only burn the 15s timeout on a request that cannot
+      // succeed, on a path an incoming SMS drives synchronously — serve
+      // whatever was cached instead.
+      usdBdtRate: () async => await connectivity.isOnline()
+          ? exchangeRate.usdToBdt()
+          : exchangeRate.cachedUsdToBdt(),
       afterPass: matcher.runPending,
       onCounts: (failed) async {
         await notifications.reconcileFailures(failed);

@@ -146,4 +146,34 @@ void main() {
 
     expect(await svc.usdToBdt(), isNull);
   });
+
+  test('cachedUsdToBdt serves a stale cache without a request', () async {
+    final client = _MockClient();
+    // A stale cache is exactly the case where usdToBdt() would refetch.
+    final sp = await prefs({
+      'fx_usd_bdt_rate': 120.0,
+      'fx_usd_bdt_fetched_at': 0,
+    });
+    final svc = ExchangeRateService(
+      sp,
+      client: client,
+      nowMs: () => const Duration(days: 30).inMilliseconds,
+      endpoint: endpoint,
+    );
+
+    expect(await svc.cachedUsdToBdt(), Decimal.parse('120'));
+    verifyNever(() => client.get(any()));
+  });
+
+  test('cachedUsdToBdt returns null when nothing was ever cached', () async {
+    final client = _MockClient();
+    final svc = ExchangeRateService(
+      await prefs(),
+      client: client,
+      endpoint: endpoint,
+    );
+
+    expect(await svc.cachedUsdToBdt(), isNull);
+    verifyNever(() => client.get(any()));
+  });
 }

@@ -39,6 +39,17 @@ class ExchangeRateService {
     if (_ownsClient) _client.close();
   }
 
+  /// The cached rate, however stale, without ever attempting a fetch. Null when
+  /// nothing has been cached yet.
+  ///
+  /// Used by the processing queue while offline: [usdToBdt] would spend its
+  /// 15-second timeout on a request that cannot succeed, on a path an incoming
+  /// SMS drives synchronously.
+  Future<Decimal?> cachedUsdToBdt() async {
+    final cached = _prefs.getDouble(_kRate);
+    return cached == null ? null : _asDecimal(cached);
+  }
+
   /// The USD→BDT rate as a [Decimal], or null when never cached and the fetch
   /// fails. A number > 0 is guaranteed when non-null.
   Future<Decimal?> usdToBdt() async {
