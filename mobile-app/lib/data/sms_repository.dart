@@ -360,7 +360,19 @@ class SmsRepository {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<void> updateStatus(
+  /// Writes a status transition. Returns whether a row was actually updated.
+  ///
+  /// Pass [heldSince] — the `updated_at` this caller stamped when it claimed
+  /// the row (or acquired the LLM slot) — to make the write conditional on
+  /// still holding the claim. A frozen holder can have its row reclaimed by
+  /// [reclaimStale] and re-claimed by another isolate; without this guard its
+  /// late write lands on the new holder's row. The dangerous case is a release
+  /// writing `queued` over a live `sending` row, which frees the global LLM
+  /// slot mid-call and admits a second concurrent request.
+  ///
+  /// Omit it only for writes on a row this caller does not hold (seeding a
+  /// queued row, a manual requeue).
+  Future<bool> updateStatus(
     int id,
     SmsStatus status, {
     int? attempts,
@@ -372,9 +384,20 @@ class SmsRepository {
     IgnoreReason? ignoreReason,
     FailureReason? failureReason,
     ParseSource? parseSource,
-    bool? needsLlm,
+    bool needsLlm = false,
+    int? heldSince,
   }) async {
-    await _db.update(
+    final whereClause = StringBuffer('id = ?');
+    final whereArgs = <Object?>[id];
+    if (heldSince != null) {
+      whereClause.write(' AND status IN (?, ?) AND updated_at = ?');
+      whereArgs
+        ..add(SmsStatus.processing.name)
+        ..add(SmsStatus.sending.name)
+        ..add(heldSince);
+    }
+
+    final count = await _db.update(
       _table,
       {
         'status': status.name,
@@ -393,13 +416,14 @@ class SmsRepository {
         'failure_reason': ?failureReason?.value,
         // Null-aware: only stamped on a terminal processed result.
         'parse_source': ?parseSource?.value,
-        // Only the Layer-3 deferral sets it, and it is never cleared, so every
-        // other writer must leave the column alone.
-        if (needsLlm != null) 'needs_llm': needsLlm ? 1 : 0,
+        // Set once by the Layer-3 deferral and never cleared, so a false value
+        // means "don't touch", not "clear".
+        if (needsLlm) 'needs_llm': 1,
       },
-      where: 'id = ?',
-      whereArgs: [id],
+      where: whereClause.toString(),
+      whereArgs: whereArgs,
     );
+    return count == 1;
   }
 
   /// Atomically takes a queued row for on-device work (queued -> processing).
@@ -441,6 +465,27 @@ class SmsRepository {
           'id = ? AND status = ? '
           'AND NOT EXISTS (SELECT 1 FROM $_table WHERE status = ?)',
       whereArgs: [id, SmsStatus.processing.name, SmsStatus.sending.name],
+    );
+    return count == 1;
+  }
+
+  /// Returns a row this caller holds to the queue, unchanged and still due.
+  ///
+  /// The counterpart to a failed [acquireLlmSlot]: the row could not get the
+  /// single LLM slot, so it goes back rather than parking in `processing`
+  /// until [reclaimStale] notices. Guarded on [heldSince] for the same reason
+  /// [updateStatus] is — a thawed holder must not requeue a row another
+  /// isolate has since claimed. Returns whether the release landed.
+  Future<bool> releaseLocal(
+    int id,
+    int heldSince, {
+    bool needsLlm = false,
+  }) async {
+    final count = await _db.update(
+      _table,
+      {'status': SmsStatus.queued.name, if (needsLlm) 'needs_llm': 1},
+      where: 'id = ? AND status = ? AND updated_at = ?',
+      whereArgs: [id, SmsStatus.processing.name, heldSince],
     );
     return count == 1;
   }
