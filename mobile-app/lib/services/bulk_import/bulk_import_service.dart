@@ -43,9 +43,9 @@ class BulkImportResult {
 /// Deliberately bypasses the `sms_records` queue and its processing service:
 /// this is a synchronous, user-visible pass that must finish while the progress
 /// window is up, and it must never spend an LLM call on a backlog that can run
-/// to thousands of messages. It therefore drives [LocalClassifier] and
-/// [decideLocal] directly — there is no code path from here to the LLM — and
-/// writes terminal rows itself via [SmsRepository.markBulkProcessed].
+/// to thousands of messages. It therefore drives [runLocalModel] directly —
+/// there is no code path from here to the LLM — and writes terminal rows itself
+/// via [SmsRepository.markBulkProcessed].
 ///
 /// Re-running is safe and useful. Messages already stored are skipped unless a
 /// previous pass left them `ignored` (which means no finance row exists for
@@ -210,8 +210,8 @@ class BulkImportService {
     }
 
     final decision = await runLocalModel(
-      local,
       content,
+      local: local,
       currency: cur,
       usdRate: rate,
     );

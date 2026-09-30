@@ -361,14 +361,14 @@ void main() {
 
   group('runLocalModel', () {
     test('rejects when no model is wired', () async {
-      final r = await runLocalModel(null, 'debit 50', currency: 'BDT');
+      final r = await runLocalModel('debit 50', local: null, currency: 'BDT');
       expect(r.accepted, isFalse);
     });
 
     test('rejects when the model returns null', () async {
       final r = await runLocalModel(
-        _StubLocal(null),
         'debit 50',
+        local: _StubLocal(null),
         currency: 'BDT',
       );
       expect(r.accepted, isFalse);
@@ -377,26 +377,39 @@ void main() {
     test('accepts a confident prediction', () async {
       const content = 'debit 50 BDT';
       final r = await runLocalModel(
-        _StubLocal(
-          const LocalPrediction(
+        content,
+        local: _StubLocal(
+          LocalPrediction(
             classLabel: 'expense',
             classConfidence: 0.97,
-            spans: [
-              LocalSpan(
-                entity: 'AMOUNT',
-                text: '50',
-                confidence: 0.96,
-                start: 6,
-                end: 8,
-              ),
-            ],
+            spans: [_span('AMOUNT', '50', 0.96, start: content.indexOf('50'))],
           ),
         ),
-        content,
         currency: 'BDT',
       );
       expect(r.accepted, isTrue);
       expect(r.result!.transaction!.amount, '50');
+    });
+
+    test('threads the USD rate through to the conversion', () async {
+      const content = 'POS Transaction USD 100';
+      final r = await runLocalModel(
+        content,
+        local: _StubLocal(
+          LocalPrediction(
+            classLabel: 'expense',
+            classConfidence: 0.97,
+            spans: [
+              _span('AMOUNT', '100', 0.96, start: content.indexOf('100')),
+            ],
+          ),
+        ),
+        currency: 'BDT',
+        usdRate: Decimal.parse('120'),
+      );
+      expect(r.accepted, isTrue);
+      expect(r.result!.transaction!.amount, '12000');
+      expect(r.result!.transaction!.originalCurrency, 'USD');
     });
   });
 }
