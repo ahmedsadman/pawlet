@@ -152,4 +152,51 @@ void main() {
       expect(copy.parseSource, ParseSource.local);
     });
   });
+
+  group('SmsStatus.processing', () {
+    test('round-trips through fromName', () {
+      expect(SmsStatus.fromName('processing'), SmsStatus.processing);
+    });
+
+    test('counts as queued for the Queue section', () {
+      const r = SmsRecord(
+        sender: 'A',
+        content: 'x',
+        timestamp: 1,
+        status: SmsStatus.processing,
+      );
+      expect(r.isQueued, isTrue);
+    });
+  });
+
+  group('needsLlm', () {
+    test('defaults to false and round-trips through the DB map', () {
+      const off = SmsRecord(sender: 'A', content: 'x', timestamp: 1);
+      expect(off.needsLlm, isFalse);
+      expect(off.toDbMap()['needs_llm'], 0);
+
+      const on = SmsRecord(
+        sender: 'A',
+        content: 'x',
+        timestamp: 1,
+        needsLlm: true,
+      );
+      expect(on.toDbMap()['needs_llm'], 1);
+      expect(SmsRecord.fromDbMap(on.toDbMap()).needsLlm, isTrue);
+    });
+
+    test('reads a missing column as false (defensive)', () {
+      final map = const SmsRecord(
+        sender: 'A',
+        content: 'x',
+        timestamp: 1,
+      ).toDbMap()..remove('needs_llm');
+      expect(SmsRecord.fromDbMap(map).needsLlm, isFalse);
+    });
+
+    test('copyWith carries the flag', () {
+      const r = SmsRecord(sender: 'A', content: 'x', timestamp: 1);
+      expect(r.copyWith(needsLlm: true).needsLlm, isTrue);
+    });
+  });
 }

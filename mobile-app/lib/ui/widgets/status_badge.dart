@@ -13,6 +13,9 @@ class StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (color, label) = switch (status) {
       SmsStatus.queued => (AppTheme.flavor.peach, 'Queued'),
+      // Both in-flight states read the same to the user; the split between
+      // on-device work and an LLM call is an internal scheduling concern.
+      SmsStatus.processing ||
       SmsStatus.sending => (AppTheme.flavor.blue, 'Processing'),
       SmsStatus.success => (AppTheme.flavor.green, 'Done'),
       // Ignored rows are never rendered (not in Queue or History); this case
