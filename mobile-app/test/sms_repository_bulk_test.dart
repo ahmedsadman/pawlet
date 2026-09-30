@@ -97,16 +97,22 @@ void main() {
     expect(found?.id, id);
   });
 
-  test('findNearDuplicate is null outside the window', () async {
-    await seed(timestamp: 1782209211000);
-    expect(
-      await repo.findNearDuplicate(
-        sender: 'CHK',
-        timestamp: 1782209211000 + 15001,
-        content: 'debit 50',
-      ),
-      isNull,
-    );
+  test('findNearDuplicate window is inclusive and symmetric', () async {
+    const stored = 1782209211000;
+    await seed(timestamp: stored);
+
+    Future<int?> at(int ts) async => (await repo.findNearDuplicate(
+      sender: 'CHK',
+      timestamp: ts,
+      content: 'debit 50',
+    ))?.id;
+
+    // The boundary is inclusive on both sides: a capture exactly
+    // kSmsDedupWindow away is still the same message.
+    expect(await at(stored + 15000), isNotNull);
+    expect(await at(stored - 15000), isNotNull);
+    expect(await at(stored + 15001), isNull);
+    expect(await at(stored - 15001), isNull);
   });
 
   test('findNearDuplicate is null when sender or content differs', () async {
