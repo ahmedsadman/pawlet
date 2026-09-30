@@ -100,23 +100,6 @@ class SmsRepository {
     return records.first;
   }
 
-  /// The stored record matching the dedup key `(sender, timestamp, content)`,
-  /// or null. The bulk inbox import uses it after [insertIfNew] reports a
-  /// duplicate, to decide whether the existing row still needs processing.
-  Future<SmsRecord?> findByIdentity({
-    required String sender,
-    required int timestamp,
-    required String content,
-  }) async {
-    final rows = await _db.query(
-      _table,
-      where: 'sender = ? AND timestamp = ? AND content = ?',
-      whereArgs: [sender, timestamp, content],
-      limit: 1,
-    );
-    return rows.isEmpty ? null : SmsRecord.fromDbMap(rows.first);
-  }
-
   /// Transactions carrying no bank, with the sender and body of the SMS they
   /// came from so a caller can re-resolve the account. Manual entries (no
   /// backing message) are excluded — they have no sender to match on.

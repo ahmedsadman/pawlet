@@ -34,45 +34,6 @@ void main() {
     ),
   ))!;
 
-  test('findByIdentity returns the row matching the dedup key', () async {
-    final id = await seed();
-    final found = await repo.findByIdentity(
-      sender: 'CHK',
-      timestamp: 1000,
-      content: 'debit 50',
-    );
-    expect(found?.id, id);
-    expect(found?.status, SmsStatus.queued);
-  });
-
-  test('findByIdentity is null when any part of the key differs', () async {
-    await seed();
-    expect(
-      await repo.findByIdentity(
-        sender: 'CHK',
-        timestamp: 1001,
-        content: 'debit 50',
-      ),
-      isNull,
-    );
-    expect(
-      await repo.findByIdentity(
-        sender: 'OTHER',
-        timestamp: 1000,
-        content: 'debit 50',
-      ),
-      isNull,
-    );
-    expect(
-      await repo.findByIdentity(
-        sender: 'CHK',
-        timestamp: 1000,
-        content: 'debit 51',
-      ),
-      isNull,
-    );
-  });
-
   test('findNearDuplicate matches a capture inside the window', () async {
     // Live path stored the carrier's whole-second stamp; the import arrives
     // with Android's receipt time, 876ms later. Same SMS.
