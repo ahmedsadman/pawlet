@@ -740,4 +740,62 @@ void main() {
       expect(local.calls, isEmpty);
     },
   );
+
+  test('skips a message the live listener already captured', () async {
+    // The exact scenario that produced 153 duplicates on a real device: the
+    // live path stored the carrier's whole-second stamp, the inbox reports
+    // Android's receipt time 876ms later.
+    const carrierTs = 1782209211000;
+    const inboxTs = 1782209211876;
+
+    await sms.insertIfNew(
+      SmsRecord(
+        sender: 'EBL',
+        content: expenseBody,
+        timestamp: carrierTs,
+        status: SmsStatus.success,
+        category: 'transaction',
+        parseSource: ParseSource.llm,
+        updatedAt: carrierTs,
+      ),
+    );
+
+    final inbox = _FakeInbox([_msg('EBL', expenseBody, inboxTs)]);
+    final local = _FakeLocal({
+      expenseBody: _pred('expense', 'AMOUNT', expenseBody, '1250.00'),
+    });
+
+    final result = await service(inbox, local).run();
+
+    expect(result.scanned, 1);
+    expect(result.saved, 0);
+    expect(await count('sms_records'), 1);
+    expect(await count('transactions'), 0);
+    // The on-device model must not even run for a message already handled.
+    expect(local.calls, isEmpty);
+  });
+
+  test('still imports a distinct message from the same sender', () async {
+    // Guards against the window being so wide it swallows real messages.
+    const other = 'Purchase of 99.00 at another shop';
+    await sms.insertIfNew(
+      SmsRecord(
+        sender: 'EBL',
+        content: expenseBody,
+        timestamp: 1782209211000,
+        status: SmsStatus.success,
+        updatedAt: 1782209211000,
+      ),
+    );
+
+    final inbox = _FakeInbox([_msg('EBL', other, 1782209211876)]);
+    final local = _FakeLocal({
+      other: _pred('expense', 'AMOUNT', other, '99.00'),
+    });
+
+    final result = await service(inbox, local).run();
+
+    expect(result.saved, 1);
+    expect(await count('sms_records'), 2);
+  });
 }
