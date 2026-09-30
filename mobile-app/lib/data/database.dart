@@ -19,7 +19,7 @@ class AppDatabase {
   /// Key/value store for small operational metadata (e.g. the last prune time).
   static const String metaTable = 'app_meta';
 
-  static const int _version = 5;
+  static const int _version = 6;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), fileName);
@@ -49,7 +49,8 @@ class AppDatabase {
         processed_at INTEGER,
         ignore_reason TEXT,
         failure_reason TEXT,
-        parse_source TEXT
+        parse_source TEXT,
+        needs_llm INTEGER NOT NULL DEFAULT 0
       )
     ''');
     // Dedupe overlapping foreground / background / cold-start reads of one SMS.
@@ -152,16 +153,31 @@ class AppDatabase {
     ''');
   }
 
-  /// Pre-release upgrade policy: the schema is defined once in [createSchema];
-  /// there are no incremental deltas to preserve. Any version bump drops every
-  /// table and rebuilds from scratch, discarding local data. Revisit this (add
-  /// real, data-preserving migrations) once the app ships and real user data
-  /// exists on devices.
+  /// Upgrade policy: real, data-preserving migrations from the last shipped
+  /// version; a destructive rebuild only for jumps we have no path for.
+  ///
+  /// Installs in the wild carry hand-configured accounts and cards that cannot
+  /// be re-derived from the SMS inbox, so any upgrade from a released version
+  /// needs an explicit branch here. Versions 1–4 predate release and keep the
+  /// old rebuild behavior.
+  ///
+  /// Every new branch needs a test in `test/database_test.dart` that checks
+  /// both halves: that rows survive, and that the resulting schema matches what
+  /// [createSchema] would have produced.
   static Future<void> onUpgrade(
     Database db,
     int oldVersion,
     int newVersion,
   ) async {
+    if (oldVersion == 5 && newVersion == 6) {
+      // Purely additive; existing rows take the default.
+      await db.execute(
+        'ALTER TABLE $smsTable '
+        'ADD COLUMN needs_llm INTEGER NOT NULL DEFAULT 0',
+      );
+      return;
+    }
+
     for (final table in const [
       smsTable,
       banksTable,
