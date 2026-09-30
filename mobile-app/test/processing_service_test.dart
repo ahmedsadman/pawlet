@@ -80,6 +80,19 @@ class _FnLocal implements LocalClassifier {
   }
 }
 
+/// Fake on-device classifier that runs an async side effect before declining,
+/// so a test can steal the row out from under the holder mid-inference.
+class _StealingLocal implements LocalClassifier {
+  _StealingLocal(this.onInfer);
+  final Future<void> Function() onInfer;
+
+  @override
+  Future<LocalPrediction?> infer(String content) async {
+    await onInfer();
+    return null;
+  }
+}
+
 /// A confident "expense, amount 50" prediction over a `debit 50 ...` body.
 LocalPrediction _localExpense(String content) => LocalPrediction(
   classLabel: 'expense',
@@ -1007,21 +1020,82 @@ void main() {
     await db.close();
   });
 
+  test(
+    'an older processing row cannot pull the wake below the slot floor',
+    () async {
+      // oldestInFlightAt spans `processing` as well as `sending`, so it can be
+      // older than the slot holder. Reclaiming a `processing` row frees no
+      // slot, so the wake must still sit at the slot's stale-reclaim time — not
+      // ~0, which is the WorkManager busy-loop the floor exists to prevent.
+      final local = await queue('CHK', content: 'local', timestamp: now - 2000);
+      await sms.claimLocal(local, now - 5000); // processing, predates the slot
+      final held = await queue('CHK', content: 'held', timestamp: now - 1000);
+      await holdLlmSlot(held); // sending at `now`
+      await queue('CHK', content: 'waiting'); // queued, due now, but blocked
+      Duration? scheduled;
+      var calls = 0;
+      await service(
+        _FakeLlm(result: const ClassifyResult.none()),
+        reschedule: (d) async {
+          scheduled = d;
+          calls++;
+        },
+      ).process();
+      expect(calls, 1);
+      expect(scheduled, ProcessingService.staleAfter);
+      await db.close();
+    },
+  );
+
+  test(
+    'a claim lost mid-LLM-call writes neither a finance row nor a status',
+    () async {
+      // The whole point of re-checking the claim before FinanceWriter.apply:
+      // the status write can be rejected, the transaction insert cannot be
+      // undone, and the next holder would settle the row as ignored/no_record
+      // with a real transaction hanging off it.
+      final id = await queue('CHK');
+      final llm = _FnLlm((_) async {
+        // This holder freezes; its row is reclaimed and another isolate takes
+        // it while the call is still out.
+        await sms.reclaimStale(now + 1);
+        await sms.claimLocal(id, now + 10);
+        return _expense();
+      });
+      await service(llm).process();
+
+      final r = await row(id);
+      expect(r['status'], 'processing'); // exactly as the new holder left it
+      expect(r['updated_at'], now + 10);
+      expect(await db.query('transactions'), isEmpty);
+      expect(await sms.dataRevision(), 0); // a lost write is not progress
+      await db.close();
+    },
+  );
+
+  test('a claim lost mid-inference cannot defer the row to the LLM', () async {
+    final id = await queue('CHK');
+    final local = _StealingLocal(() async {
+      await sms.reclaimStale(now + 1);
+      await sms.claimLocal(id, now + 10);
+    });
+    final llm = _FakeLlm(result: _expense());
+    await service(llm, online: false, local: local).process();
+
+    final r = await row(id);
+    expect(r['status'], 'processing'); // the new holder still owns it
+    expect(r['updated_at'], now + 10);
+    expect(r['needs_llm'], 0); // no flag stamped onto someone else's row
+    expect(await sms.dataRevision(), 0);
+    await db.close();
+  });
+
   // The single-retry design's safety rests on this ordering across two files: a
   // legitimately slow in-flight call (up to OpenRouterProvider.timeout) must not
   // be reclaimed as orphaned (ProcessingService.staleAfter) mid-flight. Guard it
   // so a future edit to either constant can't silently reintroduce that race.
   test('provider timeout stays safely below the stale-reclaim threshold', () {
     expect(OpenRouterProvider.timeout, lessThan(ProcessingService.staleAfter));
-  });
-
-  // Same guard for Layer 2: a wedged on-device inference must be abandoned
-  // before its own row is reclaimed out from under it.
-  test('local timeout stays safely below the stale-reclaim threshold', () {
-    expect(
-      ProcessingService.localTimeout,
-      lessThan(ProcessingService.staleAfter),
-    );
   });
 
   test('a paused service does not drain the queue', () async {

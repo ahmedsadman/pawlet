@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math';
 
 import 'package:decimal/decimal.dart';
@@ -92,11 +91,6 @@ class ProcessingService {
   /// never reclaimed mid-flight — which could otherwise cause duplicate
   /// processing across isolates. See the guard in processing_service_test.
   static const Duration staleAfter = Duration(minutes: 3);
-
-  /// Ceiling on one on-device inference. Bounds Tier 2 the way
-  /// OpenRouterProvider.timeout bounds Tier 3, so a stalled local call cannot
-  /// outlive [staleAfter] and have its own row reclaimed underneath it.
-  static const Duration localTimeout = Duration(seconds: 30);
 
   bool _running = false;
   bool _paused = false;
@@ -229,26 +223,24 @@ class ProcessingService {
 
       // Layer 2. Skipped once flagged: the model has already seen this exact
       // content and declined it, and `content` never changes.
+      //
+      // Deliberately unbounded — do not wrap this in `.timeout()`. Abandoning
+      // the wait does not cancel the inference: the interpreter isolate stays
+      // latched mid-run and every later call returns unfilled output buffers,
+      // whose uniform softmax never clears the confidence threshold, so ONE
+      // stall would silently downgrade every later message in the process to
+      // LLM-only. Treating the timeout as a decline would also set `needs_llm`,
+      // which is never cleared, permanently sending a free message to a paid
+      // call. A run that overruns [staleAfter] is handled without any of that:
+      // its row is reclaimed, and the `heldSince` token makes its late writes
+      // no-ops rather than corruption.
       if (!record.needsLlm) {
-        ClassificationOutcome? local;
-        try {
-          local = await classifier
-              .classifyLocal(
-                content: record.content,
-                currency: cur,
-                usdRate: usdRate,
-              )
-              .timeout(localTimeout);
-        } on TimeoutException {
-          // A wedged inference is indistinguishable from a declined one as far
-          // as the queue is concerned, and treating it as an error would burn a
-          // retry on a message the LLM can answer right now.
-          local = null;
-        }
-        if (local != null) {
-          await _finish(record, local, banks, cur, heldSince);
-          return true;
-        }
+        final local = await classifier.classifyLocal(
+          content: record.content,
+          currency: cur,
+          usdRate: usdRate,
+        );
+        if (local != null) return _finish(record, local, banks, cur, heldSince);
       }
 
       // Layer 3.
@@ -264,8 +256,7 @@ class ProcessingService {
         content: record.content,
         currency: cur,
       );
-      await _finish(record, outcome, banks, cur, heldSince);
-      return true;
+      return _finish(record, outcome, banks, cur, heldSince);
     } on LlmException catch (e) {
       if (!e.retryable) {
         // Fatal (bad key / bad request): fail immediately with a clear error.
@@ -295,7 +286,18 @@ class ProcessingService {
   }
 
   /// Writes the finance record for a decided [outcome] and closes the row out.
-  Future<void> _finish(
+  /// Returns whether the terminal status write landed; false means the claim
+  /// was lost and this pass decided nothing about the row.
+  ///
+  /// The claim is re-checked BEFORE [FinanceWriter.apply], not left to the
+  /// guarded status write alone, because `apply` is irreversible: it inserts
+  /// into `transactions`/`bills` and can move a bank balance, none of which a
+  /// rejected status write undoes. Discovering the loss afterwards would strand
+  /// a real transaction on a row the next holder settles as `ignored/no_record`
+  /// (its own `apply` dedupes on `message_id`) — counted in finance totals,
+  /// missing from History, and deleted by the ignored-row prune a week later,
+  /// leaving `transactions.message_id` dangling.
+  Future<bool> _finish(
     SmsRecord record,
     ClassificationOutcome outcome,
     List<Bank> banks,
@@ -303,6 +305,8 @@ class ProcessingService {
     int heldSince,
   ) async {
     final id = record.id!;
+    if (!await smsRepository.stillHeld(id, heldSince)) return false;
+
     final label = await financeWriter.apply(
       record: record,
       outcome: outcome,
@@ -325,7 +329,7 @@ class ProcessingService {
       } else {
         reason = IgnoreReason.noRecord;
       }
-      await smsRepository.updateStatus(
+      return smsRepository.updateStatus(
         id,
         SmsStatus.ignored,
         attempts: record.attempts,
@@ -336,19 +340,18 @@ class ProcessingService {
         processedAt: _clock(),
         heldSince: heldSince,
       );
-    } else {
-      await smsRepository.updateStatus(
-        id,
-        SmsStatus.success,
-        attempts: record.attempts,
-        updatedAt: _clock(),
-        nextAttemptAt: null,
-        category: label,
-        parseSource: outcome.parseSource,
-        processedAt: _clock(),
-        heldSince: heldSince,
-      );
     }
+    return smsRepository.updateStatus(
+      id,
+      SmsStatus.success,
+      attempts: record.attempts,
+      updatedAt: _clock(),
+      nextAttemptAt: null,
+      category: label,
+      parseSource: outcome.parseSource,
+      processedAt: _clock(),
+      heldSince: heldSince,
+    );
   }
 
   /// Releases a claimed row back to the queue, unchanged and still due, flagged
@@ -368,7 +371,7 @@ class ProcessingService {
     String error, {
     Duration? retryAfter,
     int? resetAtEpochMs,
-    int? heldSince,
+    required int heldSince,
   }) async {
     final id = record.id!;
     // A failure while offline is a transport drop, not a real attempt: release
@@ -453,6 +456,13 @@ class ProcessingService {
     if (cb == null) return;
     final now = _clock();
 
+    // The earliest anything blocked on the single LLM slot can move: the slot
+    // holder's own stale-reclaim time. Null when the slot is free.
+    final slotHeldAt = await smsRepository.oldestSendingAt();
+    final slotFloor = slotHeldAt == null
+        ? null
+        : slotHeldAt + staleAfter.inMilliseconds;
+
     int? wake;
 
     final soonestQueued = await smsRepository.soonestQueuedAttempt();
@@ -463,10 +473,7 @@ class ProcessingService {
       // due time hands WorkManager a ~0 delay it re-runs back-to-back (every
       // pass reschedules itself), a livelock that pegs the device. Wait for the
       // slot's stale-reclaim time instead.
-      final slotHeldAt = await smsRepository.oldestSendingAt();
-      wake = slotHeldAt == null
-          ? soonestQueued
-          : max(soonestQueued, slotHeldAt + staleAfter.inMilliseconds);
+      wake = slotFloor == null ? soonestQueued : max(soonestQueued, slotFloor);
     }
 
     // Safety net for a claimed row whose holder died. With nothing queued,
@@ -477,6 +484,12 @@ class ProcessingService {
     if (inFlightAt != null) {
       final reclaimAt = inFlightAt + staleAfter.inMilliseconds;
       wake = wake == null ? reclaimAt : min(wake, reclaimAt);
+      // ...but never below the slot floor. `oldestInFlightAt` spans `processing`
+      // too, so it can be older than the slot holder — and reclaiming a
+      // `processing` row frees no slot, so it is no reason to wake earlier.
+      // Without this clamp a live LLM call with an older local row alongside it
+      // yields the ~0-delay busy-loop the floor exists to prevent.
+      if (slotFloor != null && wake < slotFloor) wake = slotFloor;
     }
 
     if (wake == null) {
