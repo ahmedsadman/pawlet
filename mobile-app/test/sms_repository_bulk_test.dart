@@ -73,6 +73,76 @@ void main() {
     );
   });
 
+  test('findNearDuplicate matches a capture inside the window', () async {
+    // Live path stored the carrier's whole-second stamp; the import arrives
+    // with Android's receipt time, 876ms later. Same SMS.
+    final id = await seed(timestamp: 1782209211000);
+    final found = await repo.findNearDuplicate(
+      sender: 'CHK',
+      timestamp: 1782209211876,
+      content: 'debit 50',
+    );
+    expect(found?.id, id);
+  });
+
+  test('findNearDuplicate matches when the import is EARLIER', () async {
+    // The sign flips on ~26% of real pairs: the device clock can run behind
+    // the carrier's, so the window has to be symmetric.
+    final id = await seed(timestamp: 1782209211000);
+    final found = await repo.findNearDuplicate(
+      sender: 'CHK',
+      timestamp: 1782209210300,
+      content: 'debit 50',
+    );
+    expect(found?.id, id);
+  });
+
+  test('findNearDuplicate is null outside the window', () async {
+    await seed(timestamp: 1782209211000);
+    expect(
+      await repo.findNearDuplicate(
+        sender: 'CHK',
+        timestamp: 1782209211000 + 15001,
+        content: 'debit 50',
+      ),
+      isNull,
+    );
+  });
+
+  test('findNearDuplicate is null when sender or content differs', () async {
+    await seed(timestamp: 1000);
+    expect(
+      await repo.findNearDuplicate(
+        sender: 'OTHER',
+        timestamp: 1000,
+        content: 'debit 50',
+      ),
+      isNull,
+    );
+    expect(
+      await repo.findNearDuplicate(
+        sender: 'CHK',
+        timestamp: 1000,
+        content: 'debit 51',
+      ),
+      isNull,
+    );
+  });
+
+  test(
+    'findNearDuplicate returns the closest row when several match',
+    () async {
+      await seed(timestamp: 100000);
+      final near = await seed(timestamp: 112000);
+      final found = await repo.findNearDuplicate(
+        sender: 'CHK',
+        timestamp: 113000,
+        content: 'debit 50',
+      );
+      expect(found?.id, near);
+    },
+  );
+
   test('markBulkProcessed writes a terminal success row', () async {
     final id = await seed();
     await repo.markBulkProcessed(
