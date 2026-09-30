@@ -145,8 +145,12 @@ class SmsRepository {
 
   /// Queued + in-flight records, oldest first (drives the Queue section).
   Future<List<SmsRecord>> queued() => _query(
-    where: 'status IN (?, ?)',
-    whereArgs: [SmsStatus.queued.name, SmsStatus.sending.name],
+    where: 'status IN (?, ?, ?)',
+    whereArgs: [
+      SmsStatus.queued.name,
+      SmsStatus.processing.name,
+      SmsStatus.sending.name,
+    ],
     orderBy: 'timestamp ASC',
   );
 
@@ -156,15 +160,20 @@ class SmsRepository {
     int limit = kQueuePageSize,
     int offset = 0,
   }) => _query(
-    where: 'status IN (?, ?)',
-    whereArgs: [SmsStatus.queued.name, SmsStatus.sending.name],
+    where: 'status IN (?, ?, ?)',
+    whereArgs: [
+      SmsStatus.queued.name,
+      SmsStatus.processing.name,
+      SmsStatus.sending.name,
+    ],
     orderBy: 'timestamp ASC',
     limit: limit,
     offset: offset,
   );
 
-  Future<int> countQueued() => _count('status IN (?, ?)', [
+  Future<int> countQueued() => _count('status IN (?, ?, ?)', [
     SmsStatus.queued.name,
+    SmsStatus.processing.name,
     SmsStatus.sending.name,
   ]);
 
@@ -181,13 +190,25 @@ class SmsRepository {
 
   Future<int> countFailed() => _count('status = ?', [SmsStatus.failure.name]);
 
-  /// The oldest `updated_at` among in-flight (`sending`) rows, or null when none.
-  /// Used to schedule a stale-reclaim wake so a single orphaned in-flight row
-  /// (holder isolate died) can't stall the single-slot queue indefinitely.
+  /// The `updated_at` of the row holding the single global LLM slot, or null
+  /// when the slot is free. Used to schedule a wake at the slot's stale-reclaim
+  /// time instead of a ~0-delay poll while an LLM call is in flight.
   Future<int?> oldestSendingAt() async {
     final rows = await _db.rawQuery(
       'SELECT MIN(updated_at) AS oldest FROM $_table WHERE status = ?',
       [SmsStatus.sending.name],
+    );
+    return rows.first['oldest'] as int?;
+  }
+
+  /// The oldest `updated_at` among rows claimed for processing in either state
+  /// (`processing` or `sending`), or null when none. Used to schedule a
+  /// stale-reclaim wake so a claimed row whose holder died is not stranded when
+  /// nothing else is queued to trigger a pass.
+  Future<int?> oldestInFlightAt() async {
+    final rows = await _db.rawQuery(
+      'SELECT MIN(updated_at) AS oldest FROM $_table WHERE status IN (?, ?)',
+      [SmsStatus.processing.name, SmsStatus.sending.name],
     );
     return rows.first['oldest'] as int?;
   }
@@ -351,6 +372,7 @@ class SmsRepository {
     IgnoreReason? ignoreReason,
     FailureReason? failureReason,
     ParseSource? parseSource,
+    bool? needsLlm,
   }) async {
     await _db.update(
       _table,
@@ -371,10 +393,56 @@ class SmsRepository {
         'failure_reason': ?failureReason?.value,
         // Null-aware: only stamped on a terminal processed result.
         'parse_source': ?parseSource?.value,
+        // Only the Layer-3 deferral sets it, and it is never cleared, so every
+        // other writer must leave the column alone.
+        if (needsLlm != null) 'needs_llm': needsLlm ? 1 : 0,
       },
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  /// Atomically takes a queued row for on-device work (queued -> processing).
+  /// Returns true only if this caller won it.
+  ///
+  /// Per-row mutual exclusion ONLY: unlike the LLM slot, any number of rows may
+  /// be `processing` at once across isolates. Local classification makes no
+  /// network call and hits no rate limit, so serializing it would only make an
+  /// in-flight LLM call (up to two minutes) stall messages the on-device model
+  /// could have answered immediately. Because sqflite shares one native
+  /// connection process-wide, concurrent claims on the SAME row serialize, so
+  /// two callers can never both win. Orphaned rows (a killed holder) are freed
+  /// by [reclaimStale].
+  Future<bool> claimLocal(int id, int updatedAt) async {
+    final count = await _db.update(
+      _table,
+      {'status': SmsStatus.processing.name, 'updated_at': updatedAt},
+      where: 'id = ? AND status = ?',
+      whereArgs: [id, SmsStatus.queued.name],
+    );
+    return count == 1;
+  }
+
+  /// Promotes a row this caller already holds (`processing`) into the single
+  /// global LLM slot (`sending`). Returns false when another row is already in
+  /// the slot, in which case the caller must release its row back to the queue.
+  ///
+  /// This is what caps LLM concurrency at one call process-wide (main,
+  /// background-SMS and WorkManager isolates included) — the per-isolate
+  /// `_running` guard cannot serialize across isolates. A row abandoned in the
+  /// slot by a killed holder is freed by [reclaimStale]; the safety of that
+  /// depends on OpenRouterProvider.timeout staying below
+  /// ProcessingService.staleAfter (guarded by a test).
+  Future<bool> acquireLlmSlot(int id, int updatedAt) async {
+    final count = await _db.update(
+      _table,
+      {'status': SmsStatus.sending.name, 'updated_at': updatedAt},
+      where:
+          'id = ? AND status = ? '
+          'AND NOT EXISTS (SELECT 1 FROM $_table WHERE status = ?)',
+      whereArgs: [id, SmsStatus.processing.name, SmsStatus.sending.name],
+    );
+    return count == 1;
   }
 
   /// Atomically claims a queued row for processing (queued -> sending), but only
@@ -398,14 +466,16 @@ class SmsRepository {
     return count == 1;
   }
 
-  /// Requeues rows stuck in `sending` (orphaned by a killed isolate) whose last
-  /// update predates [olderThan] (epoch ms).
+  /// Requeues rows stuck mid-processing (orphaned by a killed isolate) whose
+  /// last update predates [olderThan] (epoch ms). Covers both in-flight states:
+  /// `processing` (died during on-device work) and `sending` (died holding the
+  /// LLM slot).
   Future<void> reclaimStale(int olderThan) async {
     await _db.update(
       _table,
       {'status': SmsStatus.queued.name},
-      where: 'status = ? AND updated_at < ?',
-      whereArgs: [SmsStatus.sending.name, olderThan],
+      where: 'status IN (?, ?) AND updated_at < ?',
+      whereArgs: [SmsStatus.processing.name, SmsStatus.sending.name, olderThan],
     );
   }
 

@@ -401,6 +401,138 @@ void main() {
     });
   });
 
+  test('claimLocal is atomic; reclaimStale frees an orphan', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+
+    expect(await repo.claimLocal(id, 100), isTrue);
+    expect(await repo.claimLocal(id, 200), isFalse); // already processing
+
+    await repo.reclaimStale(150); // updated_at (100) < 150 → back to queued
+    expect(await repo.claimLocal(id, 300), isTrue);
+    await db.close();
+  });
+
+  test('claimLocal does NOT block on another row being in flight', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final a = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    final b = (await repo.insertIfNew(_sms('B', ts: 2)))!;
+
+    expect(await repo.claimLocal(a, 100), isTrue);
+    expect(await repo.acquireLlmSlot(a, 105), isTrue); // a holds the LLM slot
+    // The whole point of the split: local work proceeds anyway.
+    expect(await repo.claimLocal(b, 110), isTrue);
+    await db.close();
+  });
+
+  test('acquireLlmSlot admits exactly one row process-wide', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final a = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    final b = (await repo.insertIfNew(_sms('B', ts: 2)))!;
+    await repo.claimLocal(a, 100);
+    await repo.claimLocal(b, 101);
+
+    expect(await repo.acquireLlmSlot(a, 110), isTrue);
+    expect(await repo.acquireLlmSlot(b, 111), isFalse); // slot held by a
+
+    // a reaches a terminal state, freeing the slot.
+    await repo.updateStatus(a, SmsStatus.success, updatedAt: 120);
+    expect(await repo.acquireLlmSlot(b, 130), isTrue);
+    await db.close();
+  });
+
+  test('acquireLlmSlot refuses a row this caller does not hold', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    // Still `queued` — never went through claimLocal.
+    expect(await repo.acquireLlmSlot(id, 100), isFalse);
+    await db.close();
+  });
+
+  test('reclaimStale frees orphaned processing rows too', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    await repo.claimLocal(id, 100); // died here — never reached the LLM
+
+    await repo.reclaimStale(150);
+    expect(await repo.claimLocal(id, 200), isTrue);
+    await db.close();
+  });
+
+  test('oldestSendingAt ignores rows that are only processing', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    expect(await repo.oldestSendingAt(), isNull);
+
+    await repo.claimLocal(id, 100);
+    expect(await repo.oldestSendingAt(), isNull); // local work is not the slot
+
+    await repo.acquireLlmSlot(id, 110);
+    expect(await repo.oldestSendingAt(), 110);
+
+    await repo.updateStatus(id, SmsStatus.success, updatedAt: 120);
+    expect(await repo.oldestSendingAt(), isNull);
+    await db.close();
+  });
+
+  test('oldestInFlightAt covers processing and sending', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final a = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    final b = (await repo.insertIfNew(_sms('B', ts: 2)))!;
+    expect(await repo.oldestInFlightAt(), isNull);
+
+    await repo.claimLocal(b, 300);
+    expect(await repo.oldestInFlightAt(), 300);
+
+    await repo.claimLocal(a, 100);
+    await repo.acquireLlmSlot(a, 105);
+    expect(await repo.oldestInFlightAt(), 105); // min(105, 300)
+    await db.close();
+  });
+
+  test('countQueued and queuedPage include processing rows', () async {
+    final db = await openTestDb();
+    final repo = SmsRepository(db);
+    final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+    await repo.claimLocal(id, 100);
+
+    expect(await repo.countQueued(), 1);
+    final page = await repo.queuedPage();
+    expect(page.single.status, SmsStatus.processing);
+    await db.close();
+  });
+
+  test(
+    'updateStatus can set needs_llm without touching it otherwise',
+    () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final id = (await repo.insertIfNew(_sms('A', ts: 1)))!;
+      await repo.claimLocal(id, 100);
+
+      await repo.updateStatus(
+        id,
+        SmsStatus.queued,
+        updatedAt: 110,
+        nextAttemptAt: null,
+        needsLlm: true,
+      );
+      expect((await repo.dueForDelivery(200)).single.needsLlm, isTrue);
+
+      // A later write that says nothing about the flag must preserve it.
+      await repo.updateStatus(id, SmsStatus.queued, updatedAt: 120);
+      expect((await repo.dueForDelivery(200)).single.needsLlm, isTrue);
+      await db.close();
+    },
+  );
+
   group('pruneIfDue', () {
     Future<int> addIgnored(
       SmsRepository repo,
