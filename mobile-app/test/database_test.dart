@@ -17,6 +17,27 @@ Future<Set<String>> _columnNames(Database db, String table) async {
   return rows.map((r) => r['name'] as String).toSet();
 }
 
+/// Full column definitions, not just names, so a hand-written migration that
+/// drifts from [AppDatabase.createSchema] on a type, a NOT NULL or a default is
+/// caught instead of passing a names-only comparison.
+Future<List<Map<String, Object?>>> _columnSpecs(
+  Database db,
+  String table,
+) async {
+  final rows = await db.rawQuery('PRAGMA table_info($table)');
+  return rows
+      .map(
+        (r) => {
+          'name': r['name'],
+          'type': r['type'],
+          'notnull': r['notnull'],
+          'dflt_value': r['dflt_value'],
+          'pk': r['pk'],
+        },
+      )
+      .toList();
+}
+
 Future<Set<String>> _tableNames(Database db) async {
   final rows = await db.rawQuery(
     "SELECT name FROM sqlite_master WHERE type='table'",
@@ -172,7 +193,7 @@ void main() {
     });
   });
 
-  group('destructive onUpgrade (pre-release policy)', () {
+  group('destructive onUpgrade (unmigrated version jumps)', () {
     test(
       'any version bump drops old tables and rebuilds the current schema',
       () async {
@@ -231,5 +252,122 @@ void main() {
         await db.close();
       },
     );
+  });
+
+  group('needs_llm migration (v5 -> v6)', () {
+    // The v5 shape, frozen here because createSchema now describes v6: an
+    // upgrade test needs the schema it is upgrading FROM. Mirrors what a real
+    // v5 install carries, indexes included.
+    Future<Database> openV5() async {
+      final db = await databaseFactory.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(singleInstance: false),
+      );
+      await db.execute('''
+        CREATE TABLE sms_records (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sender TEXT NOT NULL,
+          contact_name TEXT,
+          content TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          updated_at INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at INTEGER,
+          category TEXT,
+          processed_at INTEGER,
+          ignore_reason TEXT,
+          failure_reason TEXT,
+          parse_source TEXT
+        )
+      ''');
+      await db.execute(
+        'CREATE UNIQUE INDEX idx_sms_unique '
+        'ON sms_records (sender, timestamp, content)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_sms_status_updated ON sms_records (status, updated_at)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_sms_status_next ON sms_records (status, next_attempt_at)',
+      );
+      await db.execute('''
+        CREATE TABLE banks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          account_type TEXT NOT NULL DEFAULT 'deposit',
+          card_digits TEXT,
+          last_balance TEXT,
+          last_balance_at INTEGER,
+          created_at INTEGER NOT NULL,
+          matchers TEXT
+        )
+      ''');
+      return db;
+    }
+
+    test('preserves messages and hand-configured accounts', () async {
+      final db = await openV5();
+      await db.insert('sms_records', {
+        'sender': 'CHK',
+        'content': 'debit 50',
+        'timestamp': 1,
+        'status': 'success',
+        'updated_at': 1,
+        'category': 'transaction',
+      });
+      await db.insert('banks', {
+        'name': 'My Card',
+        'account_type': 'credit',
+        'card_digits': '4238|3241',
+        'created_at': 1,
+      });
+
+      await AppDatabase.onUpgrade(db, 5, 6);
+
+      final sms = (await db.query('sms_records')).single;
+      expect(sms['sender'], 'CHK');
+      expect(sms['category'], 'transaction');
+      expect(sms['needs_llm'], 0); // backfilled by the column default
+      final bank = (await db.query('banks')).single;
+      expect(bank['name'], 'My Card');
+      expect(bank['card_digits'], '4238|3241');
+      await db.close();
+    });
+
+    test('lands on the same shape as a fresh v6 create', () async {
+      final migrated = await openV5();
+      await AppDatabase.onUpgrade(migrated, 5, 6);
+      final fresh = await openTestDb();
+
+      expect(
+        await _columnSpecs(migrated, 'sms_records'),
+        await _columnSpecs(fresh, 'sms_records'),
+      );
+      expect(
+        await _indexNames(migrated, 'sms_records'),
+        await _indexNames(fresh, 'sms_records'),
+      );
+      await migrated.close();
+      await fresh.close();
+    });
+
+    test('any other version jump still rebuilds destructively', () async {
+      final db = await openV5();
+      await db.insert('sms_records', {
+        'sender': 'OLD',
+        'content': 'x',
+        'timestamp': 1,
+        'status': 'success',
+        'updated_at': 1,
+      });
+
+      await AppDatabase.onUpgrade(db, 4, 6);
+
+      expect(await db.query('sms_records'), isEmpty);
+      expect(await _columnNames(db, 'sms_records'), contains('needs_llm'));
+      await db.close();
+    });
   });
 }
