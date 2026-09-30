@@ -18,16 +18,16 @@ class LocalGateResult {
 /// Runs the on-device half of the pipeline end to end: inference, then
 /// [decideLocal]. A rejection means "this can only be answered by the LLM".
 ///
-/// Shared by the live queue and the bulk inbox import. It takes a
+/// Will be shared by the live queue and the bulk inbox import. It takes a
 /// [LocalClassifier] rather than the full pipeline deliberately: the import
-/// must have no reachable path to the LLM, which a dependency on `Classifier`
-/// would hand it.
+/// must have no reachable path to the LLM, which holding a `Classifier`
+/// reference would permit.
 ///
 /// A null [local] (no model wired) and a null prediction (asset load or runtime
 /// failure — implementations never throw) are both rejections.
 Future<LocalGateResult> runLocalModel(
-  LocalClassifier? local,
   String content, {
+  required LocalClassifier? local,
   required String currency,
   Decimal? usdRate,
 }) async {
