@@ -144,7 +144,7 @@ table is a snapshot — verify there if precision matters.
 | `contact_name` | TEXT | nullable; legacy/unused — always null on new rows |
 | `content` | TEXT | required; the message body |
 | `timestamp` | INTEGER | required; received time, epoch ms |
-| `status` | TEXT | required; one of `queued`, `sending`, `success`, `ignored`, `failure` |
+| `status` | TEXT | required; one of `queued`, `processing`, `sending`, `success`, `ignored`, `failure` |
 | `attempts` | INTEGER | default 0 |
 | `last_error` | TEXT | nullable |
 | `updated_at` | INTEGER | default 0 |
@@ -154,6 +154,7 @@ table is a snapshot — verify there if precision matters.
 | `ignore_reason` | TEXT | nullable; internal |
 | `failure_reason` | TEXT | nullable; internal |
 | `parse_source` | TEXT | nullable; `local` or `llm` — which engine parsed the row |
+| `needs_llm` | INTEGER | required; default 0 — 1 once only the LLM can resolve the row |
 
 **`banks`** — user's banks and cards.
 
