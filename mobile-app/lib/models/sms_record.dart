@@ -5,7 +5,14 @@ enum SmsStatus {
   /// Waiting to be processed (also used while backing off between retries).
   queued,
 
-  /// Currently being processed (Layer-1 gate + LLM call in flight).
+  /// Being classified on-device: the Layer-1 gate and the local model. NOT
+  /// exclusive — any number of rows may be `processing` across isolates at
+  /// once, because no network call and no rate limit is involved. Contrast
+  /// [sending], which is capped at one row process-wide.
+  processing,
+
+  /// An LLM call is in flight. Exactly one row process-wide holds this
+  /// (see [SmsRepository.acquireLlmSlot]).
   sending,
 
   /// Processed — categorized and written to a finance record.
@@ -112,6 +119,7 @@ class SmsRecord {
     this.ignoreReason,
     this.failureReason,
     this.parseSource,
+    this.needsLlm = false,
     this.transactionType,
   });
 
@@ -153,6 +161,13 @@ class SmsRecord {
   /// Layer-1 gate rejected it before any model ran (and for pre-v4 rows).
   final ParseSource? parseSource;
 
+  /// True once the on-device model has run on this exact content and declined
+  /// it, so the row can only be resolved by the LLM. Set when a pass reaches
+  /// Layer 3 but cannot run it (offline, or the single LLM slot is busy); read
+  /// by later passes to skip an inference whose answer is already known.
+  /// Never cleared — `content` is immutable, so the verdict is stable.
+  final bool needsLlm;
+
   /// Transient (not persisted on `sms_records`): the type of the backing
   /// transaction row, joined in for History display so a transaction shows its
   /// subcategory (Income/Expense/Transfer) instead of the generic label. Null
@@ -160,7 +175,9 @@ class SmsRecord {
   final TxType? transactionType;
 
   bool get isQueued =>
-      status == SmsStatus.queued || status == SmsStatus.sending;
+      status == SmsStatus.queued ||
+      status == SmsStatus.processing ||
+      status == SmsStatus.sending;
 
   SmsRecord copyWith({
     int? id,
@@ -174,6 +191,7 @@ class SmsRecord {
     IgnoreReason? ignoreReason,
     FailureReason? failureReason,
     ParseSource? parseSource,
+    bool? needsLlm,
     TxType? transactionType,
   }) {
     return SmsRecord(
@@ -191,6 +209,7 @@ class SmsRecord {
       ignoreReason: ignoreReason ?? this.ignoreReason,
       failureReason: failureReason ?? this.failureReason,
       parseSource: parseSource ?? this.parseSource,
+      needsLlm: needsLlm ?? this.needsLlm,
       transactionType: transactionType ?? this.transactionType,
     );
   }
@@ -210,6 +229,7 @@ class SmsRecord {
     'ignore_reason': ignoreReason?.value,
     'failure_reason': failureReason?.value,
     'parse_source': parseSource?.value,
+    'needs_llm': needsLlm ? 1 : 0,
   };
 
   factory SmsRecord.fromDbMap(Map<String, Object?> map) => SmsRecord(
@@ -227,6 +247,7 @@ class SmsRecord {
     ignoreReason: IgnoreReason.fromValue(map['ignore_reason'] as String?),
     failureReason: FailureReason.fromValue(map['failure_reason'] as String?),
     parseSource: ParseSource.fromValue(map['parse_source'] as String?),
+    needsLlm: (map['needs_llm'] as int? ?? 0) != 0,
     // `tx_type` is present only when a query LEFT JOINs the transactions table
     // (History); absent elsewhere, in which case it stays null.
     transactionType: map['tx_type'] == null
