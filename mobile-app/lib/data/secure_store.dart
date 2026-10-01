@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Encrypted key-value storage (Android Keystore-backed) for secrets that must
@@ -23,19 +24,27 @@ class SecureStore {
   Future<void> writeApiKey(String value) =>
       _storage.write(key: _kApiKey, value: value.trim());
 
-  /// Resolves the API key for the pipeline: the stored key if present, else the
-  /// compile-time `--dart-define=OPENROUTER_API_KEY` value (persisted for next
-  /// launch so it survives even if the define is later dropped). Returns '' when
-  /// neither is set. No key baked into a client binary is truly secret, but this
-  /// keeps it out of source control and out of plaintext prefs.
+  /// The compile-time `--dart-define=OPENROUTER_API_KEY` value, '' when unset.
+  @visibleForTesting
+  String get injectedApiKey =>
+      const String.fromEnvironment('OPENROUTER_API_KEY');
+
+  /// Resolves the API key for the pipeline: the compile-time
+  /// `--dart-define=OPENROUTER_API_KEY` value if set, else the stored key
+  /// (so a build that drops the define keeps working). Returns '' when neither
+  /// is set. No key baked into a client binary is truly secret, but this keeps
+  /// it out of source control and out of plaintext prefs.
+  ///
+  /// The define outranks the store so that rotating the key is just a rebuild.
+  /// The other way round, a key persisted on first launch outlives every later
+  /// build, and once it is revoked the pipeline fails every message with a
+  /// non-retryable 401 that no reinstall-free action can clear — there is no
+  /// in-app writer for this key.
   Future<String> resolveApiKey() async {
+    final injected = injectedApiKey.trim();
     final stored = await readApiKey();
-    if (stored.isNotEmpty) return stored;
-    const injected = String.fromEnvironment('OPENROUTER_API_KEY');
-    if (injected.isNotEmpty) {
-      await writeApiKey(injected);
-      return injected;
-    }
-    return '';
+    if (injected.isEmpty) return stored;
+    if (injected != stored) await writeApiKey(injected);
+    return injected;
   }
 }
