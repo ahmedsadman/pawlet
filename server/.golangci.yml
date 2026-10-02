@@ -8,6 +8,10 @@ linters:
     - bodyclose
     - ineffassign
     - unused
+    - gofumpt
+    - goimports
+    - unconvert
+    - misspell
 
 issues:
   exclude-rules:
