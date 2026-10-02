@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -48,6 +49,9 @@ func Verify(p Payload, wantHash string, policy Policy, now time.Time) error {
 	if p.RequestDetails.RequestPackageName != policy.PackageName {
 		return ErrPackageMismatch
 	}
+	// Constant-time is belt-and-braces here: the challenge is already consumed
+	// by the time we compare, so there is no second guess to time. Kept so the
+	// comparison stays safe if the single-use guarantee is ever relaxed.
 	if subtle.ConstantTimeCompare([]byte(p.RequestDetails.RequestHash), []byte(wantHash)) != 1 {
 		return ErrRequestHashMismatch
 	}
@@ -60,7 +64,7 @@ func Verify(p Payload, wantHash string, policy Policy, now time.Time) error {
 	if !containsAny(p.AppIntegrity.CertificateSha256Digest, policy.CertDigests) {
 		return ErrCertMismatch
 	}
-	if !contains(p.DeviceIntegrity.DeviceRecognitionVerdict, "MEETS_DEVICE_INTEGRITY") {
+	if !slices.Contains(p.DeviceIntegrity.DeviceRecognitionVerdict, "MEETS_DEVICE_INTEGRITY") {
 		return ErrDeviceIntegrity
 	}
 	return nil
@@ -81,18 +85,9 @@ func checkFreshness(raw string, maxAge time.Duration, now time.Time) error {
 	return nil
 }
 
-func contains(haystack []string, needle string) bool {
-	for _, v := range haystack {
-		if v == needle {
-			return true
-		}
-	}
-	return false
-}
-
 func containsAny(haystack, needles []string) bool {
 	for _, n := range needles {
-		if contains(haystack, n) {
+		if slices.Contains(haystack, n) {
 			return true
 		}
 	}
