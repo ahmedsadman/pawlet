@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"slices"
 
 	"github.com/ahmedsadman/pawlet/server/internal/llm"
 )
@@ -24,6 +25,10 @@ type BundleHandler struct {
 // is a programming error, not a runtime condition, so panicking at startup is
 // acceptable.
 func NewBundleHandler(models []string) *BundleHandler {
+	// Copy the slice: the payload and its ETag are rendered once here, so a
+	// caller mutating the original afterwards would silently desync the served
+	// bytes from the ETag clients cache against.
+	models = slices.Clone(models)
 	payload := map[string]any{
 		"bundleVersion": 1,
 		"schemaVersion": SchemaVersion,
