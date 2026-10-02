@@ -34,6 +34,18 @@ void main() {
       expect(parseStatementPeriod('SEP2026')!.month, 9);
     });
 
+    test("apostrophe form MON'YY (City Bank AMEX statements)", () {
+      final p = parseStatementPeriod("Sep'26");
+      expect(p!.month, 9);
+      expect(p.year, 2026);
+      expect(parseStatementPeriod("Jan'25")!.year, 2025);
+      expect(parseStatementPeriod("December'27")!.month, 12);
+      // Curly apostrophe, in case a sender or the keyboard emits one.
+      expect(parseStatementPeriod('Jun’27')!.month, 6);
+      // A bare day number must not be read as a year.
+      expect(parseStatementPeriod('Sep 26'), isNull);
+    });
+
     test('full month names', () {
       expect(parseStatementPeriod('September 2026')!.month, 9);
       expect(parseStatementPeriod('June 2026')!.month, 6);
