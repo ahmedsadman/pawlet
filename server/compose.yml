@@ -1,0 +1,23 @@
+services:
+  pawlet:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # SQLite database and WAL files
+      - pawlet-data:/data
+      # Google service account JSON (read-only)
+      - ./service-account.json:/run/secrets/sa.json:ro
+    networks:
+      # DO NOT publish ports — Caddy reaches this container over the shared network.
+      # Update "caddy_net" to match your actual network name from `docker network inspect`.
+      - caddy_net
+
+volumes:
+  pawlet-data:
+
+networks:
+  # This network must already exist. Create it with `docker network create caddy_net`
+  # or replace with your existing reverse-proxy network name.
+  caddy_net:
+    external: true
