@@ -129,8 +129,11 @@ func (c *Client) Classify(ctx context.Context, in Request) (Response, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		retryable := resp.StatusCode == 429 || resp.StatusCode == 408 || resp.StatusCode >= 500
 		return Response{}, &CallError{
-			Status:         resp.StatusCode,
-			Message:        string(respBody),
+			Status: resp.StatusCode,
+			// Status only, never the body. OpenRouter can echo the request in
+			// an error, and this string reaches the logs — message content
+			// must not.
+			Message:        fmt.Sprintf("HTTP %d", resp.StatusCode),
 			Retryable:      retryable,
 			RetryAfter:     parseRetryAfter(resp.Header.Get("Retry-After")),
 			ResetAtEpochMs: parseResetAt(resp.Header.Get("X-RateLimit-Reset")),
@@ -223,7 +226,7 @@ func parseRetryAfter(value string) time.Duration {
 	if value == "" {
 		return 0
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(value))
+	n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
 	if err != nil || n < 0 {
 		return 0
 	}
