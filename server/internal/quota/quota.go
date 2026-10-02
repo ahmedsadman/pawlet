@@ -3,6 +3,7 @@ package quota
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -29,6 +30,7 @@ type Delta struct {
 // Sink persists flushed counters.
 type Sink interface {
 	PersistUsage(ctx context.Context, deltas []Delta) error
+	LoadUsage(ctx context.Context, day string) (map[string]int64, error)
 }
 
 // Limits are the configured ceilings.
@@ -43,12 +45,12 @@ type Decision struct {
 	Allowed    bool
 	Reason     Reason
 	RetryAfter time.Duration
+	Day        string
 }
 
 type counter struct {
 	day        string
 	dailyCalls int64
-	tokens     int64
 	minute     int64
 	minuteHits int
 }
@@ -74,6 +76,34 @@ func New(limits Limits, sink Sink, now func() time.Time) *Limiter {
 		installs: make(map[string]*counter),
 		pending:  make(map[string]*Delta),
 	}
+}
+
+// Hydrate seeds the limiter from today's persisted usage so counters survive
+// a restart. Call once at startup, before serving requests.
+func (l *Limiter) Hydrate(ctx context.Context) error {
+	day := l.now().UTC().Format("2006-01-02")
+	usage, err := l.sink.LoadUsage(ctx, day)
+	if err != nil {
+		return err
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	var globalSum int64
+	for idHash, calls := range usage {
+		c := &counter{
+			day:        day,
+			dailyCalls: calls,
+		}
+		l.installs[idHash] = c
+		globalSum += calls
+	}
+
+	l.global.day = day
+	l.global.dailyCalls = globalSum
+
+	return nil
 }
 
 // Admit records one call against idHash when every limit allows it.
@@ -113,15 +143,14 @@ func (l *Limiter) Admit(idHash string) Decision {
 	l.global.dailyCalls++
 	l.pendingFor(idHash, day).Calls++
 
-	return Decision{Allowed: true}
+	return Decision{Allowed: true, Day: day}
 }
 
 // RecordTokens attributes token usage to an admitted call.
-func (l *Limiter) RecordTokens(idHash string, tokens int64) {
+func (l *Limiter) RecordTokens(idHash, day string, tokens int64) {
 	if tokens <= 0 {
 		return
 	}
-	day := l.now().UTC().Format("2006-01-02")
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -158,16 +187,29 @@ func (l *Limiter) Flush(ctx context.Context) error {
 
 // RunFlusher flushes on an interval until ctx is cancelled, then flushes once
 // more so a graceful shutdown does not drop the final counters.
-func (l *Limiter) RunFlusher(ctx context.Context, every time.Duration) {
+func (l *Limiter) RunFlusher(ctx context.Context, every time.Duration, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
+
+	consecutiveFailures := 0
 	for {
 		select {
 		case <-ctx.Done():
-			_ = l.Flush(context.WithoutCancel(ctx))
+			if err := l.Flush(context.WithoutCancel(ctx)); err != nil {
+				logger.Error("final flush failed", "error", err)
+			}
 			return
 		case <-ticker.C:
-			_ = l.Flush(ctx)
+			l.evictStale(l.now().UTC().Format("2006-01-02"))
+			if err := l.Flush(ctx); err != nil {
+				consecutiveFailures++
+				logger.Error("flush failed", "error", err, "consecutive_failures", consecutiveFailures)
+			} else {
+				consecutiveFailures = 0
+			}
 		}
 	}
 }
@@ -187,7 +229,6 @@ func rollDay(c *counter, day string) {
 	if c.day != day {
 		c.day = day
 		c.dailyCalls = 0
-		c.tokens = 0
 	}
 }
 
@@ -198,4 +239,14 @@ func untilNextMinute(now time.Time) time.Duration {
 func untilNextDay(now time.Time) time.Duration {
 	next := now.Truncate(24 * time.Hour).Add(24 * time.Hour)
 	return next.Sub(now)
+}
+
+// evictStale removes install counters from previous days. Must be called with
+// the mutex held.
+func (l *Limiter) evictStale(day string) {
+	for idHash, c := range l.installs {
+		if c.day != day {
+			delete(l.installs, idHash)
+		}
+	}
 }
