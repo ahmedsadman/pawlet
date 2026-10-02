@@ -136,3 +136,26 @@ func TestChainAppliesOutermostFirst(t *testing.T) {
 		t.Fatalf("order = %v, want first,second,handler", order)
 	}
 }
+
+func TestClientIPIgnoresClientSuppliedForwardedPrefix(t *testing.T) {
+	_, trusted, _ := net.ParseCIDR("172.16.0.0/12")
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "172.18.0.5:51000"
+	// The client forged the first entry; Caddy appended the real peer.
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 203.0.113.9")
+
+	if got := clientIP(req, trusted); got != "203.0.113.9" {
+		t.Fatalf("clientIP() = %q, want the rightmost untrusted hop", got)
+	}
+}
+
+func TestClientIPFallsBackWhenEveryHopIsTrusted(t *testing.T) {
+	_, trusted, _ := net.ParseCIDR("172.16.0.0/12")
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "172.18.0.5:51000"
+	req.Header.Set("X-Forwarded-For", "172.18.0.9, 172.18.0.5")
+
+	if got := clientIP(req, trusted); got != "172.18.0.5" {
+		t.Fatalf("clientIP() = %q, want the peer", got)
+	}
+}

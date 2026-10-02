@@ -18,9 +18,13 @@ type statusRecorder struct {
 }
 
 func (r *statusRecorder) WriteHeader(code int) {
-	if r.status == 0 {
-		r.status = code
+	// Only the first call wins. Recovery may try to write a 500 after the
+	// handler already sent a status; forwarding that would log a superfluous
+	// WriteHeader warning for every recovered panic.
+	if r.status != 0 {
+		return
 	}
+	r.status = code
 	r.ResponseWriter.WriteHeader(code)
 }
 
@@ -97,6 +101,21 @@ func clientIP(r *http.Request, trusted *net.IPNet) string {
 		return peerHost
 	}
 
-	clientAddr, _, _ := strings.Cut(forwarded, ",")
-	return strings.TrimSpace(clientAddr)
+	// Walk right to left. Each proxy appends the address it received from, so
+	// the rightmost entries are the ones our own infrastructure wrote and the
+	// first untrusted entry from the right is the real client. Reading the
+	// leftmost entry instead would return whatever the client put there, which
+	// is attacker-controlled and would defeat per-IP rate limiting.
+	hops := strings.Split(forwarded, ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop := strings.TrimSpace(hops[i])
+		ip := net.ParseIP(hop)
+		if ip == nil {
+			continue
+		}
+		if !trusted.Contains(ip) {
+			return hop
+		}
+	}
+	return peerHost
 }

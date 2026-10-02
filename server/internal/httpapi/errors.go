@@ -27,6 +27,8 @@ func writeError(w http.ResponseWriter, status int, code string) {
 // writeRateLimited emits 429 with the hints the client already knows how to
 // read, so its existing backoff needs no change.
 func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration, resetAtEpochMs int64) {
+	// A negative duration would format as a negative header value the client
+	// cannot interpret.
 	if retryAfter > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 	}
