@@ -8,7 +8,11 @@ void main() {
     final ebl = bankCatalogByLabel('EBL');
     expect(ebl, isNotNull);
     expect(ebl!.matchers, ['ebl', 'eastern bank limited']);
-    expect(bankCatalogByLabel('MTB')!.matchers, ['mtb']);
+    expect(bankCatalogByLabel('MTB')!.matchers, [
+      'mtb',
+      '01401-195498',
+      '01401195498',
+    ]);
     expect(bankCatalogByLabel('StanChart (SCB)')!.matchers, [
       'scb',
       'stanchart',
@@ -35,6 +39,13 @@ void main() {
   test('singleCatalogMatch finds the bank behind a sender', () {
     expect(singleCatalogMatch('EBL')?.label, 'EBL');
     expect(singleCatalogMatch('city bank alert')?.label, 'City Bank');
+    expect(singleCatalogMatch('CityTouch')?.label, 'City Bank');
+    expect(singleCatalogMatch('CITYBANK')?.label, 'City Bank');
+    expect(singleCatalogMatch('City_Amex')?.label, 'City Bank');
+    // Trailing dot is part of the sender, not the matcher.
+    expect(singleCatalogMatch('City Amex.')?.label, 'City Bank');
+    expect(singleCatalogMatch('01401-195498')?.label, 'MTB');
+    expect(singleCatalogMatch('01401195498')?.label, 'MTB');
     // Matching is case-insensitive on the sender side.
     expect(singleCatalogMatch('BRAC-BANK')?.label, 'BRAC Bank');
     // A matcher containing spaces still works as a substring.
