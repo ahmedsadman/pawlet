@@ -173,6 +173,15 @@ all (§5):
      - a transaction must carry an amount span, a bill an amount-due span;
      - the amount must parse to a number.
 
+     A bill's **statement period is optional**: the month/year is parsed from the
+     extracted span by `local_parsers.dart` (3-letter and full month names with a
+     4-digit year, the apostrophe form `Sep'26`, and numeric forms like `07-2026`
+     or `2026-09`), but a missing or unparseable period does **not** reject the
+     bill — it is stored with no month/year. A sender whose period format is not
+     recognised therefore produces bills that are silently undated rather than
+     deferred to the LLM, so new statement formats are worth checking against
+     this parser.
+
      Anything short of that (low confidence, a missing span, or the model failing to load)
      **falls back to Layer 3**. When multiple spans of the same field are emitted, the
      highest-confidence one wins; NERc is measured over *all* emitted spans. A row already
