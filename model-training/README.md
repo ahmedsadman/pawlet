@@ -22,48 +22,44 @@ re-evaluation it costs before deciding.
 
 ## Data
 
-`data/sms-dataset-v1.jsonl` — 750 records, 150 per leaf class.
-- `_source: "real"|"manual"` — real bank SMS (used for val/test).
-- `_source: "augmented"` — synthetic (used for train only).
-- Provenance: `scripts/generate_dataset.py`.
+`data/sms-dataset-v1.jsonl` — 605 records: expense 141, bill 126, transfer 120,
+null 118, income 100.
 
-## Adding real data
+Every row is a real bank SMS format with the values substituted (amounts, card
+numbers, client ids, merchants, dates). The layout is what the model learns, so
+layout is reproduced exactly and only values change. The dataset is append-only
+and hand-curated — nothing regenerates it.
 
-Real data is the durable asset; augmented is disposable. On every
-`python scripts/generate_dataset.py` run, `rebuild()`:
+Row fields: `message_id`, `sender`, `content`, `category`, the label fields for
+that category, and char-offset spans. Optional `_split` pins a row to a split.
+`sender` is metadata only — the model is trained on `content` alone.
 
-1. Keeps **all** real/manual rows (deduped by exact content; real wins ties).
-2. **Discards and regenerates** all augmented rows from scratch. Never hand-edit
-   augmented rows — they are overwritten next run.
-3. Backfills augmented per class only up to `target` (default 150):
-   `augmented = target - real_count`. So real is always prioritized, and as real
-   grows the synthetic share shrinks automatically.
+## Adding data
 
-**Workflow to add real SMS:**
+New rows arrive as a **committed one-shot script** that appends (see
+`scripts/gen_city_amex.py` for the pattern). Never hand-edit the dataset: spans
+are character offsets, and getting one wrong by a single character trains the
+NER on a wrong answer that nothing will flag at training time.
 
-1. Append each new real record to `data/sms-dataset-v1.jsonl` with `_source:
-   "real"`, the correct schema for its category, and **verified char-offset
-   spans** — `content[start:end]` must equal `span.text`, and the scalar field
-   (`amount`/`balance`/`total_due`) must equal `span.text` with commas stripped.
-   `rebuild()` asserts all of this and aborts on any mismatch, so compute offsets
-   with a small script rather than by hand. Give it a `message_id` outside the
-   augmented range (`200001+`); real ids are small, pinned regression ids use
-   `900000+`.
-2. `python scripts/generate_dataset.py` — regenerates, keeping your new real rows.
-3. `python -m src.split && python -m src.train_classifier && python -m src.train_ner`
-4. `python -m src.evaluate` — confirm metrics and that pinned regression cases
+1. Write a script that builds the rows and computes spans by construction.
+   Use an unused `message_id` range (taken so far: `<10000`, `10001-10060`,
+   `200001+`, `900000+`).
+2. Dry-run it, eyeball the output, then `--apply` to append.
+3. `python scripts/validate_dataset.py` — must print OK.
+4. `python -m src.split && python -m src.train_classifier && python -m src.train_ner`
+5. `python -m src.evaluate` — confirm metrics and that pinned regression cases
    still pass.
 
-**Cap policy (150):**
+**Invariants** (enforced by `scripts/validate_dataset.py`): `content[start:end]`
+equals `span.text`; the scalar field (`amount`/`balance`/`total_due`) equals
+`span.text` with commas stripped; `message_id` and `content` are globally
+unique; each category carries its required fields.
 
-- Augmented never pushes a class past `target`.
-- Real is never dropped, so a class *can* exceed `target` once it has more than
-  `target` unique real rows (augmented for it drops to 0). That overshoot is the
-  signal that the class is now real-backed.
-- Only raise `target` above 150 once the existing 150 are mostly real and
-  diverse — bumping it too early just manufactures more synthetic data. Note
-  `target` is **global**: raising it inflates augmentation for every class,
-  including ones with little real data (e.g. transfer).
+**One caveat on splitting.** Rows are assigned per row, so 20 variations of one
+SMS format scatter across train/val/test. Test then measures extraction on
+formats the model has already seen, which reads higher than performance on a
+bank format it has never encountered. Keep that in mind when a new sender is
+added and the metrics barely move.
 
 ## Setup
 
@@ -79,6 +75,7 @@ Or use Google Colab (free GPU) — upload `data/` + `src/`, `pip install -r requ
 ## Run
 
 ```bash
+python scripts/validate_dataset.py  # check span/label invariants (run first)
 python -m src.split              # build train/val/test  -> data/splits/
 python -m src.train_classifier   # seed-sweep, keep best-by-val -> models/classifier
 python -m src.train_ner          # -> models/ner, prints per-entity test report
@@ -122,8 +119,11 @@ pinned regression rows — those must stay PASS.
 
 `src/config.py`:
 - `BACKBONE` — encoder (default `google/mobilebert-uncased`; alternatives listed).
-- `EVAL_REAL_PER_CLASS` — real rows per class reserved for eval (val+test),
-  split 50/50; the rest of real + all augmented go to train.
+- `VAL_FRAC` / `TEST_FRAC` — per-class split fractions (0.15 each; the rest is
+  train). Rows are ordered by `sha1(SEED:content)`, so a row's split depends on
+  its own text, not on the file's length or order — appending data moves only
+  rows adjacent to a cut boundary instead of redealing everything. Change `SEED`
+  to draw a different but equally reproducible split.
 - `MAX_LEN`, `SEED`, label sets.
 
 `train_classifier` sweeps seeds (env `SEEDS`, default `42,1,7,13,123`) and keeps
@@ -131,17 +131,14 @@ the run with the best validation macro-F1. `SEEDS=7` reproduces just the winner.
 
 ## Notes / gotchas
 
-- **Augmented → train only, real → val/test.** Honest evaluation. Real minority
-  classes (bill, transfer) are small, so their val/test counts are small — that
-  is the real signal we have; add more real SMS over time.
 - **Train/serve parity.** The app must reproduce the exact tokenizer
   preprocessing used here, or accuracy drops. The app ships the HF WordPiece
   `tokenizer.json` and tokenizes in Dart (`dart_bert_tokenizer`); parity is
   guarded by `mobile-app/integration_test/local_model_parity_test.dart`.
-- **750 is a v1.** Expect to keep adding real data.
+- **605 is a v1.** Expect to keep adding SMS formats.
 - **Pinning regression cases.** A dataset row can carry `_split: "test"` (or
-  `"val"`/`"train"`) to force it into that split, bypassing the reserve logic —
-  use it to permanently evaluate real SMS a past model got wrong.
+  `"val"`/`"train"`) to force it into that split, bypassing the hash — use it to
+  permanently evaluate an SMS a past model got wrong.
 
 ## License
 
