@@ -65,11 +65,24 @@ const Map<String, int> _months = {
 
 /// Parses a bill statement-period span into (month, year). Handles the real
 /// dataset formats "AUG 2026" / "AUG2026" (3-letter month + optional space +
-/// 4-digit year) plus full month names and common numeric forms
-/// (07-2026, 10/2026, 2026-09, 04.2026). Returns null when a month+year cannot
-/// be resolved.
+/// 4-digit year), the apostrophe form "Sep'26", plus full month names and
+/// common numeric forms (07-2026, 10/2026, 2026-09, 04.2026). Returns null when
+/// a month+year cannot be resolved.
 StatementPeriod? parseStatementPeriod(String raw) {
   final s = raw.trim().toLowerCase();
+
+  // Alphabetic month + apostrophe + 2-digit year ("sep'26"). The apostrophe is
+  // required: a bare "sep 26" is far more likely a day than a year.
+  final apos = RegExp(r"^([a-z]{3,9})\s*['’]\s*(\d{2})$").firstMatch(s);
+  if (apos != null) {
+    final name = apos.group(1)!;
+    final month =
+        _months[name] ??
+        (name.length >= 3 ? _months[name.substring(0, 3)] : null);
+    if (month != null) {
+      return StatementPeriod(month, 2000 + int.parse(apos.group(2)!));
+    }
+  }
 
   // Alphabetic month + 4-digit year, either order ("aug2026", "2026 jan").
   final alpha = RegExp(
