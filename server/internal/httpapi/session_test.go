@@ -544,3 +544,43 @@ func TestChallengeConsumedExactlyOnceEvenOnLaterFailure(t *testing.T) {
 		t.Fatalf("decoder called %d times on replay, want 0 (challenge was consumed)", decoder.callCount)
 	}
 }
+
+func TestChallengeRateLimitIs429(t *testing.T) {
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	handler := newTestHandler(t, &fakeDecoder{}, now)
+
+	// Wire in a limiter with capacity 1.
+	handler.ChallengeLimiter = newHourlyLimiter(1, func() time.Time { return now })
+
+	// First request should succeed.
+	req1 := httptest.NewRequest(http.MethodPost, "/v1/challenge", nil)
+	req1.RemoteAddr = "192.0.2.1:12345"
+	rec1 := httptest.NewRecorder()
+	handler.Challenge(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first request: status = %d, want 200", rec1.Code)
+	}
+
+	// Second request from the same address should be rate limited.
+	req2 := httptest.NewRequest(http.MethodPost, "/v1/challenge", nil)
+	req2.RemoteAddr = "192.0.2.1:12345"
+	rec2 := httptest.NewRecorder()
+	handler.Challenge(rec2, req2)
+	if rec2.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request: status = %d, want 429", rec2.Code)
+	}
+
+	var errBody errorBody
+	if err := json.NewDecoder(rec2.Body).Decode(&errBody); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if errBody.Error != "rate_limited" {
+		t.Fatalf("error code = %s, want rate_limited", errBody.Error)
+	}
+
+	// Verify the Retry-After header is present.
+	retryAfter := rec2.Header().Get("Retry-After")
+	if retryAfter == "" {
+		t.Fatal("Retry-After header missing")
+	}
+}
