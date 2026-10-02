@@ -390,3 +390,28 @@ func TestStripJSONFence(t *testing.T) {
 		}
 	}
 }
+
+func TestClassifyErrorNeverCarriesTheResponseBody(t *testing.T) {
+	const secret = "SENSITIVE-SMS-ECHOED-BY-UPSTREAM"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"bad request for ` + secret + `"}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{
+		HTTP:     srv.Client(),
+		Endpoint: srv.URL,
+		APIKey:   "sk-test",
+		Models:   []string{"a/one:free"},
+		Timeout:  30 * time.Second,
+	}
+
+	_, err := c.Classify(context.Background(), Request{Sender: "EBL", Content: secret, Currency: "BDT"})
+
+	if err == nil {
+		t.Fatal("Classify() error = nil, want an error")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("error text carries message content: %q", err.Error())
+	}
+}
