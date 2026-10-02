@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func validEnv() map[string]string {
 	return map[string]string{
@@ -50,23 +53,10 @@ func TestLoadRejectsMissingRequired(t *testing.T) {
 	}
 	msg := err.Error()
 	for _, key := range []string{"OPENROUTER_API_KEY", "GOOGLE_SERVICE_ACCOUNT_JSON", "CERT_SHA256_DIGESTS"} {
-		if !containsString(msg, key) {
+		if !strings.Contains(msg, key) {
 			t.Errorf("error message = %q, want it to include %q", msg, key)
 		}
 	}
-}
-
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && findSubstring(s, substr)
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 func TestLoadRejectsDevSecretInProduction(t *testing.T) {
@@ -115,10 +105,10 @@ func TestLoadRejectsShortJWTSecret(t *testing.T) {
 		t.Fatal("Load() error = nil, want an error for short JWT_SECRET")
 	}
 	msg := err.Error()
-	if !containsString(msg, "at least 32 bytes") {
+	if !strings.Contains(msg, "at least 32 bytes") {
 		t.Errorf("error message = %q, want it to mention the length requirement", msg)
 	}
-	if !containsString(msg, "16") {
+	if !strings.Contains(msg, "16") {
 		t.Errorf("error message = %q, want it to mention the actual length 16", msg)
 	}
 }
@@ -132,7 +122,7 @@ func TestLoadRejectsMissingGoogleServiceAccount(t *testing.T) {
 		t.Fatal("Load() error = nil, want an error for missing GOOGLE_SERVICE_ACCOUNT_JSON")
 	}
 	msg := err.Error()
-	if !containsString(msg, "GOOGLE_SERVICE_ACCOUNT_JSON") {
+	if !strings.Contains(msg, "GOOGLE_SERVICE_ACCOUNT_JSON") {
 		t.Errorf("error message = %q, want it to include GOOGLE_SERVICE_ACCOUNT_JSON", msg)
 	}
 }
@@ -146,7 +136,7 @@ func TestLoadRejectsMissingCertDigests(t *testing.T) {
 		t.Fatal("Load() error = nil, want an error for missing CERT_SHA256_DIGESTS")
 	}
 	msg := err.Error()
-	if !containsString(msg, "CERT_SHA256_DIGESTS") {
+	if !strings.Contains(msg, "CERT_SHA256_DIGESTS") {
 		t.Errorf("error message = %q, want it to include CERT_SHA256_DIGESTS", msg)
 	}
 }
@@ -160,7 +150,7 @@ func TestLoadRejectsNonPositiveInteger(t *testing.T) {
 		t.Fatal("Load() error = nil, want an error for zero DAILY_PER_INSTALL")
 	}
 	msg := err.Error()
-	if !containsString(msg, "DAILY_PER_INSTALL") {
+	if !strings.Contains(msg, "DAILY_PER_INSTALL") {
 		t.Errorf("error message = %q, want it to include DAILY_PER_INSTALL", msg)
 	}
 }
@@ -174,7 +164,7 @@ func TestLoadRejectsNonNumericInteger(t *testing.T) {
 		t.Fatal("Load() error = nil, want an error for non-numeric BURST_PER_MIN")
 	}
 	msg := err.Error()
-	if !containsString(msg, "BURST_PER_MIN") {
+	if !strings.Contains(msg, "BURST_PER_MIN") {
 		t.Errorf("error message = %q, want it to include BURST_PER_MIN", msg)
 	}
 }
