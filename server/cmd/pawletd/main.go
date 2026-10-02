@@ -104,7 +104,9 @@ func run(logger *slog.Logger) error {
 
 	// 11. Build the LLM client.
 	llmClient := &llm.Client{
-		HTTP:     &http.Client{},
+		// Belt-and-braces: Classify already derives a 2-minute context, but a
+		// transport ceiling means a leaked context cannot hang a connection.
+		HTTP:     &http.Client{Timeout: 3 * time.Minute},
 		Endpoint: llm.DefaultEndpoint,
 		APIKey:   cfg.OpenRouterAPIKey,
 		Models:   cfg.Models,
