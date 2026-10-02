@@ -31,8 +31,8 @@ layout is reproduced exactly and only values change. The dataset is append-only
 and hand-curated — nothing regenerates it.
 
 Row fields: `message_id`, `sender`, `content`, `category`, the label fields for
-that category, and char-offset spans. Optional `_split` pins a row to a split.
-`sender` is metadata only — the model is trained on `content` alone.
+that category, and char-offset spans. `sender` is metadata only — the model is
+trained on `content` alone.
 
 ## Adding data
 
@@ -47,8 +47,7 @@ NER on a wrong answer that nothing will flag at training time.
 2. Dry-run it, eyeball the output, then `--apply` to append.
 3. `python scripts/validate_dataset.py` — must print OK.
 4. `python -m src.split && python -m src.train_classifier && python -m src.train_ner`
-5. `python -m src.evaluate` — confirm metrics and that pinned regression cases
-   still pass.
+5. `python -m src.evaluate` — confirm metrics and read the per-record failures.
 
 **Invariants** (enforced by `scripts/validate_dataset.py`): `content[start:end]`
 equals `span.text`; the scalar field (`amount`/`balance`/`total_due`) equals
@@ -77,17 +76,29 @@ Or use Google Colab (free GPU) — upload `data/` + `src/`, `pip install -r requ
 ```bash
 python scripts/validate_dataset.py  # check span/label invariants (run first)
 python -m src.split              # build train/val/test  -> data/splits/
-python -m src.train_classifier   # seed-sweep, keep best-by-val -> models/classifier
-python -m src.train_ner          # -> models/ner, prints per-entity test report
+python -m src.train_fused        # seed-sweep -> models/fused  (THE shipped model)
 python -m src.evaluate           # score a trained split (default test) -> report
 python -m src.export_onnx        # -> models/fused_onnx/model.onnx (fp32 source graph)
 python scripts/export_tflite.py  # onnx2tf + dynamic-range int8 -> app assets/model/model.tflite
 ```
 
-`evaluate` runs the already-trained models over a split (no retraining) and prints
-per-class + per-entity reports plus a per-record table (gold vs pred, classifier
-confidence, NER weakest-span confidence). `python -m src.evaluate val` for val.
-`python -m src.predict "..."` runs a single SMS.
+`models/fused` is the artifact that matters: `evaluate`, `export_onnx` and the
+app all read it. Retrain with `src.train_fused` or you will export and score a
+stale model.
+
+The two single-task trainers still exist and write `models/classifier` and
+`models/ner`, but nothing downstream reads them — they are useful only for
+isolating which head a regression lives in:
+
+```bash
+python -m src.train_classifier   # seed-sweep, keep best-by-val -> models/classifier
+python -m src.train_ner          # -> models/ner, prints per-entity test report
+```
+
+`evaluate` runs the already-trained fused model over a split (no retraining) and
+prints per-class + per-entity reports plus a per-record table (gold vs pred,
+classifier confidence, NER weakest-span confidence). `python -m src.evaluate val`
+for val. `python -m src.predict "..."` runs a single SMS.
 
 ## Reading the evaluation
 
@@ -112,8 +123,7 @@ different splits.
 | **CLS / NER (PASS/FAIL)** | per-record table | Per-record correctness flags for class and entity-set. Failures sort to the top. | want PASS |
 
 Same test split when comparing models; higher is better for all except CONF
-(confidence, not correctness) and support (context). `*` in the ID column marks
-pinned regression rows — those must stay PASS.
+(confidence, not correctness) and support (context).
 
 ## Config
 
@@ -136,9 +146,9 @@ the run with the best validation macro-F1. `SEEDS=7` reproduces just the winner.
   `tokenizer.json` and tokenizes in Dart (`dart_bert_tokenizer`); parity is
   guarded by `mobile-app/integration_test/local_model_parity_test.dart`.
 - **605 is a v1.** Expect to keep adding SMS formats.
-- **Pinning regression cases.** A dataset row can carry `_split: "test"` (or
-  `"val"`/`"train"`) to force it into that split, bypassing the hash — use it to
-  permanently evaluate an SMS a past model got wrong.
+- **No per-row split overrides.** Every row goes through the hash. A row you
+  want permanently evaluated cannot be forced into test; add more variations of
+  that format instead, so some land in test on their own.
 
 ## License
 

@@ -5,9 +5,7 @@ Policy: 70/15/15 per leaf class, ordered by a hash of the row's content. Hashing
 rows only moves the few that sit next to a cut boundary instead of reshuffling
 everything — metrics stay comparable across runs.
 
-A row may carry an explicit `_split` ("train" | "val" | "test") to pin it to that
-split. Use for regression cases you always want evaluated (e.g. a real SMS a past
-model got wrong).
+Every row is assigned this way; there are no exemptions.
 
 Run:  python -m src.split
 """
@@ -31,19 +29,15 @@ def main():
     rows = [json.loads(l) for l in open(DATASET, encoding="utf-8") if l.strip()]
 
     parts = {"train": [], "val": [], "test": []}
-    auto = defaultdict(list)
+    by_class = defaultdict(list)
     for r in rows:
-        dst = r.get("_split")
-        if dst in parts:
-            parts[dst].append(r)
-        else:
-            auto[leaf_label(r)].append(r)
+        by_class[leaf_label(r)].append(r)
 
     # Stratify: order each class by hash bucket, then cut at the fractions. The
     # cut is positional so small classes still get val/test rows, which a raw
     # bucket threshold would not guarantee.
     val_end = VAL_FRAC + TEST_FRAC
-    for items in auto.values():
+    for items in by_class.values():
         items.sort(key=lambda r: (bucket(r["content"]), r["message_id"]))
         n = len(items)
         for i, r in enumerate(items):

@@ -5,9 +5,6 @@ Loads models/fused, runs it over data/splits/<split>.jsonl, and prints:
   2. NER report (seqeval, per-entity)
   3. per-record table: gold vs predicted, class + NER PASS/FAIL
 
-A "*" after the id marks a pinned row (record carries an explicit `_split`) —
-these are the regression cases you always want to eyeball.
-
 Usage:
   python -m src.evaluate            # default split: test
   python -m src.evaluate val
@@ -83,7 +80,6 @@ def main():
         ner_conf = min((s["conf"] for s in spans), default=None)  # weakest entity
         table.append({
             "id": rec.get("message_id", "?"),
-            "pinned": bool(rec.get("_split")),
             "gold_c": gold_c,
             "pred_c": pred_c,
             "conf": conf,
@@ -115,7 +111,7 @@ def main():
     print(hdr)
     print("-" * len(hdr))
     for r in sorted(table, key=lambda x: (x["class_ok"] and x["ner_ok"])):
-        idc = f"{r['id']}{'*' if r['pinned'] else ''}"
+        idc = str(r["id"])
         arrow = f"{r['gold_c']}->{r['pred_c']}"
         cls = "ok" if r["class_ok"] else "FAIL"
         ner = "ok" if r["ner_ok"] else "FAIL"
