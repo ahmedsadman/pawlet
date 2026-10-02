@@ -41,10 +41,32 @@ func TestLoadAppliesDefaults(t *testing.T) {
 func TestLoadRejectsMissingRequired(t *testing.T) {
 	env := validEnv()
 	delete(env, "OPENROUTER_API_KEY")
+	delete(env, "GOOGLE_SERVICE_ACCOUNT_JSON")
+	delete(env, "CERT_SHA256_DIGESTS")
 
-	if _, err := Load(lookup(env)); err == nil {
-		t.Fatal("Load() error = nil, want an error for the missing key")
+	_, err := Load(lookup(env))
+	if err == nil {
+		t.Fatal("Load() error = nil, want an error for missing keys")
 	}
+	msg := err.Error()
+	for _, key := range []string{"OPENROUTER_API_KEY", "GOOGLE_SERVICE_ACCOUNT_JSON", "CERT_SHA256_DIGESTS"} {
+		if !containsString(msg, key) {
+			t.Errorf("error message = %q, want it to include %q", msg, key)
+		}
+	}
+}
+
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && findSubstring(s, substr)
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 func TestLoadRejectsDevSecretInProduction(t *testing.T) {
@@ -81,5 +103,97 @@ func TestLoadParsesModelsOverride(t *testing.T) {
 	want := []string{"a/one:free", "b/two:free"}
 	if len(cfg.Models) != len(want) || cfg.Models[1] != want[1] {
 		t.Errorf("Models = %v, want %v", cfg.Models, want)
+	}
+}
+
+func TestLoadRejectsShortJWTSecret(t *testing.T) {
+	env := validEnv()
+	env["JWT_SECRET"] = "0123456789abcdef"
+
+	_, err := Load(lookup(env))
+	if err == nil {
+		t.Fatal("Load() error = nil, want an error for short JWT_SECRET")
+	}
+	msg := err.Error()
+	if !containsString(msg, "at least 32 bytes") {
+		t.Errorf("error message = %q, want it to mention the length requirement", msg)
+	}
+	if !containsString(msg, "16") {
+		t.Errorf("error message = %q, want it to mention the actual length 16", msg)
+	}
+}
+
+func TestLoadRejectsMissingGoogleServiceAccount(t *testing.T) {
+	env := validEnv()
+	delete(env, "GOOGLE_SERVICE_ACCOUNT_JSON")
+
+	_, err := Load(lookup(env))
+	if err == nil {
+		t.Fatal("Load() error = nil, want an error for missing GOOGLE_SERVICE_ACCOUNT_JSON")
+	}
+	msg := err.Error()
+	if !containsString(msg, "GOOGLE_SERVICE_ACCOUNT_JSON") {
+		t.Errorf("error message = %q, want it to include GOOGLE_SERVICE_ACCOUNT_JSON", msg)
+	}
+}
+
+func TestLoadRejectsMissingCertDigests(t *testing.T) {
+	env := validEnv()
+	delete(env, "CERT_SHA256_DIGESTS")
+
+	_, err := Load(lookup(env))
+	if err == nil {
+		t.Fatal("Load() error = nil, want an error for missing CERT_SHA256_DIGESTS")
+	}
+	msg := err.Error()
+	if !containsString(msg, "CERT_SHA256_DIGESTS") {
+		t.Errorf("error message = %q, want it to include CERT_SHA256_DIGESTS", msg)
+	}
+}
+
+func TestLoadRejectsNonPositiveInteger(t *testing.T) {
+	env := validEnv()
+	env["DAILY_PER_INSTALL"] = "0"
+
+	_, err := Load(lookup(env))
+	if err == nil {
+		t.Fatal("Load() error = nil, want an error for zero DAILY_PER_INSTALL")
+	}
+	msg := err.Error()
+	if !containsString(msg, "DAILY_PER_INSTALL") {
+		t.Errorf("error message = %q, want it to include DAILY_PER_INSTALL", msg)
+	}
+}
+
+func TestLoadRejectsNonNumericInteger(t *testing.T) {
+	env := validEnv()
+	env["BURST_PER_MIN"] = "abc"
+
+	_, err := Load(lookup(env))
+	if err == nil {
+		t.Fatal("Load() error = nil, want an error for non-numeric BURST_PER_MIN")
+	}
+	msg := err.Error()
+	if !containsString(msg, "BURST_PER_MIN") {
+		t.Errorf("error message = %q, want it to include BURST_PER_MIN", msg)
+	}
+}
+
+func TestSplitListTrimsAndFiltersBlanks(t *testing.T) {
+	env := validEnv()
+	env["MODELS"] = "a/one:free, , b/two:free"
+
+	cfg, err := Load(lookup(env))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	want := []string{"a/one:free", "b/two:free"}
+	if len(cfg.Models) != 2 {
+		t.Errorf("len(Models) = %d, want 2", len(cfg.Models))
+	}
+	for i, model := range cfg.Models {
+		if model != want[i] {
+			t.Errorf("Models[%d] = %q, want %q", i, model, want[i])
+		}
 	}
 }

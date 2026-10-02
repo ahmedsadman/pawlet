@@ -8,12 +8,20 @@ import (
 	"strings"
 )
 
-// DefaultModels mirrors SettingsRepository.defaultLlmModels in the app, so the
+// defaultModels mirrors SettingsRepository.defaultLlmModels in the app, so the
 // server's fallback order matches what the client used to send.
-var DefaultModels = []string{
+var defaultModels = []string{
 	"nvidia/nemotron-3-super-120b-a12b:free",
 	"qwen/qwen3.8-27b:free",
 	"nex-agi/nex-n2.5-pro:free",
+}
+
+// DefaultModels returns the app's current OpenRouter fallback list, newest
+// first. A copy is returned so callers cannot mutate the shared default.
+func DefaultModels() []string {
+	out := make([]string, len(defaultModels))
+	copy(out, defaultModels)
+	return out
 }
 
 // Config is the fully resolved service configuration.
@@ -62,7 +70,7 @@ func Load(lookup LookupEnv) (Config, error) {
 	cfg.CertSHA256Digests = splitList(get("CERT_SHA256_DIGESTS", ""))
 	cfg.Models = splitList(get("MODELS", ""))
 	if len(cfg.Models) == 0 {
-		cfg.Models = DefaultModels
+		cfg.Models = DefaultModels()
 	}
 
 	var err error
@@ -87,8 +95,8 @@ func (c Config) validate() error {
 	if c.OpenRouterAPIKey == "" {
 		missing = append(missing, "OPENROUTER_API_KEY")
 	}
-	if len(c.JWTSecret) < 32 {
-		missing = append(missing, "JWT_SECRET (at least 32 bytes)")
+	if len(c.JWTSecret) == 0 {
+		missing = append(missing, "JWT_SECRET")
 	}
 	if c.ServiceAccountPath == "" {
 		missing = append(missing, "GOOGLE_SERVICE_ACCOUNT_JSON")
@@ -98,6 +106,9 @@ func (c Config) validate() error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing configuration: %s", strings.Join(missing, ", "))
+	}
+	if len(c.JWTSecret) < 32 {
+		return fmt.Errorf("JWT_SECRET must be at least 32 bytes, got %d", len(c.JWTSecret))
 	}
 	// A bypass credential in production would make every verdict check optional.
 	if c.Env == "production" && c.DevSharedSecret != "" {
