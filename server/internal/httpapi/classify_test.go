@@ -25,7 +25,7 @@ type fakeClassifier struct {
 	err      error
 }
 
-func (f *fakeClassifier) Classify(ctx any, in llm.Request) (llm.Response, error) {
+func (f *fakeClassifier) Classify(ctx context.Context, in llm.Request) (llm.Response, error) {
 	f.calls++
 	return f.response, f.err
 }

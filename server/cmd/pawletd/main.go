@@ -114,7 +114,7 @@ func run(logger *slog.Logger) error {
 			Logger: logger,
 		},
 		Classify: &httpapi.ClassifyHandler{
-			Classifier: &classifierAdapter{client: llmClient},
+			Classifier: llmClient,
 			Issuer:     issuer,
 			Store:      db,
 			Limiter:    limiter,
@@ -178,17 +178,6 @@ func run(logger *slog.Logger) error {
 
 	logger.Info("shutdown complete")
 	return nil
-}
-
-// classifierAdapter adapts llm.Client to httpapi.Classifier. The interface
-// accepts `any` for the context so test doubles can avoid creating a real
-// context.Context, but the production client requires the concrete type.
-type classifierAdapter struct {
-	client *llm.Client
-}
-
-func (a *classifierAdapter) Classify(ctx any, in llm.Request) (llm.Response, error) {
-	return a.client.Classify(ctx.(context.Context), in)
 }
 
 // storeSink adapts store.Store to quota.Sink, decoupling the quota package from
