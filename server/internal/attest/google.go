@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,15 @@ import (
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+)
+
+// Decode failures. Both map to a 503 for the client — a server that cannot
+// reach or satisfy Google is the operator's problem, not a reason to tell the
+// app it is permanently ineligible — but they are distinguished so logs say
+// which one happened.
+var (
+	ErrDecodeUnreachable = errors.New("attest: decode endpoint unreachable")
+	ErrDecodeRejected    = errors.New("attest: decode endpoint rejected the request")
 )
 
 // Decoder turns an opaque integrity token into a verdict payload. Declared
@@ -23,16 +33,15 @@ type Decoder interface {
 
 // GoogleDecoder calls the Play Integrity decode endpoint.
 type GoogleDecoder struct {
-	Client      *http.Client
-	Endpoint    string
-	PackageName string
+	Client   *http.Client
+	Endpoint string
 }
 
 const playIntegrityScope = "https://www.googleapis.com/auth/playintegrity"
 
 // NewGoogleDecoder builds a decoder authenticated by a service account file.
 func NewGoogleDecoder(ctx context.Context, serviceAccountPath, packageName string) (*GoogleDecoder, error) {
-	data, err := readFile(serviceAccountPath)
+	data, err := os.ReadFile(serviceAccountPath) //nolint:gosec // path comes from trusted configuration
 	if err != nil {
 		return nil, fmt.Errorf("read service account: %w", err)
 	}
@@ -45,7 +54,7 @@ func NewGoogleDecoder(ctx context.Context, serviceAccountPath, packageName strin
 
 	endpoint := fmt.Sprintf(
 		"https://playintegrity.googleapis.com/v1/%s:decodeIntegrityToken", packageName)
-	return &GoogleDecoder{Client: client, Endpoint: endpoint, PackageName: packageName}, nil
+	return &GoogleDecoder{Client: client, Endpoint: endpoint}, nil
 }
 
 // Decode posts the token and returns the decoded payload.
@@ -63,24 +72,20 @@ func (d *GoogleDecoder) Decode(ctx context.Context, token string) (Payload, erro
 
 	resp, err := d.Client.Do(req)
 	if err != nil {
-		return Payload{}, fmt.Errorf("call decode endpoint: %w", err)
+		return Payload{}, fmt.Errorf("%w: %w", ErrDecodeUnreachable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return Payload{}, fmt.Errorf("decode endpoint returned %d: %s", resp.StatusCode, snippet)
+		return Payload{}, fmt.Errorf("%w: status %d: %s", ErrDecodeRejected, resp.StatusCode, snippet)
 	}
 
 	var envelope struct {
 		TokenPayloadExternal Payload `json:"tokenPayloadExternal"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		return Payload{}, fmt.Errorf("parse decode response: %w", err)
+		return Payload{}, fmt.Errorf("%w: parse response: %w", ErrDecodeRejected, err)
 	}
 	return envelope.TokenPayloadExternal, nil
-}
-
-func readFile(path string) ([]byte, error) {
-	return os.ReadFile(path) //nolint:gosec // path comes from trusted configuration
 }
