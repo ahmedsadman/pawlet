@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -18,7 +19,7 @@ import (
 // Classifier performs one fused classify+extract call. Declared here because
 // this package consumes it, so handler tests need no network.
 type Classifier interface {
-	Classify(ctx any, in llm.Request) (llm.Response, error)
+	Classify(ctx context.Context, in llm.Request) (llm.Response, error)
 }
 
 // ClassifyHandler proxies classify calls to the LLM behind session auth and quota.
