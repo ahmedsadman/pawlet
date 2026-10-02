@@ -29,13 +29,10 @@ CLASS_LABELS = ["expense", "income", "transfer", "bill", "null"]
 # amount. Add it later if you also store currency offsets. ---
 NER_ENTITIES = ["AMOUNT", "BALANCE", "DUE", "PERIOD"]
 
-# Split policy. Evaluation stays 100% REAL. For each class we reserve up to
-# EVAL_REAL_PER_CLASS real rows for eval (split 50/50 val/test); ALL remaining
-# real rows plus ALL augmented rows go to train. This keeps eval honest while
-# balancing the train set (otherwise expense, which is mostly real, would be
-# starved in train). Minority classes with few real rows contribute them all to
-# eval and train on synthetic only — unavoidable until more real data arrives.
-EVAL_REAL_PER_CLASS = 30
+# Split policy: per-class fractions, assigned by content hash so a row keeps its
+# split as the dataset grows. The remainder (1 - VAL - TEST) is train.
+VAL_FRAC = 0.15
+TEST_FRAC = 0.15
 
 
 def leaf_label(rec: dict) -> str:

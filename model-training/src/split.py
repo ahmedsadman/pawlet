@@ -1,59 +1,62 @@
 """Build stratified train/val/test splits.
 
-Policy (see config.EVAL_REAL_PER_CLASS):
-  - eval (val+test) is 100% REAL: reserve up to EVAL_REAL_PER_CLASS real rows per
-    class, split 50/50 into val/test.
-  - train = all AUGMENTED rows + all leftover REAL rows (keeps train balanced).
-Real is partitioned (no row in two splits); content is already globally deduped,
-so there is no train/eval leakage.
+Policy: 70/15/15 per leaf class, ordered by a hash of the row's content. Hashing
+(rather than shuffling) keeps the order stable as the dataset grows, so adding
+rows only moves the few that sit next to a cut boundary instead of reshuffling
+everything — metrics stay comparable across runs.
 
 A row may carry an explicit `_split` ("train" | "val" | "test") to pin it to that
-split, bypassing the reserve logic. Use for regression cases you always want
-evaluated (e.g. real SMS a past model got wrong).
+split. Use for regression cases you always want evaluated (e.g. a real SMS a past
+model got wrong).
 
 Run:  python -m src.split
 """
+import hashlib
 import json
-import random
 from collections import defaultdict, Counter
 
-from .config import DATASET, SPLIT_DIR, SEED, EVAL_REAL_PER_CLASS, leaf_label
+from .config import DATASET, SPLIT_DIR, SEED, VAL_FRAC, TEST_FRAC, leaf_label
+
+BUCKETS = 10_000
+
+
+def bucket(content: str) -> int:
+    """Stable 0..BUCKETS-1 position for a row, from its content."""
+    digest = hashlib.sha1(f"{SEED}:{content}".encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % BUCKETS
 
 
 def main():
     SPLIT_DIR.mkdir(parents=True, exist_ok=True)
     rows = [json.loads(l) for l in open(DATASET, encoding="utf-8") if l.strip()]
-    rng = random.Random(SEED)
 
-    # explicit per-row overrides win over the reserve logic below
-    pinned = {"train": [], "val": [], "test": []}
-    auto = []
+    parts = {"train": [], "val": [], "test": []}
+    auto = defaultdict(list)
     for r in rows:
         dst = r.get("_split")
-        (pinned[dst] if dst in pinned else auto).append(r)
+        if dst in parts:
+            parts[dst].append(r)
+        else:
+            auto[leaf_label(r)].append(r)
 
-    aug = [r for r in auto if r.get("_source") == "augmented"]
-    real = [r for r in auto if r.get("_source") != "augmented"]
+    # Stratify: order each class by hash bucket, then cut at the fractions. The
+    # cut is positional so small classes still get val/test rows, which a raw
+    # bucket threshold would not guarantee.
+    val_end = VAL_FRAC + TEST_FRAC
+    for items in auto.values():
+        items.sort(key=lambda r: (bucket(r["content"]), r["message_id"]))
+        n = len(items)
+        for i, r in enumerate(items):
+            pos = i / n
+            if pos < VAL_FRAC:
+                parts["val"].append(r)
+            elif pos < val_end:
+                parts["test"].append(r)
+            else:
+                parts["train"].append(r)
 
-    train = list(aug) + pinned["train"]
-    val, test = list(pinned["val"]), list(pinned["test"])
-
-    by = defaultdict(list)
-    for r in real:
-        by[leaf_label(r)].append(r)
-
-    for lab, items in by.items():
-        rng.shuffle(items)
-        n_eval = min(len(items), EVAL_REAL_PER_CLASS)
-        eval_items = items[:n_eval]
-        train += items[n_eval:]  # leftover real -> train
-        h = n_eval // 2
-        val += eval_items[:h]
-        test += eval_items[h:]
-
-    rng.shuffle(train)
-
-    for name, part in [("train", train), ("val", val), ("test", test)]:
+    for name, part in parts.items():
+        part.sort(key=lambda r: r["message_id"])
         with open(SPLIT_DIR / f"{name}.jsonl", "w", encoding="utf-8") as f:
             for r in part:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
@@ -61,9 +64,8 @@ def main():
     def dist(p):
         return dict(Counter(leaf_label(r) for r in p))
 
-    print("train", len(train), dist(train))
-    print("val  ", len(val), dist(val))
-    print("test ", len(test), dist(test))
+    for name in ("train", "val", "test"):
+        print(f"{name:6}", len(parts[name]), dist(parts[name]))
 
 
 if __name__ == "__main__":
