@@ -17,7 +17,6 @@ DATASET = "data/sms-dataset-v1.jsonl"
 
 CATEGORIES = {"transaction", "bill", None}
 TXN_TYPES = {"expense", "income", "transfer"}
-SPLITS = {"train", "val", "test"}
 
 # span key -> the scalar field it must agree with (None = no scalar)
 SPAN_SCALARS = {
@@ -64,10 +63,6 @@ def check(rows):
         cat = rec.get("category")
         if cat not in CATEGORIES:
             errs.append(f"{mid}: unknown category {cat!r}")
-
-        split = rec.get("_split")
-        if split is not None and split not in SPLITS:
-            errs.append(f"{mid}: bad _split {split!r}")
 
         if cat == "transaction":
             if rec.get("type") not in TXN_TYPES:
@@ -118,10 +113,6 @@ def main():
     errs = check(rows)
 
     print(f"{len(rows)} rows, by leaf: {dict(Counter(leaf(r) for r in rows))}")
-    pinned = Counter(r["_split"] for r in rows if r.get("_split"))
-    if pinned:
-        print("pinned:", dict(pinned))
-
     if errs:
         print(f"\n{len(errs)} PROBLEMS:")
         for e in errs:

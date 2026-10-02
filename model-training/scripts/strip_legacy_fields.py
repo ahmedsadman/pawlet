@@ -1,8 +1,8 @@
-"""One-shot: drop provenance fields no training code reads.
+"""One-shot: drop metadata fields no training code reads.
 
 `_source`, `_relabeled`, `_server_type`, `_server_subtype` and `_variant_of`
-are residue from the old generate/rebuild pipeline. Nothing in src/ reads them
-(`_split` is the only underscore field still used, by split.py and evaluate.py).
+are residue from the old generate/rebuild pipeline. `_split` pinned a row to a
+split, bypassing the hash; splits are uniform now, so it goes too.
 
 Removes keys only — row count, row order and every surviving key/value are
 asserted identical before the file is rewritten.
@@ -12,7 +12,8 @@ asserted identical before the file is rewritten.
 import json
 
 DATASET = "data/sms-dataset-v1.jsonl"
-DROP = {"_source", "_relabeled", "_server_type", "_server_subtype", "_variant_of"}
+DROP = {"_source", "_relabeled", "_server_type", "_server_subtype",
+        "_variant_of", "_split"}
 
 
 def main():
