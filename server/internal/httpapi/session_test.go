@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -71,34 +72,12 @@ func genuinePayload(installID, challenge string, issuedAt time.Time) attest.Payl
 	var p attest.Payload
 	p.RequestDetails.RequestPackageName = "com.example.pawlet"
 	p.RequestDetails.RequestHash = attest.RequestHash(installID, challenge)
-	p.RequestDetails.TimestampMillis = string([]byte(itoa(issuedAt.UnixMilli())))
+	p.RequestDetails.TimestampMillis = strconv.FormatInt(issuedAt.UnixMilli(), 10)
 	p.AppIntegrity.AppRecognitionVerdict = "PLAY_RECOGNIZED"
 	p.AppIntegrity.PackageName = "com.example.pawlet"
 	p.AppIntegrity.CertificateSha256Digest = []string{"test-cert-digest"}
 	p.DeviceIntegrity.DeviceRecognitionVerdict = []string{"MEETS_DEVICE_INTEGRITY"}
 	return p
-}
-
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf) - 1
-	for n > 0 {
-		buf[i] = byte('0' + n%10)
-		n /= 10
-		i--
-	}
-	if neg {
-		buf[i] = '-'
-		i--
-	}
-	return string(buf[i+1:])
 }
 
 func TestChallengeReturns64CharHex(t *testing.T) {
