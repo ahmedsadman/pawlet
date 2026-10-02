@@ -17,6 +17,10 @@ type Issuer struct {
 	ttl    time.Duration
 }
 
+// String redacts the signing secret so an Issuer logged with %v or %+v cannot
+// leak it.
+func (i *Issuer) String() string { return "token.Issuer{redacted}" }
+
 // New builds an Issuer.
 func New(secret []byte, ttl time.Duration) *Issuer {
 	return &Issuer{secret: secret, ttl: ttl}
@@ -46,8 +50,15 @@ func (i *Issuer) Mint(installHash string, now time.Time) (string, error) {
 }
 
 // Verify checks the signature and expiry, returning the install hash.
+//
+// Every error it returns must be mapped to a bare 401 by the caller: the
+// wrapped library text names the signing algorithm and failure mode, which is
+// detail no client should see.
 func (i *Issuer) Verify(signed string, now time.Time) (string, error) {
 	claims := &jwt.RegisteredClaims{}
+	// Two alg defences on purpose. The keyfunc assertion is the primary one;
+	// WithValidMethods below also pins HS256 so a token signed HS384 with the
+	// same secret is refused even if the assertion is ever loosened.
 	_, err := jwt.ParseWithClaims(signed, claims, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method %v", t.Header["alg"])
