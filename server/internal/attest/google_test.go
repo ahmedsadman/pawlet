@@ -2,6 +2,7 @@ package attest
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,11 +24,7 @@ func TestGoogleDecoderParsesPayload(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	d := &GoogleDecoder{
-		Client:      srv.Client(),
-		Endpoint:    srv.URL,
-		PackageName: "com.pastabyte.pawlet",
-	}
+	d := &GoogleDecoder{Client: srv.Client(), Endpoint: srv.URL}
 
 	got, err := d.Decode(context.Background(), "integrity-token-value")
 	if err != nil {
@@ -51,7 +48,7 @@ func TestGoogleDecoderReportsNon200(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	d := &GoogleDecoder{Client: srv.Client(), Endpoint: srv.URL, PackageName: "pkg"}
+	d := &GoogleDecoder{Client: srv.Client(), Endpoint: srv.URL}
 
 	if _, err := d.Decode(context.Background(), "tok"); err == nil {
 		t.Fatal("Decode() error = nil, want an error for HTTP 403")
@@ -64,7 +61,7 @@ func TestGoogleDecoderReportsMalformedJSON(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	d := &GoogleDecoder{Client: srv.Client(), Endpoint: srv.URL, PackageName: "pkg"}
+	d := &GoogleDecoder{Client: srv.Client(), Endpoint: srv.URL}
 
 	if _, err := d.Decode(context.Background(), "tok"); err == nil {
 		t.Fatal("Decode() error = nil, want an error for a malformed body")
@@ -77,11 +74,29 @@ func TestGoogleDecoderHonoursContextCancellation(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	d := &GoogleDecoder{Client: srv.Client(), Endpoint: srv.URL, PackageName: "pkg"}
+	d := &GoogleDecoder{Client: srv.Client(), Endpoint: srv.URL}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	if _, err := d.Decode(ctx, "tok"); err == nil {
 		t.Fatal("Decode() error = nil, want a context cancellation error")
+	}
+}
+
+func TestGoogleDecoderDistinguishesUnreachableFromRejected(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+
+	rejected := &GoogleDecoder{Client: srv.Client(), Endpoint: srv.URL}
+	if _, err := rejected.Decode(context.Background(), "tok"); !errors.Is(err, ErrDecodeRejected) {
+		t.Fatalf("err = %v, want ErrDecodeRejected", err)
+	}
+
+	srv.Close()
+	unreachable := &GoogleDecoder{Client: srv.Client(), Endpoint: srv.URL}
+	if _, err := unreachable.Decode(context.Background(), "tok"); !errors.Is(err, ErrDecodeUnreachable) {
+		t.Fatalf("err = %v, want ErrDecodeUnreachable", err)
 	}
 }
