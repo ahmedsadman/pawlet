@@ -1,0 +1,6 @@
+/pawletd
+*.db
+*.db-wal
+*.db-shm
+.env
+service-account.json
