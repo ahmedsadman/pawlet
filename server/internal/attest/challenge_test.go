@@ -68,10 +68,15 @@ func TestConsumeIsAtomicUnderConcurrency(t *testing.T) {
 		mu        sync.Mutex
 		successes int
 	)
+	// Every goroutine blocks on `start` so they contend for the same value at
+	// once. Without the barrier they tend to run sequentially and the test
+	// would pass even against a non-atomic check-then-delete.
+	start := make(chan struct{})
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			<-start
 			if c.Consume(value) {
 				mu.Lock()
 				successes++
@@ -79,6 +84,7 @@ func TestConsumeIsAtomicUnderConcurrency(t *testing.T) {
 			}
 		}()
 	}
+	close(start)
 	wg.Wait()
 
 	if successes != 1 {
