@@ -42,7 +42,7 @@ func (s *Store) AddUsage(ctx context.Context, deltas []UsageDelta) error {
 
 	for _, d := range deltas {
 		if _, err := stmt.ExecContext(ctx, d.IDHash, d.Day, d.Calls, d.Tokens); err != nil {
-			return fmt.Errorf("upsert usage for %s: %w", d.Day, err)
+			return fmt.Errorf("upsert usage for %s on %s: %w", d.IDHash, d.Day, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

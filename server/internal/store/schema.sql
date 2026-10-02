@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS installs (
   ban_reason TEXT NOT NULL DEFAULT ''
 );
 
+-- One row per install per UTC day, never pruned. At this service's scale
+-- (hundreds of installs) that is a few thousand rows a year, so a retention
+-- sweep would be more moving parts than the growth justifies.
 CREATE TABLE IF NOT EXISTS usage (
   id_hash TEXT NOT NULL,
   day     TEXT NOT NULL,
