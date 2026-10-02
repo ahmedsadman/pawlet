@@ -10,12 +10,55 @@ func TestHealthz(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 
-	NewRouter().ServeHTTP(rec, req)
+	// Handlers struct with nil fields is fine; healthz doesn't call any handler.
+	NewRouter(Handlers{}).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	if got := rec.Body.String(); got != "ok" {
 		t.Fatalf("body = %q, want %q", got, "ok")
+	}
+}
+
+// TestRouterRoutesEveryEndpoint verifies all declared routes are registered and
+// reachable. Wrapping in Recovery converts panics (from nil handlers) to 500,
+// proving the route exists without fully wiring the handlers for this test.
+func TestRouterRoutesEveryEndpoint(t *testing.T) {
+	routes := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/healthz"},
+		{"GET", "/v1/challenge"},
+		{"POST", "/v1/session"},
+		{"POST", "/v1/classify"},
+		{"GET", "/v1/prompt-bundle"},
+	}
+
+	// Bare handlers with no collaborators will panic. Recovery turns the panic
+	// into 500, which proves the route is present (a missing route would 404).
+	router := Chain(NewRouter(Handlers{}), Recovery(discardLogger()))
+
+	for _, route := range routes {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(route.method, route.path, nil)
+			router.ServeHTTP(rec, req)
+			if rec.Code == http.StatusNotFound {
+				t.Fatalf("route not found: %s %s", route.method, route.path)
+			}
+		})
+	}
+}
+
+func TestRouterRejectsWrongMethod(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/classify", nil)
+
+	NewRouter(Handlers{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 }
