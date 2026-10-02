@@ -65,14 +65,15 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 
 	installHash, err := h.Issuer.Verify(rawToken, h.Now())
 	if err != nil {
-		h.Logger.Warn("token verification failed",
-			"installHash", func() string {
-				if len(installHash) >= 8 {
-					return installHash[:8]
-				}
-				return "unknown"
-			}(),
-			"error", err)
+		h.Logger.Warn("token verification failed", "error", err)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	// A SHA-256 hex subject is always 64 chars. Anything shorter means a token
+	// signed with our key but not minted by us, so reject it rather than let
+	// the hash-prefix logging below slice out of range.
+	if len(installHash) < 8 {
+		h.Logger.Warn("token subject is not an install hash")
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}

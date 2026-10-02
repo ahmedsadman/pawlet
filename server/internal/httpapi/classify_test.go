@@ -570,3 +570,23 @@ func TestClassifyEmptyBearerToken(t *testing.T) {
 		t.Fatalf("status = %d, want 401 for empty bearer token", rec.Code)
 	}
 }
+
+func TestClassifyRejectsTokenWithShortSubject(t *testing.T) {
+	h := newTestHarness(t)
+	// Signed with our key but the subject is not a SHA-256 hex hash.
+	short := h.mintToken("abc")
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/classify",
+		classifyRequestBody("BANK", "balance 1000 BDT", "BDT"))
+	req.Header.Set("Authorization", "Bearer "+short)
+	rec := httptest.NewRecorder()
+
+	h.handler.Classify(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	if h.classifier.calls != 0 {
+		t.Fatalf("classifier called %d times, want 0", h.classifier.calls)
+	}
+}
