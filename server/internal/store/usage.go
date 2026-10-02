@@ -64,3 +64,27 @@ func (s *Store) Usage(ctx context.Context, idHash, day string) (calls, tokens in
 	}
 	return calls, tokens, nil
 }
+
+// UsageForDay reads calls for all installs on the given UTC day.
+func (s *Store) UsageForDay(ctx context.Context, day string) (map[string]int64, error) {
+	const q = `SELECT id_hash, calls FROM usage WHERE day = ?`
+	rows, err := s.read.QueryContext(ctx, q, day)
+	if err != nil {
+		return nil, fmt.Errorf("query usage for day: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[string]int64)
+	for rows.Next() {
+		var idHash string
+		var calls int64
+		if err := rows.Scan(&idHash, &calls); err != nil {
+			return nil, fmt.Errorf("scan usage row: %w", err)
+		}
+		result[idHash] = calls
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate usage rows: %w", err)
+	}
+	return result, nil
+}
