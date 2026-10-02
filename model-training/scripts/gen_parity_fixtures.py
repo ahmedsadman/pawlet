@@ -15,7 +15,7 @@ from transformers import AutoTokenizer
 from src.config import MAX_LEN
 from src.predict import load, classify, extract
 
-FUSED_INT8 = Path("models/fused_int8")
+FUSED = Path("models/fused")
 OUT = Path("../mobile-app/test/fixtures/local_model_parity.json")
 
 SAMPLES = [
@@ -24,6 +24,15 @@ SAMPLES = [
     'Monthly bill 423800******3241 AUG2026; Total Due: BDT 4924.35, Min Due: BDT 4833.35',
     'Your bill for card 498851******3711 for JUL 2026 BDT 4111.79 Min due: BDT 500',
     'OTP 123456. Do not share with anyone.',
+    # Multi-line City Bank AMEX formats: newlines, an apostrophe period and
+    # South-Asian digit grouping all have to tokenize identically in Dart.
+    "15:21 16-Sep-26\nBDT 9,20.00 purchased at SWIFTMART\nCARD NO: 777***686\n"
+    "Bal BDT 11,200.50\nCITY BANK",
+    "AMEX Bill Sep'26\nTotal Due\nTk 5,900.00\nMin Due\nTk 1,000.00\n"
+    "CARD: 770***970\nClient ID: 90216448\nPay by 13-10-26\n"
+    "eStatement:tiny.cc/473fzr",
+    "22-JAN-26\nTk. 1,25,00,000.00 payment received\nCARD NO: 348***925\n"
+    "Client ID: 92814224",
 ]
 
 
@@ -46,7 +55,7 @@ def _assert_label_order(model):
 
 
 def main():
-    tok = AutoTokenizer.from_pretrained(FUSED_INT8)
+    tok = AutoTokenizer.from_pretrained(FUSED)
     models = load()  # (tokenizer, model) for the predict helpers
     _assert_label_order(models[1])
     records = []
