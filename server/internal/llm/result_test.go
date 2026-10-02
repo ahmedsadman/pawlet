@@ -415,3 +415,24 @@ func TestNumStr_PreservesDecimalString(t *testing.T) {
 		})
 	}
 }
+
+func TestNumStrRejectsNonDecimalShapes(t *testing.T) {
+	for _, bad := range []string{"1/3", "abc", "", "1.2.3", "0x10", " 50"} {
+		if got := numStr(bad); got != nil {
+			t.Errorf("numStr(%q) = %q, want nil", bad, *got)
+		}
+	}
+	for _, ok := range []string{"50", "50.00", "-12.5", "+3", "1.5e2"} {
+		if got := numStr(ok); got == nil {
+			t.Errorf("numStr(%q) = nil, want it accepted", ok)
+		}
+	}
+}
+
+func TestBuildUserContentUsesLiteralQuotes(t *testing.T) {
+	got := BuildUserContent(`Bank"X`, "msg", "BDT")
+	want := "Normalized currency: BDT\n\nMessage from \"Bank\"X\":\n<<<SMS\nmsg\nSMS>>>"
+	if got != want {
+		t.Fatalf("BuildUserContent() = %q, want %q", got, want)
+	}
+}
