@@ -182,12 +182,22 @@ func numStr(value any) *string {
 	}
 
 	// Validate it parses as a decimal without losing precision
+	// big.Rat alone is too permissive for money: it accepts fractions like
+	// "1/3", which the Dart Decimal parser this ports from rejects. Gate on a
+	// decimal shape first, then let big.Rat confirm it parses.
+	if !decimalPattern.MatchString(s) {
+		return nil
+	}
 	if _, ok := new(big.Rat).SetString(s); !ok {
 		return nil
 	}
 
 	return &s
 }
+
+// decimalPattern accepts optional sign, digits, optional fraction and optional
+// exponent — the shapes Dart's Decimal.tryParse accepts — and nothing else.
+var decimalPattern = regexp.MustCompile(`^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$`)
 
 // currencyCode validates and upper-cases a 3-letter currency code.
 func currencyCode(value any) *string {

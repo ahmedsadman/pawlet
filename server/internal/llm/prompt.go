@@ -47,7 +47,9 @@ Examples:
 // SystemPrompt. The output format must match the Dart buildUserContent function
 // byte-for-byte.
 func BuildUserContent(sender, content, currency string) string {
-	return fmt.Sprintf("Normalized currency: %s\n\nMessage from %q:\n<<<SMS\n%s\nSMS>>>", currency, sender, content)
+	// Literal quotes, not %q: the Dart original wraps the sender in plain
+	// quotes without escaping, and %q would diverge on a sender containing one.
+	return fmt.Sprintf("Normalized currency: %s\n\nMessage from \"%s\":\n<<<SMS\n%s\nSMS>>>", currency, sender, content)
 }
 
 // JSONSchema is the strict JSON schema mirroring the prompt's output object.
