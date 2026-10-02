@@ -47,9 +47,8 @@ func run(logger *slog.Logger) error {
 	}
 	defer db.Close()
 
-	// 4. Parse the trusted proxy CIDR for client IP extraction. Task 18 wires this
-	// into the SessionHandler for per-IP challenge rate limiting.
-	_, _, err = net.ParseCIDR(cfg.TrustedProxyCIDR)
+	// 4. Parse the trusted proxy CIDR for client IP extraction.
+	_, trustedProxy, err := net.ParseCIDR(cfg.TrustedProxyCIDR)
 	if err != nil {
 		return err
 	}
@@ -82,9 +81,23 @@ func run(logger *slog.Logger) error {
 	// 8. Start the limiter's background flusher.
 	go limiter.RunFlusher(ctx, 10*time.Second, logger)
 
-	// 9. Build the challenge store and start its janitor.
+	// 9. Build the challenge store and its per-IP rate limiter. Start a janitor
+	// that cleans both.
 	challenges := attest.NewChallenges(2*time.Minute, time.Now)
-	go challenges.RunJanitor(ctx, time.Minute)
+	challengeLimiter := httpapi.NewChallengeLimiter(cfg.ChallengePerIPHour)
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				challenges.Prune()
+				challengeLimiter.Prune()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	// 10. Build the session token issuer.
 	issuer := token.New(cfg.JWTSecret, 24*time.Hour)
@@ -110,8 +123,10 @@ func run(logger *slog.Logger) error {
 				CertDigests: cfg.CertSHA256Digests,
 				MaxAge:      5 * time.Minute,
 			},
-			Now:    time.Now,
-			Logger: logger,
+			Now:              time.Now,
+			Logger:           logger,
+			ChallengeLimiter: challengeLimiter,
+			TrustedProxy:     trustedProxy,
 		},
 		Classify: &httpapi.ClassifyHandler{
 			Classifier: llmClient,

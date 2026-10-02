@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -15,13 +16,15 @@ import (
 // SessionHandler issues challenges and exchanges attested integrity tokens for
 // session JWTs.
 type SessionHandler struct {
-	Challenges *attest.Challenges
-	Decoder    attest.Decoder
-	Issuer     *token.Issuer
-	Store      *store.Store
-	Policy     attest.Policy
-	Now        func() time.Time
-	Logger     *slog.Logger
+	Challenges       *attest.Challenges
+	Decoder          attest.Decoder
+	Issuer           *token.Issuer
+	Store            *store.Store
+	Policy           attest.Policy
+	Now              func() time.Time
+	Logger           *slog.Logger
+	ChallengeLimiter *hourlyLimiter // nil-safe: existing tests construct without one
+	TrustedProxy     *net.IPNet
 }
 
 type challengeResponse struct {
@@ -42,6 +45,16 @@ type sessionResponse struct {
 // Challenge issues a single-use nonce for the client to bind into its integrity
 // token.
 func (h *SessionHandler) Challenge(w http.ResponseWriter, r *http.Request) {
+	// Rate limit by client IP to prevent unbounded challenge allocation.
+	if h.ChallengeLimiter != nil {
+		ip := clientIP(r, h.TrustedProxy)
+		if !h.ChallengeLimiter.allow(ip) {
+			h.Logger.Warn("challenge rate limit exceeded", "ip", ip)
+			writeRateLimited(w, time.Hour, 0)
+			return
+		}
+	}
+
 	challenge, err := h.Challenges.Issue()
 	if err != nil {
 		h.Logger.Error("failed to issue challenge", "error", err)
