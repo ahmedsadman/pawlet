@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -49,7 +51,7 @@ func TestInstallMissingReturnsNotFound(t *testing.T) {
 	s := newTestStore(t)
 
 	_, err := s.Install(context.Background(), "absent")
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
@@ -79,13 +81,24 @@ func TestConcurrentWritesSerialiseWithoutError(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(1_700_000_000, 0)
 
-	errs := make(chan error, 10)
-	for i := 0; i < 10; i++ {
-		go func() { errs <- s.TouchInstall(ctx, "hash-c", now) }()
+	// Distinct hashes so the run proves every write landed, not merely that
+	// repeated upserts of one row avoided SQLITE_BUSY.
+	const writers = 10
+	errs := make(chan error, writers)
+	for i := 0; i < writers; i++ {
+		go func(i int) {
+			errs <- s.TouchInstall(ctx, fmt.Sprintf("hash-c-%d", i), now)
+		}(i)
 	}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < writers; i++ {
 		if err := <-errs; err != nil {
 			t.Fatalf("concurrent TouchInstall() error = %v", err)
+		}
+	}
+
+	for i := 0; i < writers; i++ {
+		if _, err := s.Install(ctx, fmt.Sprintf("hash-c-%d", i)); err != nil {
+			t.Errorf("install %d missing after concurrent writes: %v", i, err)
 		}
 	}
 }

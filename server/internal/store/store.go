@@ -48,7 +48,7 @@ func Open(path string) (*Store, error) {
 	}
 	write.SetMaxOpenConns(1)
 
-	if _, err := write.Exec(schema); err != nil {
+	if _, err := write.ExecContext(context.Background(), schema); err != nil {
 		_ = write.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
