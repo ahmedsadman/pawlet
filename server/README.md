@@ -75,14 +75,35 @@ docker compose up -d --build
 Add this site block to your Caddyfile (adjust hostname as needed):
 ```
 pawlet.muhib.me {
-    reverse_proxy pawlet:8080
+    reverse_proxy localhost:8091
 }
 ```
 
-The service does NOT publish ports to the host — Caddy reaches it over the shared Docker network (`caddy_net` by default in docker-compose.yml; update to match your actual network name from `docker network inspect`).
+This assumes Caddy runs with `network_mode: host`, which is why the proxy target
+is `localhost` rather than a container name. The compose file publishes the
+service on `127.0.0.1:8091` only, so Caddy can reach it while the port stays off
+the public interface. Change the host-side port if 8091 is already taken.
+
+**Client IP and `TRUSTED_PROXY_CIDR`:**
+
+Caddy sets `X-Forwarded-For`, and the service only honours it when the immediate
+peer is inside `TRUSTED_PROXY_CIDR`. With a loopback-published port, the
+container sees the Docker bridge gateway (usually `172.17.0.1`) as the peer, so
+the default `172.16.0.0/12` covers it. Tighten to `172.17.0.1/32` if you want to
+stop other containers on the default bridge from being trusted.
+
+Verify after deploying: trip the challenge rate limit and check the log line.
+
+```bash
+for i in $(seq 1 70); do curl -s -o /dev/null https://pawlet.muhib.me/v1/challenge; done
+docker compose logs pawlet | grep "challenge rate limit"
+```
+
+The `ip` field must show the real client address. If it shows `172.17.0.1` or
+another fixed value, `X-Forwarded-For` is not being trusted and every client
+shares one rate-limit bucket.
 
 **Prerequisites:**
-- Docker network for reverse proxy (create with `docker network create caddy_net` if needed)
 - `./service-account.json` in the server directory
 - `.env` file populated from `.env.example`
 
