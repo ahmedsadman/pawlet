@@ -1,8 +1,13 @@
 package httpapi
 
 import (
+	"context"
+	"errors"
+	"github.com/ahmedsadman/pawlet/server/internal/store"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -60,5 +65,62 @@ func TestRouterRejectsWrongMethod(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+type fakeHealth struct{ err error }
+
+func (f fakeHealth) Ping(context.Context) error { return f.err }
+
+func TestHealthzReportsDatabaseFailure(t *testing.T) {
+	h := NewRouter(Handlers{
+		Session:  &SessionHandler{Logger: discardLogger()},
+		Classify: &ClassifyHandler{Logger: discardLogger()},
+		Bundle:   NewBundleHandler([]string{"a/one:free"}),
+		Health:   fakeHealth{err: errors.New("disk gone")},
+		Logger:   discardLogger(),
+	})
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "database_unavailable") {
+		t.Fatalf("body = %q, want the database_unavailable code", rec.Body.String())
+	}
+}
+
+func TestHealthzPassesWhenDatabaseAnswers(t *testing.T) {
+	h := NewRouter(Handlers{
+		Session:  &SessionHandler{Logger: discardLogger()},
+		Classify: &ClassifyHandler{Logger: discardLogger()},
+		Bundle:   NewBundleHandler([]string{"a/one:free"}),
+		Health:   fakeHealth{},
+		Logger:   discardLogger(),
+	})
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	if rec.Code != http.StatusOK || rec.Body.String() != "ok" {
+		t.Fatalf("status = %d body = %q, want 200 ok", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStorePingDetectsAClosedDatabase(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	if err := s.Ping(context.Background()); err != nil {
+		t.Fatalf("Ping() on a live store = %v, want nil", err)
+	}
+
+	_ = s.Close()
+
+	if err := s.Ping(context.Background()); err == nil {
+		t.Fatal("Ping() on a closed store = nil, want an error")
 	}
 }

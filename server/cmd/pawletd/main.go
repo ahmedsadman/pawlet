@@ -139,6 +139,8 @@ func run(logger *slog.Logger) error {
 			Logger:     logger,
 		},
 		Bundle: httpapi.NewBundleHandler(cfg.Models),
+		Health: db,
+		Logger: logger,
 	}
 
 	// 13. Build the handler chain: Recovery wraps everything so it catches panics

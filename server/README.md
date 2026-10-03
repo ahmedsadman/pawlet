@@ -8,7 +8,7 @@ Design: [docs/superpowers/specs/2026-10-01-llm-proxy-attestation-design.md](../d
 
 | Method | Path                 | Auth      | Purpose                                                     |
 |--------|----------------------|-----------|-------------------------------------------------------------|
-| GET    | `/healthz`           | None      | Liveness check (200 OK with empty body)                    |
+| GET    | `/healthz`           | None      | 200 `ok` only if SQLite answers; 503 `database_unavailable` otherwise |
 | GET    | `/v1/challenge`      | None      | Issue a single-use challenge for integrity verification    |
 | POST   | `/v1/session`        | Challenge | Consume challenge + integrity token, return session JWT    |
 | POST   | `/v1/classify`       | JWT       | Classify bank SMS via OpenRouter (attested installs only)  |

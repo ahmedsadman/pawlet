@@ -110,3 +110,15 @@ func (s *Store) Ban(ctx context.Context, idHash, reason string) error {
 	}
 	return nil
 }
+
+// Ping reports whether the database is queryable. It runs a trivial read
+// against the schema rather than only dialling the pool: a pooled connection
+// can look healthy while the underlying file is unreadable.
+func (s *Store) Ping(ctx context.Context) error {
+	var one int
+	err := s.read.QueryRowContext(ctx, `SELECT 1 FROM sqlite_schema LIMIT 1`).Scan(&one)
+	if err != nil {
+		return fmt.Errorf("ping database: %w", err)
+	}
+	return nil
+}
