@@ -159,3 +159,23 @@ func TestClientIPFallsBackWhenEveryHopIsTrusted(t *testing.T) {
 		t.Fatalf("clientIP() = %q, want the peer", got)
 	}
 }
+
+func TestClientIPHandlesIPv6Peer(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "[::1]:54321"
+
+	if got := clientIP(req, nil); got != "::1" {
+		t.Fatalf("clientIP() = %q, want ::1", got)
+	}
+}
+
+func TestClientIPHandlesIPv6BehindTrustedProxy(t *testing.T) {
+	_, trusted, _ := net.ParseCIDR("::1/128")
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "[::1]:54321"
+	req.Header.Set("X-Forwarded-For", "2001:db8::42")
+
+	if got := clientIP(req, trusted); got != "2001:db8::42" {
+		t.Fatalf("clientIP() = %q, want the forwarded IPv6 client", got)
+	}
+}

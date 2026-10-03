@@ -82,8 +82,11 @@ func Chain(h http.Handler, mw ...Middleware) http.Handler {
 // clientIP extracts the client IP from the request, honoring X-Forwarded-For
 // only when the immediate peer is within the trusted proxy CIDR.
 func clientIP(r *http.Request, trusted *net.IPNet) string {
-	peerHost, _, found := strings.Cut(r.RemoteAddr, ":")
-	if !found {
+	// net.SplitHostPort, not a naive cut on ":" — an IPv6 peer arrives as
+	// "[::1]:54321" and cutting on the first colon yields "[", collapsing
+	// every IPv6 client into one shared rate-limit bucket.
+	peerHost, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
 		peerHost = r.RemoteAddr
 	}
 
