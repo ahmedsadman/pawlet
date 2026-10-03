@@ -106,18 +106,38 @@ shares one rate-limit bucket.
 **Prerequisites:**
 - `./service-account.json` in the server directory
 - `.env` file populated from `.env.example`
+- `mkdir -p data` — the SQLite bind mount. The container runs as your host uid
+  so the files stay writable; if your uid is not 1000, start with
+  `PAWLET_UID=$(id -u) PAWLET_GID=$(id -g) docker compose up -d`
 
 ## Backups
 
-The SQLite file at `/data/pawlet.db` holds only:
-- Anonymous install hashes (SHA-256 of package + signing cert)
-- Daily and burst usage counters
-- Challenge nonces (expire after 5 minutes)
+The database is bind-mounted at `server/data/pawlet.db`, owned by your host
+user, so no `sudo` or `docker cp` is needed to reach it. It holds only:
+- Anonymous install hashes (SHA-256 of the random per-install ID)
+- Daily and burst usage counters, plus ban flags
 
-A nightly volume copy suffices:
+Challenge nonces are **not** in the database — they live in memory with a
+2-minute TTL and are deliberately lost on restart.
+
+### Use sqlite3 `.backup`, not `cp`
+
+The database runs in WAL mode, so recent writes sit in `pawlet.db-wal` until a
+checkpoint. Copying `pawlet.db` on its own yields a file with **no tables**.
+Copying all three files together is racy against a running service.
+
+`.backup` uses SQLite's online backup API and is safe while the service runs:
+
 ```bash
-docker run --rm -v pawlet-data:/source -v /backup:/dest alpine \
-  tar czf /dest/pawlet-data-$(date +%F).tar.gz -C /source .
+sqlite3 server/data/pawlet.db ".backup /backup/pawlet-$(date +%F).db"
 ```
 
-Retention: keep 7 days of backups. The database resets quota counters daily, so historical data beyond a week has no operational value.
+Verify before trusting it:
+
+```bash
+sqlite3 /backup/pawlet-$(date +%F).db "select count(*) from installs"
+```
+
+Retention: a week is plenty. Quota counters roll daily and the install table
+refills as clients re-attest, so the only thing a restore really preserves is
+ban state and the current day's usage.

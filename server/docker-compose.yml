@@ -9,11 +9,13 @@ services:
     # expose the API to the internet and bypass Caddy's TLS entirely.
     ports:
       - "127.0.0.1:8091:8080"
+    # Run as the host user so the bind-mounted ./data stays readable and
+    # writable without sudo. Override on a host where your uid is not 1000:
+    #   PAWLET_UID=$(id -u) PAWLET_GID=$(id -g) docker compose up -d
+    user: "${PAWLET_UID:-1000}:${PAWLET_GID:-1000}"
     volumes:
-      # SQLite database and its WAL/SHM siblings.
-      - pawlet-data:/data
+      # SQLite database and its WAL/SHM siblings, visible on the host at
+      # server/data/ so backups and inspection need no docker gymnastics.
+      - ./data:/data
       # Google service account JSON, read-only.
       - ./service-account.json:/run/secrets/sa.json:ro
-
-volumes:
-  pawlet-data:
