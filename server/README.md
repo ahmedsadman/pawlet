@@ -79,7 +79,7 @@ pawlet.muhib.me {
 }
 ```
 
-The service does NOT publish ports to the host — Caddy reaches it over the shared Docker network (`caddy_net` by default in compose.yml; update to match your actual network name from `docker network inspect`).
+The service does NOT publish ports to the host — Caddy reaches it over the shared Docker network (`caddy_net` by default in docker-compose.yml; update to match your actual network name from `docker network inspect`).
 
 **Prerequisites:**
 - Docker network for reverse proxy (create with `docker network create caddy_net` if needed)

@@ -90,7 +90,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 	// here, not after burning a billable decode.
 	if !h.Challenges.Consume(req.Challenge) {
 		h.Logger.Warn("challenge consume failed",
-			"installHash", attest.InstallHash(req.InstallID))
+			"installHash", shortHash(attest.InstallHash(req.InstallID)))
 		writeError(w, http.StatusForbidden, "attestation_failed")
 		return
 	}
@@ -105,7 +105,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 		// degraded local-only mode over a transient server fault. Log the
 		// underlying sentinel so the cause is visible.
 		h.Logger.Error("integrity decode failed",
-			"installHash", attest.InstallHash(req.InstallID),
+			"installHash", shortHash(attest.InstallHash(req.InstallID)),
 			"error", err)
 		writeError(w, http.StatusServiceUnavailable, "attestation_unavailable")
 		return
@@ -115,7 +115,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 	wantHash := attest.RequestHash(req.InstallID, req.Challenge)
 	if err := attest.Verify(payload, wantHash, h.Policy, h.Now()); err != nil {
 		h.Logger.Warn("attestation verification failed",
-			"installHash", attest.InstallHash(req.InstallID),
+			"installHash", shortHash(attest.InstallHash(req.InstallID)),
 			"error", err)
 		writeError(w, http.StatusForbidden, "attestation_failed")
 		return
@@ -164,4 +164,13 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 		Token:     sessionToken,
 		ExpiresAt: expiresAt,
 	})
+}
+
+// shortHash trims an install hash for logging. Log lines carry a prefix, not
+// the whole identity.
+func shortHash(h string) string {
+	if len(h) < 8 {
+		return h
+	}
+	return h[:8]
 }
