@@ -25,7 +25,7 @@ type fakeClassifier struct {
 	err      error
 }
 
-func (f *fakeClassifier) Classify(ctx context.Context, in llm.Request) (llm.Response, error) {
+func (f *fakeClassifier) Classify(_ context.Context, _ llm.Request) (llm.Response, error) {
 	f.calls++
 	return f.response, f.err
 }
@@ -33,11 +33,11 @@ func (f *fakeClassifier) Classify(ctx context.Context, in llm.Request) (llm.Resp
 // noopSink implements quota.Sink for tests.
 type noopSink struct{}
 
-func (noopSink) PersistUsage(ctx context.Context, deltas []quota.Delta) error {
+func (noopSink) PersistUsage(_ context.Context, _ []quota.Delta) error {
 	return nil
 }
 
-func (noopSink) LoadUsage(ctx context.Context, day string) (map[string]int64, error) {
+func (noopSink) LoadUsage(_ context.Context, _ string) (map[string]int64, error) {
 	return nil, nil
 }
 

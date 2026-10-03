@@ -45,7 +45,10 @@ func NewGoogleDecoder(ctx context.Context, serviceAccountPath, packageName strin
 	if err != nil {
 		return nil, fmt.Errorf("read service account: %w", err)
 	}
-	creds, err := google.CredentialsFromJSON(ctx, data, playIntegrityScope)
+	// The deprecation warns about accepting credential config from an
+	// untrusted source. This file is operator-supplied via configuration and
+	// mounted read-only, never user input.
+	creds, err := google.CredentialsFromJSON(ctx, data, playIntegrityScope) //nolint:staticcheck
 	if err != nil {
 		return nil, fmt.Errorf("parse service account: %w", err)
 	}

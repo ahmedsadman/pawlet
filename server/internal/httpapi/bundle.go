@@ -66,5 +66,5 @@ func (h *BundleHandler) Bundle(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(h.body)
+	_, _ = w.Write(h.body)
 }
