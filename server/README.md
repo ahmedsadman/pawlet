@@ -2,8 +2,6 @@
 
 Attestation-gated proxy for bank SMS classification. Holds an OpenRouter API key and admits only Android installs that pass Play Integrity attestation. Sideloaded builds that cannot attest instead fetch a prompt bundle and call OpenRouter directly with their own key.
 
-Design: [docs/superpowers/specs/2026-10-01-llm-proxy-attestation-design.md](../docs/superpowers/specs/2026-10-01-llm-proxy-attestation-design.md)
-
 ## Endpoints
 
 | Method | Path                 | Auth      | Purpose                                                     |

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	// Pure-Go SQLite driver, registered under the name "sqlite". Chosen over
+	// mattn/go-sqlite3 so the image can build with CGO_ENABLED=0.
 	_ "modernc.org/sqlite"
 )
 

@@ -22,7 +22,7 @@ func TestClassify_RequestFormat(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"choices": [{"message": {"content": "{\"category\": null, \"transaction\": null, \"bill\": null}"}}],
 			"usage": {"total_tokens": 100}
 		}`))
@@ -67,10 +67,10 @@ func TestClassify_RequestFormat(t *testing.T) {
 }
 
 func TestClassify_FencedJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"choices": [{"message": {"content": "` + "```json\\n{\\\"category\\\": null, \\\"transaction\\\": null, \\\"bill\\\": null}\\n```" + `"}}],
 			"usage": {"total_tokens": 50}
 		}`))
@@ -99,10 +99,10 @@ func TestClassify_FencedJSON(t *testing.T) {
 }
 
 func TestClassify_TotalTokens(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"choices": [{"message": {"content": "{\"category\": null, \"transaction\": null, \"bill\": null}"}}],
 			"usage": {"total_tokens": 12345}
 		}`))
@@ -131,11 +131,11 @@ func TestClassify_TotalTokens(t *testing.T) {
 }
 
 func TestClassify_429Retryable(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Retry-After", "30")
 		w.Header().Set("X-RateLimit-Reset", "1700000000000")
 		w.WriteHeader(http.StatusTooManyRequests)
-		w.Write([]byte("rate limited"))
+		_, _ = w.Write([]byte("rate limited"))
 	}))
 	defer srv.Close()
 
@@ -175,9 +175,9 @@ func TestClassify_429Retryable(t *testing.T) {
 }
 
 func TestClassify_400NotRetryable(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("bad request"))
+		_, _ = w.Write([]byte("bad request"))
 	}))
 	defer srv.Close()
 
@@ -209,9 +209,9 @@ func TestClassify_400NotRetryable(t *testing.T) {
 }
 
 func TestClassify_500Retryable(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("server error"))
+		_, _ = w.Write([]byte("server error"))
 	}))
 	defer srv.Close()
 
@@ -243,10 +243,10 @@ func TestClassify_500Retryable(t *testing.T) {
 }
 
 func TestClassify_EmptyChoices(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"choices": [], "usage": {"total_tokens": 0}}`))
+		_, _ = w.Write([]byte(`{"choices": [], "usage": {"total_tokens": 0}}`))
 	}))
 	defer srv.Close()
 
@@ -316,10 +316,10 @@ func TestParseResetAt(t *testing.T) {
 
 func TestClassify_ContextCancellation(t *testing.T) {
 	// Server that delays response
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(2 * time.Second)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"choices": [{"message": {"content": "{\"category\": null, \"transaction\": null, \"bill\": null}"}}],
 			"usage": {"total_tokens": 0}
 		}`))

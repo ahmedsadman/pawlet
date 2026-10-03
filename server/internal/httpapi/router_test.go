@@ -3,12 +3,13 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"github.com/ahmedsadman/pawlet/server/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ahmedsadman/pawlet/server/internal/store"
 )
 
 func TestHealthz(t *testing.T) {

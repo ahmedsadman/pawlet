@@ -211,10 +211,8 @@ func stripJSONFence(content string) string {
 		if firstNewline != -1 {
 			t = t[firstNewline+1:]
 		}
-		// Remove trailing fence if present
-		if strings.HasSuffix(t, "```") {
-			t = t[:len(t)-3]
-		}
+		// Remove trailing fence if present.
+		t = strings.TrimSuffix(t, "```")
 	}
 	return strings.TrimSpace(t)
 }
