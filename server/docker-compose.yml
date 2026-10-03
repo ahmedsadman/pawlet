@@ -3,21 +3,17 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    # Bound to loopback, not 0.0.0.0. Caddy runs with network_mode: host, so it
+    # reaches this through localhost; binding the host side to 127.0.0.1 keeps
+    # the port off the public interface. Publishing "8091:8080" instead would
+    # expose the API to the internet and bypass Caddy's TLS entirely.
+    ports:
+      - "127.0.0.1:8091:8080"
     volumes:
-      # SQLite database and WAL files
+      # SQLite database and its WAL/SHM siblings.
       - pawlet-data:/data
-      # Google service account JSON (read-only)
+      # Google service account JSON, read-only.
       - ./service-account.json:/run/secrets/sa.json:ro
-    networks:
-      # DO NOT publish ports — Caddy reaches this container over the shared network.
-      # Update "caddy_net" to match your actual network name from `docker network inspect`.
-      - caddy_net
 
 volumes:
   pawlet-data:
-
-networks:
-  # This network must already exist. Create it with `docker network create caddy_net`
-  # or replace with your existing reverse-proxy network name.
-  caddy_net:
-    external: true
