@@ -70,4 +70,33 @@ void main() {
     await r.importAll(const {});
     expect(r.bulkImportOffered, isTrue);
   });
+
+  group('install-scoped LLM flags', () {
+    test('both default to false', () async {
+      SharedPreferences.setMockInitialValues({});
+      final repo = SettingsRepository(await SharedPreferences.getInstance());
+      expect(repo.installedFromPlay, isFalse);
+      expect(repo.attestationIneligible, isFalse);
+    });
+
+    test('both round-trip', () async {
+      SharedPreferences.setMockInitialValues({});
+      final repo = SettingsRepository(await SharedPreferences.getInstance());
+      await repo.setInstalledFromPlay(true);
+      await repo.setAttestationIneligible(true);
+      expect(repo.installedFromPlay, isTrue);
+      expect(repo.attestationIneligible, isTrue);
+    });
+
+    test('neither is carried by a backup', () async {
+      // Both describe THIS install's delivery channel and device, so restoring
+      // a backup onto another phone must not import them.
+      SharedPreferences.setMockInitialValues({});
+      final repo = SettingsRepository(await SharedPreferences.getInstance());
+      await repo.setInstalledFromPlay(true);
+      await repo.setAttestationIneligible(true);
+      expect(repo.exportAll().containsKey('installed_from_play'), isFalse);
+      expect(repo.exportAll().containsKey('attestation_ineligible'), isFalse);
+    });
+  });
 }
