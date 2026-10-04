@@ -9,6 +9,7 @@ on:
       - "mobile-app/pubspec.lock"
       - ".github/workflows/pr.yml"
       - ".github/workflows/checks.yml"
+      - ".github/workflows/release.yml"
 
 # dorny/paths-filter reads the PR's changed-files list via the API, which needs
 # pull-requests:read (the repo's default GITHUB_TOKEN is contents:read only).
