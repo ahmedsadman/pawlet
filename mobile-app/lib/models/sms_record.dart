@@ -77,7 +77,13 @@ enum FailureReason {
   retryExhausted('retry_exhausted'),
 
   /// A fatal (non-retryable) LLM error.
-  llmError('llm_error');
+  llmError('llm_error'),
+
+  /// The on-device model ran but its output could not be turned into a record
+  /// — no amount span, an unparseable number, or a foreign currency with no
+  /// conversion path — and this install has no LLM to fall back to. Recoverable
+  /// by design: adding an OpenRouter key and hitting Retry reprocesses the row.
+  localOnly('local_only');
 
   const FailureReason(this.value);
   final String value;

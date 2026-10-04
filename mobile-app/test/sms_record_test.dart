@@ -55,6 +55,7 @@ void main() {
     test('uses the expected snake_case backing values', () {
       expect(FailureReason.retryExhausted.value, 'retry_exhausted');
       expect(FailureReason.llmError.value, 'llm_error');
+      expect(FailureReason.localOnly.value, 'local_only');
     });
   });
 

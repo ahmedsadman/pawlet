@@ -245,6 +245,19 @@ void main() {
     expect(find.text('Extraction error'), findsOneWidget);
   });
 
+  testWidgets('history failure shows the local-only hint', (tester) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.failure, failureReason: FailureReason.localOnly),
+        showCategory: true,
+      ),
+    );
+    await tester.tap(find.text('BRAC'));
+    await tester.pumpAndSettle();
+    expect(find.text('Could not read the amount'), findsOneWidget);
+  });
+
   testWidgets('history never renders the internal last_error', (tester) async {
     await _pump(
       tester,
