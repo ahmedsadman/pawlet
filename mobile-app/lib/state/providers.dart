@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../config/build_config.dart';
 import '../data/banks_repository.dart';
 import '../data/finance_repository.dart';
 import '../data/secure_store.dart';
@@ -11,6 +12,8 @@ import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
 import '../services/app_services.dart';
 import '../services/backup_service.dart';
+import '../services/llm/key_validator.dart';
+import '../services/llm/llm_mode.dart';
 import '../services/processing_service.dart';
 import '../services/sms_listener.dart';
 import '../utils/currency_format.dart';
@@ -48,21 +51,53 @@ final backupServiceProvider = Provider<BackupService>(
   ),
 );
 
-/// The API key read from encrypted storage at startup, injected in `main()`.
+/// The stored OpenRouter key read from encrypted storage at startup, injected
+/// in `main()`. Empty until the user saves one in Settings.
 final bootstrapApiKeyProvider = Provider<String>(
   (ref) =>
       throw UnimplementedError('bootstrapApiKeyProvider must be overridden'),
 );
 
-/// The current OpenRouter API key, seeded from encrypted storage at startup.
-/// The pipeline reads it via [appServicesProvider]; there is no in-app writer
-/// (the key is provisioned out-of-band via `--dart-define`, see [SecureStore]).
+/// The current OpenRouter API key, seeded from encrypted storage at startup
+/// and written only by the bring-your-own-key input in Settings. Changing it
+/// rebuilds [appServicesProvider] and [llmModeProvider], so a saved key takes
+/// effect on the next message with no restart.
 class ApiKey extends Notifier<String> {
   @override
   String build() => ref.read(bootstrapApiKeyProvider);
+
+  Future<void> save(String value) async {
+    final trimmed = value.trim();
+    await ref.read(secureStoreProvider).writeApiKey(trimmed);
+    state = trimmed;
+  }
+
+  Future<void> clear() async {
+    await ref.read(secureStoreProvider).deleteApiKey();
+    state = '';
+  }
 }
 
 final apiKeyProvider = NotifierProvider<ApiKey, String>(ApiKey.new);
+
+/// How this install reaches an LLM. Watched by the pipeline and by Settings,
+/// so both always agree about which of the three worlds the user is in.
+final llmModeProvider = Provider<LlmMode>(
+  (ref) => resolveLlmMode(
+    fromPlay: ref.watch(settingsRepositoryProvider).installedFromPlay,
+    apiBaseConfigured: BuildConfig.apiBaseConfigured,
+    hasKey: ref.watch(apiKeyProvider).isNotEmpty,
+    attestationIneligible: ref
+        .watch(settingsRepositoryProvider)
+        .attestationIneligible,
+  ),
+);
+
+final keyValidatorProvider = Provider<OpenRouterKeyValidator>((ref) {
+  final validator = OpenRouterKeyValidator();
+  ref.onDispose(validator.close);
+  return validator;
+});
 
 /// Bundles the SMS capture + processing pipeline for the UI isolate. Rebuilds
 /// when the API key changes so the change takes effect without a restart.
@@ -71,6 +106,7 @@ final appServicesProvider = Provider<AppServices>((ref) {
     database: ref.watch(databaseProvider),
     prefs: ref.watch(sharedPreferencesProvider),
     apiKey: ref.watch(apiKeyProvider),
+    mode: ref.watch(llmModeProvider),
   );
   ref.onDispose(services.dispose);
   return services;

@@ -2,6 +2,7 @@ import 'package:another_telephony/telephony.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../config/build_config.dart';
 import '../data/banks_repository.dart';
 import '../data/database.dart';
 import '../data/secure_store.dart';
@@ -16,6 +17,7 @@ import 'connectivity_service.dart';
 import 'exchange_rate_service.dart';
 import 'finance/finance_matcher.dart';
 import 'finance/finance_writer.dart';
+import 'llm/llm_mode.dart';
 import 'llm/openrouter_provider.dart';
 import 'notification_service.dart';
 import 'processing_service.dart';
@@ -43,7 +45,9 @@ class AppServices {
   final SettingsRepository settings;
   final ConnectivityService connectivity;
   final NotificationService notifications;
-  final OpenRouterProvider llmProvider;
+
+  /// Null in [LlmMode.none] — and, for now, in [LlmMode.proxy] too.
+  final OpenRouterProvider? llmProvider;
 
   /// Owned on-device model; closed on dispose so its native interpreter is freed
   /// (each isolate builds its own bundle).
@@ -55,16 +59,25 @@ class AppServices {
     required Database database,
     required SharedPreferences prefs,
     required String apiKey,
+    required LlmMode mode,
   }) {
     final smsRepository = SmsRepository(database);
     final banksRepository = BanksRepository(database);
     final settings = SettingsRepository(prefs);
     final connectivity = ConnectivityService();
     final notifications = NotificationService(prefs: prefs);
-    final llmProvider = OpenRouterProvider(
-      apiKey: apiKey,
-      models: SettingsRepository.defaultLlmModels,
-    );
+
+    // Proxy mode needs the server-backed provider, which arrives with
+    // attestation; until then a proxy install has no LLM and runs entirely
+    // on-device. Unreachable in practice: `proxy` requires PAWLET_API_BASE,
+    // which no build sets yet.
+    final llmProvider = mode == LlmMode.byok
+        ? OpenRouterProvider(
+            apiKey: apiKey,
+            models: SettingsRepository.defaultLlmModels,
+          )
+        : null;
+
     final matcher = FinanceMatcher(database);
     final localClassifier = TfliteLocalClassifier();
     final exchangeRate = ExchangeRateService(prefs);
@@ -108,11 +121,22 @@ class AppServices {
   static Future<AppServices> bootstrap() async {
     final database = await AppDatabase.open();
     final prefs = await SharedPreferences.getInstance();
-    final apiKey = await SecureStore().resolveApiKey();
+    final apiKey = await SecureStore().readApiKey();
+    final settings = SettingsRepository(prefs);
+    // Reads the cached install source rather than the channel: MainActivity
+    // does not exist in this isolate, so the channel would always answer "not
+    // from Play" and resolve a different mode from the UI isolate.
+    final mode = resolveLlmMode(
+      fromPlay: settings.installedFromPlay,
+      apiBaseConfigured: BuildConfig.apiBaseConfigured,
+      hasKey: apiKey.isNotEmpty,
+      attestationIneligible: settings.attestationIneligible,
+    );
     final services = AppServices.from(
       database: database,
       prefs: prefs,
       apiKey: apiKey,
+      mode: mode,
     );
     await services.notifications.init();
     return services;
@@ -122,7 +146,7 @@ class AppServices {
   /// model's native interpreter. The database is app-wide (owned by the provider
   /// scope) and must NOT be closed here.
   void dispose() {
-    llmProvider.close();
+    llmProvider?.close();
     localClassifier.close();
     exchangeRate.close();
   }
@@ -139,7 +163,7 @@ class AppServices {
   /// until the app is restarted. The shared connection is released when the
   /// process dies.
   Future<void> disposeStandalone() async {
-    llmProvider.close();
+    llmProvider?.close();
     localClassifier.close();
     exchangeRate.close();
   }

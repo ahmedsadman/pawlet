@@ -1,9 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Local user settings backed by SharedPreferences. Pawlet has no server, so
-/// there is no webhook URL; instead it holds the normalized currency and the
-/// finance-view preferences the UI persists. (LLM API key / model are added in
-/// a later phase.)
+/// Local user settings backed by SharedPreferences: the finance-view
+/// preferences the UI persists, plus two install-scoped flags the LLM mode is
+/// resolved from. Secrets live in [SecureStore], never here.
 class SettingsRepository {
   SettingsRepository(this._prefs);
 
@@ -17,6 +16,8 @@ class SettingsRepository {
   static const _kTxTypeHintSeen = 'tx_type_hint_seen';
   static const _kHistoryHintSeen = 'history_hint_seen';
   static const _kBulkImportOffered = 'bulk_import_offered';
+  static const _kInstalledFromPlay = 'installed_from_play';
+  static const _kAttestationIneligible = 'attestation_ineligible';
 
   /// OpenRouter models tried in order (static ordered fallback in one request).
   /// All are structured-outputs-capable, so `response_format: json_schema` is
@@ -70,6 +71,30 @@ class SettingsRepository {
   bool get bulkImportOffered => _prefs.getBool(_kBulkImportOffered) ?? false;
   Future<void> setBulkImportOffered(bool value) =>
       _prefs.setBool(_kBulkImportOffered, value);
+
+  /// Cached install source. The platform channel that reads it is served by
+  /// MainActivity, which does not exist in the WorkManager and background-SMS
+  /// isolates — they would always see "not from Play" and resolve a different
+  /// mode from the UI isolate. The UI isolate refreshes this on every launch
+  /// and background isolates read the cache.
+  ///
+  /// Deliberately outside Backup & Restore: it describes how THIS install was
+  /// delivered, so restoring onto another phone must not import it.
+  bool get installedFromPlay => _prefs.getBool(_kInstalledFromPlay) ?? false;
+  Future<void> setInstalledFromPlay(bool value) =>
+      _prefs.setBool(_kInstalledFromPlay, value);
+
+  /// Set once Pawlet's server rejects this install's Play Integrity verdict,
+  /// which means the proxy will never work on this device. Reveals the
+  /// bring-your-own-key input so the user is not left with no LLM and no way
+  /// to enable one. Also install-scoped, so also outside Backup & Restore.
+  ///
+  /// Nothing writes this yet — the writer arrives with attestation. It is read
+  /// from the start so the mode table is complete and testable.
+  bool get attestationIneligible =>
+      _prefs.getBool(_kAttestationIneligible) ?? false;
+  Future<void> setAttestationIneligible(bool value) =>
+      _prefs.setBool(_kAttestationIneligible, value);
 
   /// Keys included in Backup & Restore, grouped by value type so [exportAll]
   /// and [importAll] round-trip them with the correct SharedPreferences
