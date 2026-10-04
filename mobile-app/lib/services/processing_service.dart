@@ -17,7 +17,9 @@ Future<Decimal?> _noRate() async => null;
 /// writing the finance record for whichever one decides it:
 /// 1. the Layer-1 sender/card gate — a miss is terminal `ignored`;
 /// 2. the on-device model — a confident verdict is terminal;
-/// 3. the cloud LLM, for anything the first two could not settle.
+/// 3. the cloud LLM, for anything the first two could not settle — when one is
+///    configured. With no LLM the on-device model runs ungated instead, and
+///    anything it cannot build becomes a terminal `failure`.
 ///
 /// The first two touch no network, so the pass runs offline and still drains
 /// everything they can decide. A record that reaches the third layer while
@@ -192,11 +194,16 @@ class ProcessingService {
     Decimal? usdRate,
     bool online,
   ) async {
+    final hasLlm = classifier.hasLlm;
+
     // A row the model already declined has nothing left to try offline, so drop
     // it before claiming and save two writes plus the gate. The gate still runs
     // on it the moment we are online again, so a bank deleted meanwhile is
     // honoured then.
-    if (record.needsLlm && !online) return false;
+    //
+    // Guarded on [hasLlm]: with no LLM the flag is stale history rather than a
+    // reason to wait, and skipping on it would park the row forever.
+    if (hasLlm && record.needsLlm && !online) return false;
 
     final id = record.id!;
     // The fencing token for every write below: the `updated_at` this caller
@@ -238,11 +245,13 @@ class ProcessingService {
       // never fires. The isolate's drain is wedged until app restart; other
       // isolates still drain.
 
-      // Seeded from the flag rather than false: an already-flagged row skips
-      // the inference below, and a second deferral must not read as "the model
-      // never ran" for a row on which it demonstrably did.
-      var declined = record.needsLlm;
-      if (!record.needsLlm) {
+      // The flag is honoured only when an LLM can act on it. With no LLM it
+      // records that the GATED gate declined, which says nothing about the
+      // ungated pass [Classifier] now runs — and re-running it is also how
+      // legacy flagged rows drain without a migration.
+      final skipInference = hasLlm && record.needsLlm;
+      var declined = skipInference;
+      if (!skipInference) {
         final local = await classifier.classifyLocal(
           content: record.content,
           currency: cur,
@@ -253,6 +262,28 @@ class ProcessingService {
           return _finish(record, localOutcome, banks, cur, heldSince);
         }
         declined = local.declined;
+      }
+
+      // No LLM: the on-device pass is the whole pipeline, so a rejection is
+      // terminal rather than a deferral — there is nothing left to defer to.
+      // Surfaced as a failure so it appears in Messages with the Retry action
+      // already offered there, which is what makes it recoverable once a key
+      // is added.
+      //
+      // `needs_llm` is deliberately left alone. It is never cleared, and the
+      // two readers above would then drop this row while offline and skip its
+      // inference for good.
+      if (!hasLlm) {
+        return smsRepository.updateStatus(
+          id,
+          SmsStatus.failure,
+          attempts: record.attempts + 1,
+          failureReason: FailureReason.localOnly,
+          lastError: 'on-device model produced no usable record',
+          updatedAt: _clock(),
+          nextAttemptAt: null,
+          heldSince: heldSince,
+        );
       }
 
       // Layer 3.
