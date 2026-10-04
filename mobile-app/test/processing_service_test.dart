@@ -1253,4 +1253,182 @@ void main() {
     expect(llm.calls, 1);
     await db.close();
   });
+
+  group('no LLM configured', () {
+    ProcessingService noLlmService({
+      bool online = true,
+      LocalClassifier? local,
+      Future<bool> Function()? isOnline,
+    }) => ProcessingService(
+      smsRepository: sms,
+      banksRepository: banks,
+      classifier: Classifier(null, local: local),
+      financeWriter: FinanceWriter(db, nowMs: () => now),
+      isOnline: isOnline ?? () async => online,
+      currency: () => 'BDT',
+      clock: () => now,
+    );
+
+    test('a weak prediction is accepted and written', () async {
+      const content = 'debit 50 BDT';
+      final local = _FakeLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.10,
+          spans: [
+            LocalSpan(
+              entity: 'AMOUNT',
+              text: '50',
+              confidence: 0.96,
+              start: content.indexOf('50'),
+              end: content.indexOf('50') + 2,
+            ),
+          ],
+        ),
+      );
+      final id = await queue('CHK', content: content);
+      await noLlmService(local: local).process();
+
+      final r = await row(id);
+      expect(r['status'], 'success');
+      expect(r['parse_source'], ParseSource.local.value);
+      expect(r['needs_llm'], 0);
+      expect((await db.query('transactions')).length, 1);
+      await db.close();
+    });
+
+    test('an unbuildable prediction fails terminally', () async {
+      const content = 'balance 500 BDT';
+      final local = _FakeLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.95,
+          spans: [
+            LocalSpan(
+              entity: 'BALANCE',
+              text: '500',
+              confidence: 0.96,
+              start: content.indexOf('500'),
+              end: content.indexOf('500') + 3,
+            ),
+          ],
+        ),
+      );
+      final id = await queue('CHK', content: content);
+      await noLlmService(local: local).process();
+
+      final r = await row(id);
+      expect(r['status'], 'failure');
+      expect(r['failure_reason'], FailureReason.localOnly.value);
+      expect(r['next_attempt_at'], isNull);
+      expect(r['needs_llm'], 0);
+      await db.close();
+    });
+
+    test('a row already flagged needs_llm is re-run, not skipped', () async {
+      const content = 'debit 50 BDT';
+      final local = _FakeLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.10,
+          spans: [
+            LocalSpan(
+              entity: 'AMOUNT',
+              text: '50',
+              confidence: 0.96,
+              start: content.indexOf('50'),
+              end: content.indexOf('50') + 2,
+            ),
+          ],
+        ),
+      );
+      final id = await queue('CHK', content: content);
+      // Manually flag needs_llm
+      await db.update(
+        'sms_records',
+        {'needs_llm': 1},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      await noLlmService(local: local).process();
+
+      final r = await row(id);
+      expect(r['status'], 'success');
+      await db.close();
+    });
+
+    test('being offline does not stop a pass', () async {
+      const content = 'debit 50 BDT';
+      final local = _FakeLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.10,
+          spans: [
+            LocalSpan(
+              entity: 'AMOUNT',
+              text: '50',
+              confidence: 0.96,
+              start: content.indexOf('50'),
+              end: content.indexOf('50') + 2,
+            ),
+          ],
+        ),
+      );
+      final id = await queue('CHK', content: content);
+      // Manually flag needs_llm
+      await db.update(
+        'sms_records',
+        {'needs_llm': 1},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      await noLlmService(online: false, local: local).process();
+
+      final r = await row(id);
+      expect(r['status'], 'success');
+      await db.close();
+    });
+
+    test('a local-only failure parses once a key is added', () async {
+      const content = 'balance 500 BDT';
+      final local = _FakeLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.95,
+          spans: [
+            LocalSpan(
+              entity: 'BALANCE',
+              text: '500',
+              confidence: 0.96,
+              start: content.indexOf('500'),
+              end: content.indexOf('500') + 3,
+            ),
+          ],
+        ),
+      );
+      final id = await queue('CHK', content: content);
+      await noLlmService(local: local).process();
+
+      var r = await row(id);
+      expect(r['status'], 'failure');
+      expect(r['failure_reason'], FailureReason.localOnly.value);
+
+      // Requeue as the app's Retry does
+      await sms.requeueOne(
+        id,
+        now,
+        attempts: ProcessingService.maxAttempts - 1,
+      );
+
+      // Second service with an LLM provider
+      final llm = _FakeLlm(result: _expense());
+      await service(llm, local: local).process();
+
+      r = await row(id);
+      expect(r['status'], 'success');
+      expect(r['parse_source'], ParseSource.llm.value);
+      expect((await db.query('transactions')).length, 1);
+      await db.close();
+    });
+  });
 }
