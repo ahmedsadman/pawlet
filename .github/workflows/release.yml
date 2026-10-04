@@ -85,6 +85,18 @@ jobs:
             cp "app-${abi}-release.apk" "Pawlet-${abi}.apk"
           done
 
+      # Same build-name/build-number as the APKs above, so the bundle Play
+      # serves and the APKs on the GitHub release are one logical build.
+      # No --split-per-abi: Play splits the bundle per device itself.
+      - name: Build release bundle
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          flutter build appbundle --release \
+            --build-name=${{ steps.version.outputs.base }} \
+            --build-number=${{ github.run_number }} \
+            --dart-define=OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -94,6 +106,18 @@ jobs:
             mobile-app/build/app/outputs/flutter-apk/Pawlet-arm64-v8a.apk
             mobile-app/build/app/outputs/flutter-apk/Pawlet-armeabi-v7a.apk
             mobile-app/build/app/outputs/flutter-apk/Pawlet-x86_64.apk
+
+      # Runs after the GitHub release so a rejected upload (most likely a
+      # versionCode Play has already seen) cannot cost us the sideload APKs.
+      # Promotion from internal to production stays manual in the Play Console.
+      - name: Upload to Play internal track
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.pastabyte.pawlet
+          releaseFiles: mobile-app/build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
 
       - name: Prune old releases (keep newest 5)
         env:
