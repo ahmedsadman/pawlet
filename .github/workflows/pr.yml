@@ -70,7 +70,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # No OpenRouter key is baked in. A key in a client APK is extractable, so
+      # sideload users supply their own through Settings → Privacy.
       - name: Build debug APK
-        run: flutter build apk --debug --dart-define=OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: flutter build apk --debug
