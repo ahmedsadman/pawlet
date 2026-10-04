@@ -95,35 +95,29 @@ the original app (trends over rolling windows, monthly summaries, balances, spen
 
 The Flutter app lives in `mobile-app/` — run the commands below from there (`cd mobile-app`).
 
-The only secret is the OpenRouter API key. There is **no in-app field for it** — the key is baked
-in at **build time** via a `--dart-define` (a compiler flag), so whoever builds passes it and people
-who install the app pass nothing. On first launch the app persists it to encrypted storage.
+The app ships with **no** OpenRouter API key. A key in a client binary is extractable, which is why
+it was removed. LLM parsing is optional and off until the user adds their own OpenRouter key under
+**Settings → Privacy**, where it is validated and stored in the Android keystore. Without one, the
+on-device model is the only classifier, and messages it cannot parse are marked failed in Messages,
+where they can be retried later.
 
-Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys), then copy the example to
-`dart_define.json` (gitignored) and fill it in `{"OPENROUTER_API_KEY": "sk-or-..."}`:
+**No `--dart-define` values are required to build.**
 
-```bash
-cp dart_define.example.json dart_define.json
-```
-
-**Local development** — pass the file to `flutter run` (needed only on first launch per install;
-harmless to always pass, since a stored key takes precedence):
+**Local development** — build and run directly:
 
 ```bash
-flutter run --dart-define-from-file=dart_define.json
+flutter run --debug
 ```
 
-**Release** — build once with the flag; the key is compiled in for every user. In CI, pass a
-pipeline secret inline instead of committing the file:
+**Release** — build as usual:
 
 ```bash
-flutter build appbundle --dart-define-from-file=dart_define.json               # local
-flutter build appbundle --dart-define=OPENROUTER_API_KEY="$OPENROUTER_API_KEY" # CI
+flutter build appbundle --release
 ```
 
-No key in a client binary is truly secret, and a single baked-in key means every user shares one
-OpenRouter account (its rate limits and billing) — fine for a personal/sideloaded build, but for a
-public release run a backend proxy that holds the key, or add a per-user "bring your own key" flow.
+Debug builds get `applicationIdSuffix = ".debug"`, i.e. package `com.pastabyte.pawlet.debug`,
+labelled "Pawlet Debug". They install alongside a release build (`com.pastabyte.pawlet`) and keep
+separate data.
 
 ## Debug SMS injector
 
