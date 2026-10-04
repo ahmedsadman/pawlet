@@ -59,9 +59,13 @@ Included:
 
 Deliberately excluded:
 
-- **Secrets** — the app PIN and the OpenRouter API key. They live in encrypted
-  storage (`SecureStore`), never in the JSON. After restoring onto a fresh device you
-  re-set the PIN, and the key is re-provisioned out-of-band.
+- **Secrets** — the app PIN and the OpenRouter API key (when using bring-your-own-key
+  mode). They live in encrypted storage (`SecureStore`), never in the JSON. After
+  restoring onto a fresh device you re-set the PIN and re-enter the key in Settings.
+- **Install-scoped flags** — `installed_from_play` and `attestation_ineligible`. These
+  describe how THIS install was delivered and whether THIS device passed attestation,
+  so restoring onto another phone must not import them. The new install resolves its
+  own values. See [LLM modes](llm-modes.md).
 - **Operational metadata** — the `app_meta` table (e.g. the last-prune timestamp) and
   notification bookkeeping prefs. These are device-local runtime state, not user data.
 
@@ -156,7 +160,7 @@ table is a snapshot — verify there if precision matters.
 | `ignore_reason` | TEXT | nullable; internal |
 | `failure_reason` | TEXT | nullable; internal |
 | `parse_source` | TEXT | nullable; `local` or `llm` — which engine parsed the row |
-| `needs_llm` | INTEGER | required; default 0 — 1 once only the LLM can resolve the row |
+| `needs_llm` | INTEGER | required; default 0 — 1 once only the LLM can resolve the row (set only when an LLM exists) |
 
 **`banks`** — user's banks and cards.
 

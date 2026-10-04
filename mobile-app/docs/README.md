@@ -5,6 +5,8 @@ the code disagree, trust the code.
 
 ## Contents
 
+- [LLM modes](llm-modes.md) — the three runtime modes (proxy, bring-your-own-key,
+  no-LLM), how they are resolved, and what happens when no LLM is available.
 - [Message pipeline](message-pipeline.md) — how an SMS is received, queued, processed,
   and retried, including offline, reconnect, and backoff behavior.
 - [Matching](matching.md) — which account owns a record (card-digit matching, including
