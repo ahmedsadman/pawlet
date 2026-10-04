@@ -80,16 +80,36 @@ class ApiKey extends Notifier<String> {
 
 final apiKeyProvider = NotifierProvider<ApiKey, String>(ApiKey.new);
 
+/// Whether Pawlet's server has rejected this install's Play Integrity verdict.
+///
+/// A notifier rather than a direct SharedPreferences read because flipping it
+/// has to move [llmModeProvider] immediately: the whole point of the flag is to
+/// reveal the bring-your-own-key input the moment the proxy turns out to be
+/// unusable, and a user stuck in a broken proxy mode has no other way out.
+/// Nothing calls [set] yet — the writer arrives with attestation.
+class AttestationIneligible extends Notifier<bool> {
+  @override
+  bool build() => ref.watch(settingsRepositoryProvider).attestationIneligible;
+
+  Future<void> set(bool value) async {
+    await ref.read(settingsRepositoryProvider).setAttestationIneligible(value);
+    state = value;
+  }
+}
+
+final attestationIneligibleProvider =
+    NotifierProvider<AttestationIneligible, bool>(AttestationIneligible.new);
+
 /// How this install reaches an LLM. Watched by the pipeline and by Settings,
 /// so both always agree about which of the three worlds the user is in.
 final llmModeProvider = Provider<LlmMode>(
   (ref) => resolveLlmMode(
+    // Read directly, not through a notifier: this is written once in `main()`
+    // before `runApp`, so it cannot change while providers are alive.
     fromPlay: ref.watch(settingsRepositoryProvider).installedFromPlay,
     apiBaseConfigured: BuildConfig.apiBaseConfigured,
     hasKey: ref.watch(apiKeyProvider).isNotEmpty,
-    attestationIneligible: ref
-        .watch(settingsRepositoryProvider)
-        .attestationIneligible,
+    attestationIneligible: ref.watch(attestationIneligibleProvider),
   ),
 );
 

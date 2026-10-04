@@ -78,4 +78,40 @@ void main() {
     final c = await _container(fromPlay: true, bootstrapKey: 'sk-or-stored');
     expect(c.read(llmModeProvider), LlmMode.byok);
   });
+
+  test('seeded attestation_ineligible flag is read by the provider', () async {
+    SharedPreferences.setMockInitialValues({'attestation_ineligible': true});
+    final prefs = await SharedPreferences.getInstance();
+    final c = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        bootstrapApiKeyProvider.overrideWithValue('sk-or-stored'),
+      ],
+    );
+    addTearDown(c.dispose);
+
+    expect(c.read(attestationIneligibleProvider), isTrue);
+    expect(c.read(llmModeProvider), LlmMode.byok);
+  });
+
+  test('setting the flag updates the provider and persists', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final c = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        bootstrapApiKeyProvider.overrideWithValue(''),
+      ],
+    );
+    addTearDown(c.dispose);
+
+    expect(c.read(attestationIneligibleProvider), isFalse);
+
+    await c.read(attestationIneligibleProvider.notifier).set(true);
+
+    expect(c.read(attestationIneligibleProvider), isTrue);
+    // Verify persistence: the value was written to SharedPreferences and can
+    // be read back directly.
+    expect(prefs.getBool('attestation_ineligible'), isTrue);
+  });
 }
