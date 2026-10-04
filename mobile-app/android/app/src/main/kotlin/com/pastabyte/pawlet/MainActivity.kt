@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.os.Build
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -12,6 +14,7 @@ import io.flutter.plugin.common.MethodChannel
 // biometric prompt can attach to a FragmentActivity.
 class MainActivity : FlutterFragmentActivity() {
     private val channelName = "pawlet/security"
+    private val installChannelName = "pawlet/install"
 
     // Debug-only: lets `adb` inject a fake SMS into the Dart pipeline.
     private val debugChannelName = "pawlet/debug"
@@ -60,6 +63,14 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, installChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "installerPackage" -> result.success(installerPackage())
+                    else -> result.notImplemented()
+                }
+            }
+
         if (BuildConfig.DEBUG) {
             debugChannel = MethodChannel(
                 flutterEngine.dartExecutor.binaryMessenger,
@@ -71,6 +82,20 @@ class MainActivity : FlutterFragmentActivity() {
                 Context.RECEIVER_EXPORTED,
             )
         }
+    }
+
+    // minSdk is 24, so the API 30 call has to be guarded. Below 30 the
+    // deprecated getInstallerPackageName is the only option, and it reports
+    // the same value for a Play install.
+    @Suppress("DEPRECATION")
+    private fun installerPackage(): String? = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            packageManager.getInstallSourceInfo(packageName).installingPackageName
+        } else {
+            packageManager.getInstallerPackageName(packageName)
+        }
+    } catch (_: PackageManager.NameNotFoundException) {
+        null
     }
 
     override fun onDestroy() {
