@@ -17,11 +17,14 @@ if the phone is offline, the model is rate-limited, or the app is killed mid-way
 | Queue drain, retry/backoff policy | `lib/services/processing_service.dart` |
 | Queue persistence + queries (claim, LLM slot, due, stale, prune) | `lib/data/sms_repository.dart` |
 | Record shape + lifecycle states | `lib/models/sms_record.dart` |
+| LLM mode resolution (proxy / BYOK / none) | `lib/services/llm/llm_mode.dart` |
+| Install source (Play vs. sideload) | `lib/services/install_source.dart` |
+| OpenRouter key validation before storage | `lib/services/llm/key_validator.dart` |
 | Layer-1 sender/card gate (applied by the queue, not the classifier) | `lib/services/classification/sender_matcher.dart` |
 | On-device / cloud classification entry points | `lib/services/classification/classifier.dart` |
 | On-device model inference (TFLite/LiteRT) + tokenizer | `lib/services/classification/tflite_local_classifier.dart` |
 | On-device accept/reject gate + field building | `lib/services/classification/local_gate.dart`, `lib/services/classification/local_parsers.dart`, `lib/services/classification/local_model.dart` |
-| The single LLM call + HTTP error/hint parsing | `lib/services/llm/openrouter_provider.dart` |
+| LLM provider for `byok` mode (no provider constructed in `none` mode) | `lib/services/llm/openrouter_provider.dart` |
 | Persisting the classified result | `lib/services/finance/finance_writer.dart` |
 | Post-drain relationship matchers (see [Matching](matching.md)) | `lib/services/finance/finance_matcher.dart` |
 | Connectivity check | `lib/services/connectivity_service.dart` |
@@ -112,7 +115,8 @@ Three internal, debug-only reason columns explain terminal non-success outcomes 
   the LLM). History shows a small, muted **"LLM"** marker on rows parsed by the LLM (i.e.
   where the on-device model was not confident); locally-parsed rows show nothing. Rows from
   before this column existed read as null.
-- **`failure_reason`** on `failure` rows — `llm_error` (fatal) or `retry_exhausted`. The
+- **`failure_reason`** on `failure` rows — `llm_error` (fatal), `retry_exhausted`, or
+  `local_only` (no LLM exists and the on-device model could not build a record). The
   underlying error text is stored (truncated) in `last_error`; both are internal (read via
   ADB/debug), never surfaced in the UI. History shows only a short hint derived from
   `failure_reason`.
@@ -166,12 +170,23 @@ all (§5):
      LiteRT — `tflite_local_classifier.dart`). In one pass it both classifies the message
      (transaction / bill / null) and extracts the numeric spans (amount, balance, amount
      due, statement period). The tokenizer reproduces the training tokenizer exactly (a
-     golden parity test guards this). The result is **accepted on-device — skipping the LLM
-     entirely — only when it is confident** (`local_gate.dart`):
+     golden parity test guards this).
+     
+     **With an LLM** (gated mode), the result is accepted on-device only when it is
+     confident (`local_gate.dart`):
      - the classifier confidence AND the weakest extracted-span confidence (NERc) both clear
        a threshold; a confident `null` is ignored locally without any call;
      - a transaction must carry an amount span, a bill an amount-due span;
      - the amount must parse to a number.
+     
+     Anything short of that (low confidence, a missing span, or the model failing to load)
+     falls back to Layer 3.
+     
+     **With no LLM** (ungated mode), the two confidence thresholds are skipped — whatever
+     prediction the model produced is accepted. The structural checks above still apply: a
+     missing amount span, an unparseable number, or a foreign currency with no conversion
+     path means there is no record to build, which is a fact about the message rather than
+     a confidence judgement. A `null` label still means ignore.
 
      A bill's **statement period is optional**: the month/year is parsed from the
      extracted span by `local_parsers.dart` (3-letter and full month names with a
@@ -182,11 +197,10 @@ all (§5):
      deferred to the LLM, so new statement formats are worth checking against
      this parser.
 
-     Anything short of that (low confidence, a missing span, or the model failing to load)
-     **falls back to Layer 3**. When multiple spans of the same field are emitted, the
-     highest-confidence one wins; NERc is measured over *all* emitted spans. A row already
-     flagged `needs_llm` (§5) skips this layer entirely — the model has seen that exact
-     content and declined it, and `content` never changes.
+     When multiple spans of the same field are emitted, the highest-confidence one wins;
+     NERc is measured over *all* emitted spans. A row already flagged `needs_llm` (§5)
+     skips this layer entirely — the model has seen that exact content and declined it,
+     and `content` never changes.
 
      **Currency handling:** the reporting currency is fixed to BDT (Pawlet is
      Bangladesh-only). A BDT amount is stored as-is. A **USD** amount is converted to BDT
@@ -199,17 +213,22 @@ all (§5):
      whatever is cached rather than attempting a fetch it cannot complete** (the choice is
      made in `app_services.dart`), because a doomed request would only burn its timeout on
      a path an incoming SMS drives synchronously.
-   - **Layer 3 — the fused LLM call (network):** reached only when neither local layer
-     decided. It needs two things: connectivity, and the single global LLM slot
-     (`processing → sending`). Missing either, the row is **deferred, not failed** — see
-     §5. With both, the message goes to a *single* OpenRouter
-     request carrying a static ordered fallback list of structured-output-capable models
-     (from `SettingsRepository.defaultLlmModels`). The request uses strict structured
-     output (`response_format: {type: json_schema, json_schema: <schema>}`) with
-     `provider: {require_parameters: true}` so every fallback hop enforces the schema.
-     OpenRouter tries the models in order server-side within the single request. One
-     attempt, no internal retry loop — transient failures surface as exceptions for the
-     queue to retry (§7).
+   - **Layer 3 — the fused LLM call (network):** only when an LLM exists (modes `proxy` or
+     `byok`; see [LLM modes](llm-modes.md)). Reached only when neither local layer decided.
+     It needs two things: connectivity, and the single global LLM slot (`processing →
+     sending`). Missing either, the row is **deferred, not failed** — see §5. With both,
+     the message goes to a *single* OpenRouter request carrying a static ordered fallback
+     list of structured-output-capable models (from `SettingsRepository.defaultLlmModels`).
+     The request uses strict structured output (`response_format: {type: json_schema,
+     json_schema: <schema>}`) with `provider: {require_parameters: true}` so every
+     fallback hop enforces the schema. OpenRouter tries the models in order server-side
+     within the single request. One attempt, no internal retry loop — transient failures
+     surface as exceptions for the queue to retry (§7).
+     
+     **With no LLM** (mode `none`), Layer 3 is skipped entirely — no provider is
+     constructed, and an on-device rejection is terminal. The row is marked `failure` with
+     `FailureReason.localOnly`, shown in Messages as "On-device parsing failed". This is
+     recoverable via the Retry button already offered on every failure row.
 3. **Write** (`FinanceWriter`) — persist the result in one DB transaction (balance update
    and row insert commit together or not at all). Returns the category label, or
    `ignored` when nothing was written. The claim is re-checked under its fencing token
@@ -274,23 +293,29 @@ Being offline must also never *cost* a message an attempt. The guards:
 
 - **The pass always starts.** `process()` does not check connectivity before reading the
   queue; every due record goes through Layers 1 and 2 regardless.
-- **A message that needs the LLM but cannot reach it is deferred, not failed.** It goes
-  back to `queued`, **still due, with its `attempts` and `next_attempt_at` untouched** —
-  waiting is not a failed attempt, so a message that arrives during an outage does not
-  burn its retry budget before anything has actually tried it. The same path handles a
-  row that is online but loses the race for the single LLM slot.
-- **`needs_llm` remembers that verdict.** A row deferred *after the model ran and
-  declined it* is flagged, so later passes skip an inference whose answer is already
-  known. The flag is **set once and never cleared** — `content` is immutable, so the
-  verdict is stable. Precisely because it is permanent, it is **not** set when the model
-  never produced a prediction at all (none is bundled, or the model failed to load or
-  crashed): nothing judged that message, so writing it off would route it to the paid LLM
-  forever, and a single failed load in a background isolate would do that to the entire
-  backlog deferred during that pass. Such a row is simply deferred unflagged and its
-  inference is retried next pass, which costs almost nothing — a model that failed to
-  load stays failed for the isolate and returns immediately. Offline, a flagged row is
-  skipped before it is even claimed; the Layer-1 gate still re-runs on it once online, so
-  a bank deleted in the meantime is honoured then.
+- **A message that needs the LLM but cannot reach it is deferred, not failed** — only when
+  an LLM exists. It goes back to `queued`, **still due, with its `attempts` and
+  `next_attempt_at` untouched** — waiting is not a failed attempt, so a message that
+  arrives during an outage does not burn its retry budget before anything has actually
+  tried it. The same path handles a row that is online but loses the race for the single
+  LLM slot. With no LLM, there is nothing to defer to, so an on-device rejection is
+  terminal (see Layer 3 above).
+- **`needs_llm` remembers that verdict** — only when an LLM exists. A row deferred *after
+  the model ran and declined it* is flagged, so later passes skip an inference whose
+  answer is already known. The flag is **set once and never cleared** — `content` is
+  immutable, so the verdict is stable. Precisely because it is permanent, it is **not**
+  set when the model never produced a prediction at all (none is bundled, or the model
+  failed to load or crashed): nothing judged that message, so writing it off would route
+  it to the paid LLM forever, and a single failed load in a background isolate would do
+  that to the entire backlog deferred during that pass. Such a row is simply deferred
+  unflagged and its inference is retried next pass, which costs almost nothing — a model
+  that failed to load stays failed for the isolate and returns immediately. Offline, a
+  flagged row is skipped before it is even claimed; the Layer-1 gate still re-runs on it
+  once online, so a bank deleted in the meantime is honoured then.
+  
+  **With no LLM**, the flag is never set — there is nothing to defer to, so setting it
+  would strand the row. A row that already carries it (e.g. the user removed their key)
+  is re-run through the ungated gate rather than skipped.
 - **A deferred row does not block the queue.** The pass carries on to the rows behind it,
   which may still be locally solvable (§3).
 - **A failure discovered to be offline is a transport drop, not an attempt.** If the LLM
@@ -345,6 +370,7 @@ The provider makes exactly one HTTP attempt and classifies the outcome:
 | Malformed or unexpected JSON | retryable | back off and retry |
 | Other 4xx — bad key (401), bad request (400) | **fatal** | mark `failure` immediately |
 | Unexpected non-LLM error (e.g. DB) | retryable | back off and retry |
+| On-device rejection with no LLM available | **fatal** | mark `failure` (`local_only`) immediately |
 
 ### The backoff ladder
 
@@ -396,6 +422,10 @@ preset to one below the max, so the next drain gives it exactly **one** more sho
 fails again it lands back in `failure`. Queued messages that have already failed at least
 once show their retry progress (Retry n/10) and, while a next attempt is still upcoming,
 the scheduled next-attempt time.
+
+This is the recovery path for a `local_only` failure: a message rejected in no-LLM mode
+can be retried after the user adds a key, at which point the pipeline has an LLM and the
+row is re-processed normally.
 
 ## 8. Notifications
 
