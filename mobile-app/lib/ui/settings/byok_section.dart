@@ -125,6 +125,11 @@ class _ByokSectionState extends ConsumerState<ByokSection> {
             labelText: hasKey ? 'Replace key' : 'OpenRouter API key',
             errorText: _error,
           ),
+          // Clear the error on edit — it describes the key that was submitted,
+          // not the one now in the box.
+          onChanged: _error == null
+              ? null
+              : (_) => setState(() => _error = null),
         ),
         const SizedBox(height: 12),
         Row(

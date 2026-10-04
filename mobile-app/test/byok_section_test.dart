@@ -241,4 +241,23 @@ void main() {
     expect(find.text("Couldn't save the key"), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('editing the field clears a stale validation error', (
+    tester,
+  ) async {
+    final (widget, _) = await _host(verdict: KeyCheck.invalid);
+    await tester.pumpWidget(widget);
+
+    await tester.enterText(find.byType(TextField), 'sk-or-bad');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid key'), findsOneWidget);
+
+    // Edit the field to a different value — the error should clear.
+    await tester.enterText(find.byType(TextField), 'sk-or-maybe-good');
+    await tester.pump();
+
+    expect(find.text('Invalid key'), findsNothing);
+  });
 }

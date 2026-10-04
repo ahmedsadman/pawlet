@@ -101,7 +101,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             'are sent to OpenRouter using your own API key. '
             "Pawlet's own service is not involved.",
       LlmMode.none =>
-        'Nothing ever leaves your phone. The on-device model is the only '
+        'Your messages never leave your phone. The on-device model is the only '
             'classifier, and a message it cannot read is marked failed in Messages, '
             'where you can retry it later.',
     };
