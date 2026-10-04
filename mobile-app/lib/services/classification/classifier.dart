@@ -25,14 +25,20 @@ class ClassificationOutcome {
 }
 
 /// Orchestrates the classification pipeline: on-device model ([classifyLocal])
-/// and cloud LLM ([classifyRemote]). The caller applies the Layer-1 sender/card
-/// gate before invoking either method.
+/// and, when one is configured, the cloud LLM ([classifyRemote]). The caller
+/// applies the Layer-1 sender/card gate before invoking either method, and
+/// checks [hasLlm] before the second.
 class Classifier {
   // ignore: prefer_initializing_formals — a named param can't be private (_local).
   Classifier(this._llm, {LocalClassifier? local}) : _local = local;
 
-  final LlmProvider _llm;
+  final LlmProvider? _llm;
   final LocalClassifier? _local;
+
+  /// Whether a cloud fallback exists. False in no-LLM mode, where the caller
+  /// must treat an on-device rejection as terminal rather than deferring a
+  /// message that nothing will ever come back for.
+  bool get hasLlm => _llm != null;
 
   /// The on-device pass. A null `outcome` means the caller must either run
   /// [classifyRemote] or, if it cannot reach the network, defer the message.
@@ -59,6 +65,10 @@ class Classifier {
       local: _local,
       currency: currency,
       usdRate: usdRate,
+      // Derived rather than injected: with no provider there is nothing to
+      // defer to, so the thresholds would only throw away the one answer this
+      // install can produce.
+      acceptance: hasLlm ? GateAcceptance.gated : GateAcceptance.ungated,
     );
 
     if (!decision.accepted) {
@@ -84,7 +94,15 @@ class Classifier {
     required String content,
     required String currency,
   }) async {
-    final result = await _llm.classifyAndExtract(
+    final llm = _llm;
+    // A programming error, not a runtime path: ProcessingService checks
+    // [hasLlm] first. Mirrors the bulk importer, which takes a LocalClassifier
+    // precisely so no path to the network is reachable from it.
+    if (llm == null) {
+      throw StateError('classifyRemote called with no LLM provider');
+    }
+
+    final result = await llm.classifyAndExtract(
       content: content,
       sender: sender,
       currency: currency,
