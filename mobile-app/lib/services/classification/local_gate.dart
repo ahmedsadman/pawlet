@@ -5,6 +5,20 @@ import 'local_classifier.dart';
 import 'local_model.dart';
 import 'local_parsers.dart';
 
+/// Whether [decideLocal] applies its confidence thresholds.
+enum GateAcceptance {
+  /// The default: a low-confidence prediction is turned down so the LLM can
+  /// answer instead.
+  gated,
+
+  /// No LLM exists to fall back to, so the thresholds have nothing left to
+  /// protect — take whatever the model produced. Structural requirements still
+  /// apply: a missing AMOUNT span, an unparseable number, or a foreign
+  /// currency with no conversion path means there is no record to build, which
+  /// is a fact about the message rather than a judgement about confidence.
+  ungated,
+}
+
 /// Outcome of the local-model gate. Three states, and callers that persist a
 /// verdict must tell the last two apart:
 /// - accepted: a [ClassifyResult] built entirely on-device ([accept]);
@@ -54,6 +68,7 @@ Future<LocalGateResult> runLocalModel(
   required LocalClassifier? local,
   required String currency,
   Decimal? usdRate,
+  GateAcceptance acceptance = GateAcceptance.gated,
 }) async {
   if (local == null) return const LocalGateResult.unavailable();
   final prediction = await local.infer(content);
@@ -63,6 +78,7 @@ Future<LocalGateResult> runLocalModel(
     currency: currency,
     content: content,
     usdToBdtRate: usdRate,
+    acceptance: acceptance,
   );
 }
 
@@ -76,18 +92,25 @@ Future<LocalGateResult> runLocalModel(
 /// anything other than the base currency itself or USD-with-a-live-[usdToBdtRate]
 /// (a USD amount is converted on-device; every other foreign currency still
 /// defers to the LLM).
+///
+/// [acceptance] controls only the two confidence thresholds. See
+/// [GateAcceptance] for why the structural checks are not negotiable.
 LocalGateResult decideLocal(
   LocalPrediction pred, {
   required String currency,
   required String content,
   Decimal? usdToBdtRate,
+  GateAcceptance acceptance = GateAcceptance.gated,
 }) {
-  if (pred.classConfidence < kLocalConfidenceThreshold) {
+  final gated = acceptance == GateAcceptance.gated;
+  if (gated && pred.classConfidence < kLocalConfidenceThreshold) {
     return const LocalGateResult.reject();
   }
 
-  // Confident "null": ignore on-device and never spend an LLM call. NER is not
-  // considered for null — there are no fields to extract.
+  // "null" means ignore on-device and never spend an LLM call. NER is not
+  // considered — there are no fields to extract. Under [GateAcceptance.gated]
+  // the check above has already established confidence; ungated, the label is
+  // taken at face value like every other.
   if (pred.classLabel == 'null') {
     return const LocalGateResult.accept(ClassifyResult.none());
   }
@@ -99,7 +122,9 @@ LocalGateResult decideLocal(
   final nerc = pred.spans
       .map((s) => s.confidence)
       .reduce((a, b) => a < b ? a : b);
-  if (nerc < kLocalConfidenceThreshold) return const LocalGateResult.reject();
+  if (gated && nerc < kLocalConfidenceThreshold) {
+    return const LocalGateResult.reject();
+  }
 
   // Contention: keep the highest-confidence span per entity type.
   final best = <String, LocalSpan>{};
