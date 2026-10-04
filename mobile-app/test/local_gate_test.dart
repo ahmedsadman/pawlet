@@ -437,6 +437,114 @@ void main() {
       expect(r.result!.transaction!.originalCurrency, 'USD');
     });
   });
+
+  group('GateAcceptance.ungated', () {
+    test('accepts a prediction below the class-confidence threshold', () {
+      final r = decideLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.10,
+          spans: [_span('AMOUNT', '50', 0.95, start: 6)],
+        ),
+        currency: 'BDT',
+        content: 'debit 50 BDT',
+        acceptance: GateAcceptance.ungated,
+      );
+      expect(r.accepted, isTrue);
+      expect(r.result!.transaction!.amount, '50');
+    });
+
+    test('accepts a prediction whose weakest span is below threshold', () {
+      final r = decideLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.99,
+          spans: [_span('AMOUNT', '50', 0.05, start: 6)],
+        ),
+        currency: 'BDT',
+        content: 'debit 50 BDT',
+        acceptance: GateAcceptance.ungated,
+      );
+      expect(r.accepted, isTrue);
+    });
+
+    test('an unconfident null label still means ignore', () {
+      final r = decideLocal(
+        LocalPrediction(
+          classLabel: 'null',
+          classConfidence: 0.02,
+          spans: const [],
+        ),
+        currency: 'BDT',
+        content: 'your OTP is 1234',
+        acceptance: GateAcceptance.ungated,
+      );
+      expect(r.accepted, isTrue);
+      expect(r.result!.category, SmsCategory.none);
+    });
+
+    test(
+      'still rejects a missing AMOUNT span — structural, not confidence',
+      () {
+        final r = decideLocal(
+          LocalPrediction(
+            classLabel: 'expense',
+            classConfidence: 0.99,
+            spans: [_span('BALANCE', '900', 0.99, start: 20)],
+          ),
+          currency: 'BDT',
+          content: 'debit done, balance 900',
+          acceptance: GateAcceptance.ungated,
+        );
+        expect(r.accepted, isFalse);
+        expect(r.declined, isTrue);
+      },
+    );
+
+    test('still rejects an unparseable amount', () {
+      final r = decideLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.99,
+          spans: [_span('AMOUNT', 'lots', 0.99, start: 6)],
+        ),
+        currency: 'BDT',
+        content: 'debit lots BDT',
+        acceptance: GateAcceptance.ungated,
+      );
+      expect(r.accepted, isFalse);
+    });
+
+    test('still rejects a foreign currency with no conversion path', () {
+      final r = decideLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.99,
+          spans: [_span('AMOUNT', '50', 0.99, start: 6)],
+        ),
+        currency: 'BDT',
+        content: 'debit 50 EUR',
+        acceptance: GateAcceptance.ungated,
+      );
+      expect(r.accepted, isFalse);
+    });
+
+    test('runLocalModel forwards the acceptance', () async {
+      final r = await runLocalModel(
+        'debit 50 BDT',
+        local: _StubLocal(
+          LocalPrediction(
+            classLabel: 'expense',
+            classConfidence: 0.10,
+            spans: [_span('AMOUNT', '50', 0.10, start: 6)],
+          ),
+        ),
+        currency: 'BDT',
+        acceptance: GateAcceptance.ungated,
+      );
+      expect(r.accepted, isTrue);
+    });
+  });
 }
 
 class _StubLocal implements LocalClassifier {
