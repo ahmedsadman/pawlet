@@ -544,6 +544,48 @@ void main() {
       );
       expect(r.accepted, isTrue);
     });
+
+    test('a low-confidence bill is accepted under ungated', () {
+      const content = 'Total Due: BDT 1234.56 AUG2026';
+      final r = decideLocal(
+        LocalPrediction(
+          classLabel: 'bill',
+          classConfidence: 0.35,
+          spans: [
+            _span('DUE', '1234.56', 0.40, start: content.indexOf('1234.56')),
+            _span('PERIOD', 'AUG2026', 0.42, start: content.indexOf('AUG2026')),
+          ],
+        ),
+        currency: 'BDT',
+        content: content,
+        acceptance: GateAcceptance.ungated,
+      );
+      expect(r.accepted, isTrue);
+      expect(r.result!.bill!.normalizedTotalDue, '1234.56');
+      expect(r.result!.bill!.statementMonth, 8);
+      expect(r.result!.bill!.statementYear, 2026);
+    });
+
+    test(
+      'a bill with no DUE span is still rejected under ungated — DUE is structural, not confidence',
+      () {
+        const content = 'Statement ready AUG2026';
+        final r = decideLocal(
+          LocalPrediction(
+            classLabel: 'bill',
+            classConfidence: 0.99,
+            spans: [
+              _span('PERIOD', 'AUG2026', 0.99, start: content.indexOf('AUG')),
+            ],
+          ),
+          currency: 'BDT',
+          content: content,
+          acceptance: GateAcceptance.ungated,
+        );
+        expect(r.accepted, isFalse);
+        expect(r.declined, isTrue);
+      },
+    );
   });
 }
 
