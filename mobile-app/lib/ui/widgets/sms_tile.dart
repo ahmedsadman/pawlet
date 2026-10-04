@@ -99,7 +99,7 @@ class _SmsTileState extends State<SmsTile> {
   String get _failureHint => switch (record.failureReason) {
     FailureReason.retryExhausted => 'Retries exhausted',
     FailureReason.llmError => 'Extraction error',
-    FailureReason.localOnly => 'Could not read the amount',
+    FailureReason.localOnly => 'On-device parsing failed',
     null => 'Extraction error',
   };
 

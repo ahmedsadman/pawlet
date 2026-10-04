@@ -255,7 +255,7 @@ void main() {
     );
     await tester.tap(find.text('BRAC'));
     await tester.pumpAndSettle();
-    expect(find.text('Could not read the amount'), findsOneWidget);
+    expect(find.text('On-device parsing failed'), findsOneWidget);
   });
 
   testWidgets('history never renders the internal last_error', (tester) async {
