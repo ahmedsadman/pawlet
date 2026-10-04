@@ -2,19 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../services/llm/llm_mode.dart';
 import '../services/permissions.dart';
 import '../services/privacy_policy.dart';
 import '../state/auth_providers.dart';
+import '../state/providers.dart';
 import 'backup_restore_page.dart';
 import 'banks_page.dart';
 import 'bulk_import_flow.dart';
 import 'privacy/sms_access_flow.dart';
 import 'security/change_pin_screen.dart';
+import 'settings/byok_section.dart';
 
-/// Settings tab: bank management, background-delivery help, security, and a
-/// privacy note. The LLM key/model are not configurable here — the key is
-/// provisioned via `--dart-define` and stored encrypted (see SecureStore), and
-/// the model is hardcoded.
+/// Settings tab: bank management, background-delivery help, security, and
+/// privacy. The privacy copy and the key input both follow the resolved
+/// [LlmMode].
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -85,9 +87,30 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (!ok && value) _toast('Biometric verification failed');
   }
 
+  static String _privacyCopy(LlmMode mode) {
+    // The three modes differ in where a message can go, so one paragraph would
+    // be wrong for two of them.
+    return switch (mode) {
+      LlmMode.proxy =>
+        'All data stays on device. Messages the local classification model '
+            "can't categorize may be sent to Pawlet's service to be classified, "
+            'where they are never stored or logged. No identifying information is '
+            'recorded externally.',
+      LlmMode.byok =>
+        'All data stays on device. Messages the on-device model cannot categorize '
+            'are sent to OpenRouter using your own API key. '
+            "Pawlet's own service is not involved.",
+      LlmMode.none =>
+        'Nothing ever leaves your phone. The on-device model is the only '
+            'classifier, and a message it cannot read is marked failed in Messages, '
+            'where you can retry it later.',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final mode = ref.watch(llmModeProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
@@ -172,9 +195,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Text('Privacy', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
           Text(
-            'Your messages and balances stay on this device. Messages the '
-            "on-device model can't categorize are sent for AI classification "
-            'without any information that identifies you.',
+            _privacyCopy(mode),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.outline,
             ),
@@ -188,6 +209,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             trailing: const Icon(Icons.open_in_new, size: 18),
             onTap: _openPrivacyPolicy,
           ),
+          if (mode.showsByokSection) const ByokSection(),
           if (_version != null) ...[
             const Divider(height: 32),
             Center(
