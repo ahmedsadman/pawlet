@@ -141,8 +141,9 @@ exactly like a real message.
 1. Build and install a debug build on the device, and make sure the app is in the foreground
    (the channel handler is installed when the UI starts).
 2. For the injected message to do anything past the gate, the matching bank must already be
-   added in-app (e.g. add "EBL" before sending an `EBL` message), and an OpenRouter API key
-   must be provisioned at build time (see [Building](#building)).
+   added in-app (e.g. add "EBL" before sending an `EBL` message). The on-device model handles
+   the message on its own; to exercise the LLM fallback as well, add an OpenRouter key under
+   Settings → Privacy first.
 3. Broadcast a fake message with adb:
 
 ```bash
