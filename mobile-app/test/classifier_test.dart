@@ -191,4 +191,62 @@ void main() {
       expect(outcome.parseSource, ParseSource.llm);
     });
   });
+
+  group('no LLM wired', () {
+    test('hasLlm reports whether a provider exists', () {
+      expect(Classifier(_FakeLlm(const ClassifyResult.none())).hasLlm, isTrue);
+      expect(Classifier(null).hasLlm, isFalse);
+    });
+
+    test('classifyRemote is a programming error, not a runtime path', () {
+      expect(
+        () => Classifier(
+          null,
+        ).classifyRemote(sender: 'BANK', content: 'debit 50', currency: 'BDT'),
+        throwsStateError,
+      );
+    });
+
+    test(
+      'classifyLocal runs ungated, so a weak prediction is accepted',
+      () async {
+        final local = _FakeLocal(
+          LocalPrediction(
+            classLabel: 'expense',
+            classConfidence: 0.10,
+            spans: [_lspan('AMOUNT', '50', 0.10, 6)],
+          ),
+        );
+        final outcome = (await Classifier(
+          null,
+          local: local,
+        ).classifyLocal(content: 'debit 50 BDT', currency: 'BDT')).outcome;
+
+        expect(outcome, isNotNull);
+        expect(outcome!.transaction!.amount, '50');
+        expect(outcome.parseSource, ParseSource.local);
+      },
+    );
+
+    test(
+      'the same weak prediction is still declined when an LLM exists',
+      () async {
+        final llm = _FakeLlm(const ClassifyResult.none());
+        final local = _FakeLocal(
+          LocalPrediction(
+            classLabel: 'expense',
+            classConfidence: 0.10,
+            spans: [_lspan('AMOUNT', '50', 0.10, 6)],
+          ),
+        );
+        final result = await Classifier(
+          llm,
+          local: local,
+        ).classifyLocal(content: 'debit 50 BDT', currency: 'BDT');
+
+        expect(result.outcome, isNull);
+        expect(result.declined, isTrue);
+      },
+    );
+  });
 }
