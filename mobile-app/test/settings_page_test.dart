@@ -55,7 +55,7 @@ void main() {
       );
       expect(find.text('Privacy'), findsOneWidget);
       expect(
-        find.textContaining('Nothing ever leaves your phone'),
+        find.textContaining('Your messages never leave your phone'),
         findsOneWidget,
       );
     },
@@ -76,7 +76,7 @@ void main() {
     );
 
     expect(
-      find.textContaining('Nothing ever leaves your phone'),
+      find.textContaining('Your messages never leave your phone'),
       findsOneWidget,
     );
 
