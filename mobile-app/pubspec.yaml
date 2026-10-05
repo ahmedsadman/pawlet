@@ -34,6 +34,7 @@ dependencies:
   path_provider: ^2.1.6
   dart_bert_tokenizer: ^1.3.0
   tflite_flutter: ^0.12.1
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
