@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/permissions.dart';
+import '../services/privacy_policy.dart';
 import '../state/auth_providers.dart';
 import 'backup_restore_page.dart';
 import 'banks_page.dart';
@@ -45,6 +46,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openPrivacyPolicy() async {
+    final opened = await PrivacyPolicy.open();
+    if (!mounted || opened) return;
+    _toast('Could not open your browser');
   }
 
   Future<void> _requestBattery() async {
@@ -167,12 +174,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Text('Privacy', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
           Text(
-            'All data stays on device. Messages the local classification model '
-            "can't categorize may be sent to an LLM for better accuracy. No "
-            'identifying information is recorded externally.',
+            'Your messages and balances stay on this device. Messages the '
+            "on-device model can't categorize are sent for AI classification "
+            'without any information that identifies you.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.outline,
             ),
+          ),
+          const SizedBox(height: 4),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('Privacy policy'),
+            subtitle: const Text('Opens in your browser'),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: _openPrivacyPolicy,
           ),
           if (_version != null) ...[
             const Divider(height: 32),
