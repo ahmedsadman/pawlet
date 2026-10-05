@@ -134,12 +134,18 @@ class _RootShellState extends ConsumerState<RootShell>
     // Notifications need no disclosure; asking here keeps them available even
     // if the user declines SMS.
     await AppPermissions.requestNotifications();
+    // Already-granted installs skip straight past the unlock wait.
+    var granted = await AppPermissions.hasSms();
     // Deferred until unlocked so the disclosure isn't buried under the PIN
-    // screen. A user who never unlocks simply doesn't get asked this launch.
-    if (await _awaitUnlocked() && mounted) {
-      await ensureSmsAccess(context);
+    // screen. A user who never unlocks isn't asked this launch.
+    if (!granted && await _awaitUnlocked() && mounted) {
+      granted = await ensureSmsAccess(context);
     }
-    ref.read(smsListenerProvider).start();
+    // Gated deliberately: starting the listener invokes the plugin's
+    // startBackgroundService, which raises the system SMS prompt by itself
+    // when the permission is missing. Calling it ungated would hand the
+    // dialog to users who just declined the disclosure.
+    if (granted) ref.read(smsListenerProvider).start();
     await ref.read(processingServiceProvider).process();
     await _offerInboxImport();
   }
