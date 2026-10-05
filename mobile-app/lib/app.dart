@@ -12,6 +12,7 @@ import 'theme/catppuccin_theme.dart';
 import 'ui/bulk_import_flow.dart';
 import 'ui/finance_page.dart';
 import 'ui/messages_page.dart';
+import 'ui/privacy/sms_access_flow.dart';
 import 'ui/security/lock_screen.dart';
 import 'ui/security/setup_pin_screen.dart';
 import 'ui/settings_page.dart';
@@ -130,7 +131,14 @@ class _RootShellState extends ConsumerState<RootShell>
 
   Future<void> _bootstrap() async {
     if (kDebugMode) _installDebugInjector();
-    await AppPermissions.requestAll();
+    // Notifications need no disclosure; asking here keeps them available even
+    // if the user declines SMS.
+    await AppPermissions.requestNotifications();
+    // Deferred until unlocked so the disclosure isn't buried under the PIN
+    // screen. A user who never unlocks simply doesn't get asked this launch.
+    if (await _awaitUnlocked() && mounted) {
+      await ensureSmsAccess(context);
+    }
     ref.read(smsListenerProvider).start();
     await ref.read(processingServiceProvider).process();
     await _offerInboxImport();

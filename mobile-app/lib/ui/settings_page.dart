@@ -8,6 +8,7 @@ import '../state/auth_providers.dart';
 import 'backup_restore_page.dart';
 import 'banks_page.dart';
 import 'bulk_import_flow.dart';
+import 'privacy/sms_access_flow.dart';
 import 'security/change_pin_screen.dart';
 
 /// Settings tab: bank management, background-delivery help, security, and a
@@ -65,13 +66,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   Future<void> _importInbox() async {
-    if (!await AppPermissions.hasSms()) {
-      await AppPermissions.requestAll();
-      if (!await AppPermissions.hasSms()) {
-        if (!mounted) return;
-        _toast('SMS permission is required to read your inbox');
-        return;
-      }
+    if (!await ensureSmsAccess(context)) {
+      if (!mounted) return;
+      _toast('SMS permission is required to read your inbox');
+      return;
     }
     if (!mounted) return;
     final accepted = await confirmBulkImport(context);
