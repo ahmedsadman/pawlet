@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Pawlet</title>
+<style>
+  :root {
+    --base: #1e1e2e; --mantle: #181825; --surface: #313244;
+    --text: #cdd6f4; --subtext: #a6adc8; --overlay: #6c7086;
+    --mauve: #cba6f7; --blue: #89b4fa; --green: #a6e3a1; --peach: #fab387;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --base: #eff1f5; --mantle: #e6e9ef; --surface: #ccd0da;
+      --text: #4c4f69; --subtext: #5c5f77; --overlay: #8c8fa1;
+      --mauve: #8839ef; --blue: #1e66f5; --green: #40a02b; --peach: #fe640b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 3rem 1.25rem 6rem;
+    background: var(--base); color: var(--text);
+    font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size: 2rem; margin: 0 0 .25rem; color: var(--mauve); letter-spacing: -.02em; }
+  h2 {
+    font-size: 1.15rem; margin: 2.75rem 0 .75rem; color: var(--blue);
+    letter-spacing: -.01em;
+  }
+  h3 { font-size: 1rem; margin: 1.5rem 0 .5rem; color: var(--text); }
+  .meta { color: var(--overlay); font-size: .9rem; margin: 0 0 2rem; }
+  a { color: var(--blue); }
+  ul { padding-left: 1.25rem; }
+  li { margin: .35rem 0; }
+  code {
+    background: var(--mantle); padding: .1em .4em; border-radius: 4px;
+    font-size: .875em; color: var(--peach);
+  }
+  .callout {
+    background: var(--mantle); border-left: 3px solid var(--green);
+    padding: 1rem 1.25rem; border-radius: 6px; margin: 1.5rem 0;
+  }
+  .callout.warn { border-left-color: var(--peach); }
+  .callout p:first-child { margin-top: 0; }
+  .callout p:last-child { margin-bottom: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .95rem; }
+  th, td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid var(--surface); vertical-align: top; }
+  th { color: var(--subtext); font-weight: 600; font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; }
+  td code { white-space: nowrap; }
+  footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--surface); color: var(--overlay); font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Pawlet Privacy Policy</h1>
+<p class="meta">Last updated: 5 October 2026 &middot; Applies to the Pawlet Android app (<code>com.pastabyte.pawlet</code>)</p>
+
+<div class="callout">
+<p><strong>In short:</strong> Pawlet has no user accounts and no analytics. It reads your bank SMS messages on your device to build a personal finance ledger, and that ledger is stored only on your phone. The one time message content leaves your device is when an unrecognised message has to be classified by an AI model. That text is handled in transit and is never written to a database or a log file by us. We keep no copy of your messages, transactions, or balances &mdash; only an anonymous installation identifier and a count of how many classification requests it made, which is what prevents the service being abused.</p>
+</div>
+
+<h2>1. Who we are and what this covers</h2>
+<p>This is the privacy policy for <strong>Pawlet</strong>, an Android application published on Google Play under the package name <code>com.pastabyte.pawlet</code>. Pawlet is developed and published by <strong>PastaByte</strong> ("we", "us", "the developer"). This policy explains how the app accesses, collects, uses, shares, retains, and deletes your information, and it applies to all versions of the app distributed on Google Play.</p>
+
+<h2>2. Information Pawlet handles</h2>
+
+<h3>SMS messages</h3>
+<p>Pawlet's core function is reading transaction notifications sent by your bank or card issuer over SMS. With your permission, the app reads incoming messages and your existing SMS inbox. For each message it keeps the sender, the message text, and the timestamp on your device.</p>
+<p>Messages that are not financial are discarded; records of ignored messages are automatically deleted after 7 days.</p>
+
+<h3>Financial information derived from those messages</h3>
+<p>From the messages, Pawlet extracts and stores transaction amounts, dates, merchant or description text, bank and card names, and bill due dates. You may also enter this information manually. This data is used only to display your balances, spending, and bills inside the app.</p>
+
+<h3>Installation identifier and usage counts</h3>
+<p>When Pawlet uses our classification service (see section 4), the app generates a random installation identifier. It is not your name, your phone number, your Google account, or any hardware identifier, and it is created by the app itself. Before it is stored, it is irreversibly hashed. Against that hash we record only the date the installation was first and last seen, the number of classification requests it has made each day, and the number of AI tokens those requests used.</p>
+<p>This exists for one reason: to enforce fair-use quotas and to block abuse of a service we pay for. It is never linked to your messages or your financial data, because we do not retain those. A fresh identifier is generated if you reinstall the app, and we have no way to connect a new one to an old one.</p>
+
+<h3>What Pawlet does <em>not</em> collect</h3>
+<ul>
+  <li>No name, email address, phone number, or date of birth.</li>
+  <li>No user account &mdash; there is nothing to sign up for or log in to.</li>
+  <li>No advertising identifier, and no hardware or operating system device identifier such as IMEI, IMSI, SIM serial number, MAC address, or Android ID.</li>
+  <li>No location data.</li>
+  <li>No analytics, usage tracking, crash reporting, or advertising SDKs of any kind.</li>
+  <li>No contacts, photos, files, camera, or microphone access.</li>
+</ul>
+
+<h2>3. Where your data is stored</h2>
+<p>Your messages, transactions, bills, and bank details are stored <strong>on your device only</strong>, in the app's private storage area that other apps cannot read. Specifically:</p>
+<ul>
+  <li>Your ledger lives in a local database inside Pawlet's private app sandbox. On modern Android devices this storage is covered by the operating system's own device encryption.</li>
+  <li>If you supply your own AI provider API key, it is stored in the Android Keystore, which is hardware-backed encrypted storage.</li>
+  <li>Your app lock PIN is stored locally and is never transmitted.</li>
+</ul>
+<p>We do not operate any cloud sync, cloud backup, or remote copy of your ledger. The only data held on our servers is the installation hash and usage counts described in section 2.</p>
+
+<h2>4. When data leaves your device</h2>
+
+<h3>AI classification</h3>
+<p>Pawlet classifies messages in three stages. The first two run entirely on your device: a sender and keyword filter, then a bundled on-device machine-learning model. Only when those stages cannot confidently classify a message does Pawlet fall back to a cloud AI model.</p>
+
+<div class="callout warn">
+<p>In that fallback case, the message sender ID, the message text, and your selected currency code are transmitted over an encrypted HTTPS connection so the model can determine whether the message is financial and extract the amount and merchant.</p>
+<p>Bank messages may contain details such as a masked card number or an account balance, so you should be aware of what your bank sends you. No name, email, phone number, or device identifier is attached to the request, and Pawlet holds no account that it could be linked to.</p>
+</div>
+
+<p>Depending on your version of the app and whether you have supplied your own API key, that request takes one of two routes:</p>
+<ul>
+  <li><strong>Directly from your device</strong> to <a href="https://openrouter.ai" rel="noopener">OpenRouter</a>, an AI model routing provider. We are not involved in the request and never see it.</li>
+  <li><strong>Through Pawlet's classification service</strong>, which forwards the request to OpenRouter on your behalf using our API key. In this case the message text passes through our server in memory only. It is <strong>never written to a database, never written to a log file, and never retained after the response is returned</strong>. Our request logs record only the HTTP method, path, response status, and duration &mdash; never the body.</li>
+</ul>
+<p>In both routes, the message text reaches OpenRouter and the model provider it selects, and is handled there under <a href="https://openrouter.ai/privacy" rel="noopener">OpenRouter's privacy policy</a>.</p>
+<p>If you prefer that nothing leaves your device at all, you can decline network access. The on-device stages continue to work offline, and messages the on-device model cannot classify are simply left unprocessed.</p>
+
+<h3>Abuse prevention and app integrity</h3>
+<p>Before the classification service will accept requests, the app proves it is a genuine, unmodified copy of Pawlet using <a href="https://developer.android.com/google/play/integrity" rel="noopener">Google Play Integrity</a>. The app obtains a token from Google Play services and sends it to our server, which asks Google to decode it. Google returns only verdicts &mdash; whether the app binary is genuine, whether the device passes basic integrity checks, and whether the install came from Play. <strong>Google does not disclose your Google account, email, or device identity to us through this process, and we never see it.</strong></p>
+<p>On success the server issues a session token valid for 24 hours. It contains only the installation hash and a random value, and is not stored by us.</p>
+<p>Your IP address is visible to our server when your device connects, as it is to any internet service. We use it transiently to rate-limit requests and discard it within the hour. IP addresses are never written to disk and are never associated with your installation identifier or with any message content.</p>
+
+<h3>Currency exchange rates</h3>
+<p>Pawlet fetches public currency exchange rates from <code>open.er-api.com</code>. This is an anonymous request for public rate data. No personal, financial, or message data is included.</p>
+
+<h2>5. Backup and restore</h2>
+<p>Pawlet lets you export your data to a backup file. The file is created on your device and handed to Android's share sheet so that <em>you</em> choose where it goes &mdash; for example your own cloud drive or messaging app. The temporary copy is deleted after sharing. We never receive it.</p>
+<p>The backup contains your messages, transactions, bills, banks, and settings. It does <strong>not</strong> contain your app lock PIN or your API key. Because the backup file is not encrypted, store it somewhere you control.</p>
+
+<h2>6. Permissions and why they are needed</h2>
+<table>
+  <thead><tr><th>Permission</th><th>Why Pawlet needs it</th></tr></thead>
+  <tbody>
+    <tr><td><code>READ_SMS</code></td><td>Read existing bank messages in your inbox to build your transaction history.</td></tr>
+    <tr><td><code>RECEIVE_SMS</code></td><td>Detect new bank messages as they arrive so balances stay current.</td></tr>
+    <tr><td><code>INTERNET</code>, <code>ACCESS_NETWORK_STATE</code></td><td>Cloud AI fallback classification and exchange rate lookup.</td></tr>
+    <tr><td><code>RECEIVE_BOOT_COMPLETED</code>, <code>WAKE_LOCK</code>, <code>REQUEST_IGNORE_BATTERY_OPTIMIZATIONS</code></td><td>Keep the background message listener alive so transactions are not missed.</td></tr>
+    <tr><td><code>POST_NOTIFICATIONS</code></td><td>Show processing status and bill reminders.</td></tr>
+    <tr><td><code>USE_BIOMETRIC</code></td><td>Optional fingerprint or face unlock for the app lock.</td></tr>
+  </tbody>
+</table>
+<p>SMS access is requested at runtime and you can refuse or revoke it at any time in Android Settings. Without it, Pawlet still works for manually entered transactions.</p>
+
+<h2>7. Sharing with third parties</h2>
+<p>We do not sell, rent, or trade your data. We do not share it with advertisers, data brokers, or analytics providers, and Pawlet contains no third-party software development kits that collect data. The complete list of third parties that ever receive data from Pawlet is as follows.</p>
+<table>
+  <thead><tr><th>Recipient</th><th>Data transferred</th><th>Purpose</th><th>When</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><a href="https://openrouter.ai/privacy" rel="noopener">OpenRouter</a>, and the AI model provider it routes the request to</td>
+      <td>The SMS sender ID, the SMS message text, and your currency code. No identifier of you or your device.</td>
+      <td>Classify the message as financial or not, and extract the amount and merchant.</td>
+      <td>Only when the on-device filter and the on-device model cannot classify a message.</td>
+    </tr>
+    <tr>
+      <td><a href="https://developer.android.com/google/play/integrity" rel="noopener">Google Play Integrity</a></td>
+      <td>An opaque integrity token generated by Google Play services on your device, which we send back to Google to decode. We add no data to it.</td>
+      <td>Confirm the app is genuine and unmodified before the classification service accepts requests.</td>
+      <td>Once per session, at most once every 24 hours.</td>
+    </tr>
+    <tr>
+      <td><code>open.er-api.com</code> (ExchangeRate&#8209;API)</td>
+      <td>None. An anonymous request for public exchange rate data.</td>
+      <td>Convert foreign-currency amounts for display.</td>
+      <td>At most once every 24 hours.</td>
+    </tr>
+  </tbody>
+</table>
+<p>All transfers use encrypted HTTPS connections. No third party receives your ledger, your balances, or any copy of your local database.</p>
+<p>We may disclose information if legally required to do so. The only data we hold that could be the subject of such a request is an anonymous installation hash and its request counts.</p>
+
+<h2>8. Retention and deletion</h2>
+
+<h3>On your device</h3>
+<ul>
+  <li>Your ledger is retained on your device for as long as you choose to keep it. We apply no retention period of our own.</li>
+  <li>Records of messages identified as non-financial are automatically and permanently deleted after 7 days.</li>
+  <li>You can delete individual transactions, bills, and message records at any time inside the app.</li>
+  <li>Clearing the app's storage in Android Settings, or uninstalling Pawlet, permanently and irreversibly deletes all of its data from your device.</li>
+</ul>
+
+<h3>On our servers</h3>
+<ul>
+  <li><strong>Message text and classification results: not retained at all.</strong> They exist only in memory for the duration of the request.</li>
+  <li><strong>Installation hash and daily usage counts: retained indefinitely</strong>, because historical request volume is what lets us detect and block abuse. This data cannot be used to identify you or to reconstruct anything about your finances.</li>
+  <li>Session tokens expire 24 hours after issue and are not stored.</li>
+  <li>Attestation challenges are held in memory for 2 minutes and then discarded.</li>
+  <li>IP addresses used for rate limiting are held in memory and discarded within the hour. They are never written to disk.</li>
+</ul>
+<p>Because the installation hash is anonymous by design, neither you nor we can trace a stored record back to a particular person or device, so we are unable to locate and delete an individual record on request. Uninstalling the app permanently severs any connection between you and that record: the identifier is generated fresh on reinstall, and we have no means of linking a new identifier to an old one. The record that remains holds nothing but a hash and a count of requests.</p>
+
+<h3>Data sent for AI classification</h3>
+<p>Message text sent to OpenRouter is retained and deleted according to <a href="https://openrouter.ai/privacy" rel="noopener">OpenRouter's own privacy policy</a> and that of the model provider handling the request. We have no control over, and no access to, that data once the request is made.</p>
+
+<h3>Accounts</h3>
+<p>Pawlet does not offer account creation. There is no sign-up, no login, and no user account associated with the app, and therefore no account for you to delete and no account data held by us.</p>
+
+<h2>9. Security</h2>
+<p>Pawlet stores data in Android's private per-app storage, keeps credentials in the hardware-backed Keystore, offers an optional PIN and biometric app lock, and uses HTTPS for every network request. On the server side, installation identifiers are irreversibly hashed before storage, message content is never persisted or logged, session tokens are cryptographically signed and short-lived, and access is gated behind Google Play Integrity attestation.</p>
+<p>No system is perfectly secure, and the security of your device &mdash; its screen lock, operating system updates, and where you store exported backups &mdash; remains an important part of protecting your information.</p>
+
+<h2>10. Children</h2>
+<p>Pawlet is not directed to children under 13 and we do not knowingly collect information from them.</p>
+
+<h2>11. Changes to this policy</h2>
+<p>We may update this policy as the app changes. The "last updated" date at the top will reflect any revision, and significant changes will be noted in the app's release notes. The current version is always available at this URL.</p>
+
+<h2>12. Privacy contact</h2>
+<p>The privacy point of contact for Pawlet is the developer, <strong>PastaByte</strong>. To ask a question, raise a privacy concern, or request information about how your data is handled, email <a href="mailto:ahmedsadman.211@gmail.com">ahmedsadman.211@gmail.com</a>.</p>
+
+<footer>Pawlet &middot; <a href="https://github.com/ahmedsadman/pawlet" rel="noopener">Source on GitHub</a></footer>
+
+</main>
+</body>
+</html>
