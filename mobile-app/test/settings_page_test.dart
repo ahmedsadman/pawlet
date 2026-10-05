@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/data/finance_repository.dart';
 import 'package:pawlet/models/finance/bank.dart';
+import 'package:pawlet/services/privacy_policy.dart';
 import 'package:pawlet/state/finance_providers.dart';
 import 'package:pawlet/state/providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
@@ -48,33 +49,81 @@ void main() {
         const Offset(0, -200),
       );
       expect(find.text('Privacy'), findsOneWidget);
-      expect(find.textContaining('All data stays on device'), findsOneWidget);
+      expect(find.textContaining('stay on this device'), findsOneWidget);
     },
   );
 
-  testWidgets('privacy paragraph states on-device + LLM fallback wording', (
+  testWidgets('privacy paragraph states on-device + AI fallback wording', (
     tester,
   ) async {
     final (widget, _) = await _app(const []);
     await tester.pumpWidget(widget);
     await tester.pump();
 
-    // Privacy sits near the bottom of the (lazy) ListView — scroll it in.
     await tester.dragUntilVisible(
       find.text('Privacy'),
       find.byType(ListView),
       const Offset(0, -200),
     );
 
-    expect(find.textContaining('All data stays on device'), findsOneWidget);
     expect(
-      find.textContaining('sent to an LLM for better accuracy'),
+      find.textContaining('Your messages and balances stay on this device'),
       findsOneWidget,
     );
     expect(
-      find.textContaining('No identifying information is recorded externally'),
+      find.textContaining("can't categorize are sent for AI classification"),
       findsOneWidget,
     );
+    expect(
+      find.textContaining('without any information that identifies you'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the privacy policy tile opens the hosted policy', (
+    tester,
+  ) async {
+    Uri? launched;
+    PrivacyPolicy.launcher = (uri) async {
+      launched = uri;
+      return true;
+    };
+    addTearDown(PrivacyPolicy.resetLauncher);
+
+    final (widget, _) = await _app(const []);
+    await tester.pumpWidget(widget);
+    await tester.pump();
+
+    await tester.dragUntilVisible(
+      find.text('Privacy policy'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.tap(find.text('Privacy policy'));
+    await tester.pumpAndSettle();
+
+    expect(launched, Uri.parse(PrivacyPolicy.url));
+  });
+
+  testWidgets('a failed launch tells the user instead of failing silently', (
+    tester,
+  ) async {
+    PrivacyPolicy.launcher = (_) async => false;
+    addTearDown(PrivacyPolicy.resetLauncher);
+
+    final (widget, _) = await _app(const []);
+    await tester.pumpWidget(widget);
+    await tester.pump();
+
+    await tester.dragUntilVisible(
+      find.text('Privacy policy'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.tap(find.text('Privacy policy'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Could not open your browser'), findsOneWidget);
   });
 
   testWidgets('Manage Banks & Cards navigates to the Banks page', (
