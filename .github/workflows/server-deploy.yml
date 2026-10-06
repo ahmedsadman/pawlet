@@ -1,0 +1,96 @@
+name: server-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/server-deploy.yml"
+      - ".github/workflows/server-checks.yml"
+  workflow_dispatch:
+
+# One deploy at a time. A second merge queues instead of cancelling: cancelling
+# mid-restart could leave the container half-swapped.
+concurrency:
+  group: server-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/ahmedsadman/pawlet-server
+
+jobs:
+  checks:
+    uses: ./.github/workflows/server-checks.yml
+
+  build:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The commit-SHA tag is what the server deploys, and what to roll back to
+      # by hand; `latest` is only the compose file's fallback.
+      - name: Build and push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: server
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: deploy
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd ~/pawlet
+            git pull origin main
+            cd server
+
+            export IMAGE_TAG="${{ github.sha }}"
+            docker compose pull
+            docker compose up -d --no-build
+            docker image prune -f
+
+      - name: Health check
+        run: |
+          for attempt in 1 2 3 4 5; do
+            sleep 5
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 https://pawlet.muhib.me/healthz || true)
+            echo "Attempt $attempt/5: $status"
+            if [ "$status" = "200" ]; then
+              echo "Health check passed"
+              exit 0
+            fi
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
