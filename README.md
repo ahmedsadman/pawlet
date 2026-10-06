@@ -12,6 +12,7 @@ the messages the on-device model can't confidently handle.
 
 - [`mobile-app/docs/`](mobile-app/docs/README.md) — technical write-ups on how the app
   behaves 
+- [`server/docs/`](server/docs/README.md) — technical write-ups on how the server behaves
 - [`model-training/`](model-training/README.md) — how the on-device model is trained,
   exported, and quantized.
 
@@ -182,11 +183,12 @@ before pulling the database.
 
 ## License
 
-Pawlet is split into two parts under different licenses:
+Pawlet is split into three parts under different licenses:
 
 | Part | Path | License | Terms |
 |------|------|---------|-------|
 | **App / code** | `mobile-app/` | [AGPL v3](mobile-app/LICENSE) | Use/modify/distribute, including commercially. Must keep it open source — anyone who distributes or runs it as a network service must release their source under AGPL too. |
+| **Server** | `server/` | [AGPL v3](server/LICENSE) | Same terms as the app. Anyone who runs a modified version as a network service must offer its source to that service's users under AGPL. |
 | **Dataset & models** | `model-training/` | [CC BY 4.0](model-training/LICENSE) | Share/adapt, including commercially, with credit. Derivatives may use any license. |
 
 Building on Pawlet requires crediting the author (Ahmed Sadman Muhib) and this project.
