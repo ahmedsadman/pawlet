@@ -108,6 +108,35 @@ shares one rate-limit bucket.
   so the files stay writable; if your uid is not 1000, start with
   `PAWLET_UID=$(id -u) PAWLET_GID=$(id -g) docker compose up -d`
 
+### Continuous deployment
+
+Merges to `main` that touch `server/` run `.github/workflows/server-deploy.yml`:
+
+1. **checks**: format, vet, lint and tests, the same checks pull requests run.
+2. **build**: pushes `ghcr.io/ahmedsadman/pawlet-server:<commit sha>` and
+   `:latest`.
+3. **deploy**: SSHes in as `deploy`, runs `git pull` in `~/pawlet`, then pulls
+   that commit's image and restarts the container.
+4. **health check**: fails the run if `https://pawlet.muhib.me/healthz` does not
+   answer within about 25 seconds. There is no automatic rollback.
+
+To roll back by hand, every commit's image stays in GHCR:
+
+```bash
+cd ~/pawlet/server
+IMAGE_TAG=<previous commit sha> docker compose up -d --no-build
+```
+
+One-time setup:
+- Repository secrets `SERVER_IP` and `SSH_PRIVATE_KEY`, for the `deploy` user.
+- The checkout at `/home/deploy/pawlet`, owned by `deploy`, which must be able
+  to run Docker.
+- If `deploy`'s uid is not 1000, put `PAWLET_UID` and `PAWLET_GID` in `.env`.
+  Compose reads `.env` for variable substitution, and the deploy does not set
+  them.
+- After the first run, make the `pawlet-server` package **public** in GitHub.
+  GHCR creates packages private, and the server pulls without logging in.
+
 ## Backups
 
 The database is bind-mounted at `server/data/pawlet.db`, owned by your host
