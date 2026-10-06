@@ -88,13 +88,10 @@ jobs:
       # serves and the APKs on the GitHub release are one logical build.
       # No --split-per-abi: Play splits the bundle per device itself.
       - name: Build release bundle
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           flutter build appbundle --release \
             --build-name=${{ steps.version.outputs.base }} \
-            --build-number=${{ github.run_number }} \
-            --dart-define=OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
+            --build-number=${{ github.run_number }}
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
