@@ -13,12 +13,27 @@
 
 ## Docs
 
-Found under `mobile-app/docs` directory. This is intended for humans, not LLM. **Do not read those to gather context**.
+Found under two directories, one per component:
+- `mobile-app/docs` — the Flutter app
+- `server/docs` — the Go server
+
+These are intended for humans, not LLM. **Do not read those to gather context**, and do not cite them as evidence
+for how the code behaves. They may lag behind the code; the code is authoritative.
 
 ### When to update
 - After completing execution of a plan
 - After edits which changes an existing behavior
 
-While updating, follow instructions of `mobile-app/docs/README.md`. Only focus on the docs' **correctness**. **We don't care
-about omission of information** - unless the user specifically instructed to add the new info.
+Update the docs of the component you changed. Only focus on the docs' **correctness**. **We don't care about omission
+of information** - unless the user specifically instructed to add the new info.
+
+### How to write them
+- **Prefer file references over code.** Link a file by path (e.g. `lib/services/processing_service.dart`); code
+  drifts, file structure rarely does.
+- **Never use line numbers** — they go stale fastest.
+- **Add a code snippet only when absolutely necessary** (something words can't capture cleanly, a generic command
+  etc.). Keep it minimal.
+- Put concrete numbers/constants in one clearly-labelled table marked as a snapshot, and name the source file, so a
+  reader knows where to verify.
+- When adding a page, list it in that directory's `README.md`, which is the human-facing index.
 
