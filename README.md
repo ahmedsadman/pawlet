@@ -189,6 +189,6 @@ Pawlet is split into three parts under different licenses:
 |------|------|---------|-------|
 | **App / code** | `mobile-app/` | [AGPL v3](mobile-app/LICENSE) | Use/modify/distribute, including commercially. Must keep it open source — anyone who distributes or runs it as a network service must release their source under AGPL too. |
 | **Server** | `server/` | [AGPL v3](server/LICENSE) | Same terms as the app. Anyone who runs a modified version as a network service must offer its source to that service's users under AGPL. |
-| **Dataset & models** | `model-training/` | [CC BY 4.0](model-training/LICENSE) | Share/adapt, including commercially, with credit. Derivatives may use any license. |
+| **Dataset & models** | `model-training/` | [CC BY-SA 4.0](model-training/LICENSE) | Share/adapt, including commercially, with credit. Derivatives must use the same license. |
 
 Building on Pawlet requires crediting the author (Ahmed Sadman Muhib) and this project.

@@ -154,5 +154,6 @@ the run with the best validation macro-F1. `SEEDS=7` reproduces just the winner.
 
 Pawlet dataset & models © 2026 Ahmed Sadman Muhib
 
-Licensed under [CC BY 4.0](LICENSE). You may share and adapt this data and
-these models, including commercially, provided you give appropriate credit.
+Licensed under [CC BY-SA 4.0](LICENSE). You may share and adapt this data and
+these models, including commercially, provided you give appropriate credit and
+release anything you adapt from them under the same license.
