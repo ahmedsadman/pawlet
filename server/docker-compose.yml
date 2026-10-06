@@ -1,5 +1,9 @@
 services:
   pawlet:
+    # Deploys pull a prebuilt image; CI sets IMAGE_TAG to the commit SHA it
+    # pushed. `build:` stays so `docker compose up --build` still works for
+    # local development.
+    image: ghcr.io/ahmedsadman/pawlet-server:${IMAGE_TAG:-latest}
     build: .
     restart: unless-stopped
     env_file: .env
