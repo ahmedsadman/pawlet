@@ -25,11 +25,14 @@ Resolution logic: if all of `fromPlay`, `proxyConfigured`, and not `attestationI
 
 The session is minted in the UI isolate and cached in the keystore for 24 hours, so background isolates reuse it. The full attestation flow (`lib/services/auth/attestation_service.dart`):
 
-1. Fetch a challenge from `/v1/challenge`
-2. Ask Play Integrity for a token bound to `sha256(installId:challenge)`
-3. Exchange the token at `/v1/session` for a JWT
+1. Check the Play Integrity channel is reachable (a local call, no network)
+2. Fetch a challenge from `/v1/challenge`
+3. Ask Play Integrity for a token bound to `sha256(installId:challenge)`
+4. Exchange the token at `/v1/session` for a JWT
 
-Background isolates cannot mint, because the Play Integrity channel lives in `MainActivity`. A missing or expired session there is a retryable failure, and the message stays queued. The UI renews the session when under 2 hours remain, at launch, on resume and on reconnect (`lib/services/llm/llm_network_refresh.dart`).
+A failed mint is remembered by that `AttestationService` instance rather than retried for every message. An ineligible result, or a missing Play Integrity channel, is held for the instance's lifetime; any other failure is held for a short cooldown. Instances are rebuilt for each background run and on every mode change.
+
+Background isolates cannot mint, because the Play Integrity channel lives in `MainActivity`. A message that needs a session there is put back in the queue, still due, without using up a retry attempt. The next background catch-up waits at least an hour (`ProcessingService.foregroundWait`), and the UI processes the message as soon as the app is opened. The UI renews the session when under 2 hours remain, at launch, on resume and on reconnect (`lib/services/llm/llm_network_refresh.dart`).
 
 When calling `/v1/classify`, the proxy provider (`lib/services/llm/pawlet_proxy_provider.dart`) maps server responses:
 
@@ -38,11 +41,11 @@ When calling `/v1/classify`, the proxy provider (`lib/services/llm/pawlet_proxy_
 | 200 | — | Success: the result is already normalised. |
 | 400 `bad_request` | No | Malformed input: the client is broken. |
 | 400 `upstream_rejected` | Yes | Server's OpenRouter key/credits failing: not the message's fault. |
-| 401 | Once | Session invalid: delete it, mint a fresh one, retry once. |
-| 403 | No | Install banned: set the ineligible flag, move to `byok`/`none`. |
+| 401 | Yes | Session invalid: delete it, mint a fresh one, retry once. A second 401 is a retryable failure. |
+| 403 | Yes | Install banned: set the ineligible flag, move to `byok`/`none`. The message stays queued and is reprocessed in the new mode. |
 | 408, 429, 5xx | Yes | Rate limit, timeout or server/upstream unavailable. |
 
-A 403 records the ineligible flag, and the UI moves to `byok`/`none` on its next launch, resume or reconnect, never mid-pass.
+A 403 records the ineligible flag, and the UI moves to `byok`/`none` on its next launch, resume or reconnect, never mid-pass or while the bulk import has processing paused.
 
 ## Prompt bundle
 
