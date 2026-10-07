@@ -23,10 +23,15 @@ Future<void> main() async {
   // isolates have no MainActivity — they read the cache instead.
   await settings.setInstalledFromPlay(await InstallSource().isFromPlayStore());
   // Before runApp, so every provider and isolate sees the expired flag.
-  await settings.expireAttestationIneligible(
-    build: (await PackageInfo.fromPlatform()).buildNumber,
-    now: DateTime.now(),
-  );
+  // If version lookup fails, the flag stays until the next launch.
+  try {
+    await settings.expireAttestationIneligible(
+      build: (await PackageInfo.fromPlatform()).buildNumber,
+      now: DateTime.now(),
+    );
+  } catch (_) {
+    // Plugin failure must not block app startup.
+  }
   // Inits the shared plugin singleton; the provider's NotificationService wraps
   // the same native instance.
   await NotificationService().init();
