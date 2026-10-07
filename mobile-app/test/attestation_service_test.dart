@@ -14,12 +14,16 @@ class _FakeIntegrity extends PlayIntegrity {
   _FakeIntegrity() : super(cloudProjectNumber: '1');
 
   final hashes = <String>[];
-  IntegrityException? error;
+  Object? error;
+
+  /// When set, requests wait on it: a Play Services that never answers.
+  Completer<String>? hang;
 
   @override
   Future<String> requestToken(String requestHash) async {
     hashes.add(requestHash);
     if (error != null) throw error!;
+    if (hang != null) return hang!.future;
     return 'integrity-token';
   }
 }
@@ -28,6 +32,14 @@ class _FakeIntegrity extends PlayIntegrity {
 class _UnwritableStore extends SecureStore {
   @override
   Future<void> writeSession(String token, DateTime expiresAt) async {
+    throw Exception('keystore locked');
+  }
+}
+
+/// A keystore whose session entries cannot be deleted.
+class _UndeletableStore extends SecureStore {
+  @override
+  Future<void> deleteSession() async {
     throw Exception('keystore locked');
   }
 }
@@ -83,15 +95,25 @@ void main() {
     flagged = 0;
   });
 
-  AttestationService service({http.Client? client, SecureStore? store}) =>
-      AttestationService(
-        apiBase: 'https://api.test',
-        store: store ?? SecureStore(),
-        integrity: integrity,
-        onIneligible: () async => flagged++,
-        client: client ?? server.client,
-        now: () => clock,
-      );
+  AttestationService service({
+    http.Client? client,
+    SecureStore? store,
+    Future<void> Function()? onIneligible,
+    Duration integrityTimeout = AttestationService.integrityTimeout,
+  }) => AttestationService(
+    apiBase: 'https://api.test',
+    store: store ?? SecureStore(),
+    integrity: integrity,
+    onIneligible: onIneligible ?? () async => flagged++,
+    client: client ?? server.client,
+    now: () => clock,
+    integrityTimeout: integrityTimeout,
+  );
+
+  Future<void> throwingFlag() async {
+    flagged++;
+    throw Exception('prefs unavailable');
+  }
 
   Matcher ineligible(bool value) => throwsA(
     isA<AttestationException>().having(
@@ -188,6 +210,32 @@ void main() {
     expect(flagged, 0);
   });
 
+  test('a hung Play Integrity times out as retryable', () async {
+    integrity.hang = Completer<String>();
+    final s = service(integrityTimeout: const Duration(milliseconds: 10));
+    await expectLater(s.token(), ineligible(false));
+    expect(flagged, 0);
+
+    // The in-flight mint was released, so the next call can succeed.
+    integrity.hang = null;
+    expect(await s.token(), 'jwt1');
+  });
+
+  test('an unexpected Play Integrity error is retryable', () async {
+    integrity.error = StateError('boom');
+    await expectLater(service().token(), ineligible(false));
+    expect(flagged, 0);
+  });
+
+  test('a throwing onIneligible still yields an ineligible error', () async {
+    server.sessionStatus = 403;
+    await expectLater(
+      service(onIneligible: throwingFlag).token(),
+      ineligible(true),
+    );
+    expect(flagged, 1);
+  });
+
   group('warmUp', () {
     test('does nothing while plenty of time remains', () async {
       await service().token();
@@ -208,6 +256,12 @@ void main() {
       await service().warmUp();
       expect(server.sessions, 1);
     });
+
+    test('never throws when onIneligible throws', () async {
+      server.sessionStatus = 403;
+      await service(onIneligible: throwingFlag).warmUp();
+      expect(flagged, 1);
+    });
   });
 
   test('reportRejected drops the session and flags the install', () async {
@@ -216,5 +270,15 @@ void main() {
     await s.reportRejected();
     expect(flagged, 1);
     expect(await SecureStore().readSession(), isNull);
+  });
+
+  test('reportRejected survives a keystore that cannot delete', () async {
+    await service(store: _UndeletableStore()).reportRejected();
+    expect(flagged, 1);
+  });
+
+  test('reportRejected survives a throwing onIneligible', () async {
+    await service(onIneligible: throwingFlag).reportRejected();
+    expect(flagged, 1);
   });
 }
