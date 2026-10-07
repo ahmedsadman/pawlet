@@ -88,9 +88,12 @@ class PawletProxyProvider implements LlmProvider {
       if (resp.statusCode == 401) {
         resp = await _post(body, await _token(forceRefresh: true));
         if (resp.statusCode == 401) {
+          // A fresh session rejected too points at the server (e.g. a
+          // rotated signing key), not the message. Retryable so it cannot
+          // fail every queued message; the retry budget bounds it.
           throw const LlmException(
             'session rejected after refresh',
-            retryable: false,
+            retryable: true,
           );
         }
       }
@@ -155,7 +158,10 @@ class PawletProxyProvider implements LlmProvider {
     }
     if (code == 403) {
       await _attestation.reportRejected();
-      throw const LlmException('install rejected by server', retryable: false);
+      // Retryable, as for an ineligible attestation in [_token]: the row stays
+      // queued and is reprocessed on the byok/none path once the flag moves
+      // the mode.
+      throw const LlmException('install rejected by server', retryable: true);
     }
 
     final errorCode = _parseErrorCode(resp);

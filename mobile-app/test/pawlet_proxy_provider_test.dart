@@ -122,18 +122,22 @@ void main() {
     ]);
   });
 
-  test('a second 401 is fatal', () async {
+  // A server that rejects even a fresh session is misconfigured, not this
+  // message's problem; the retry budget bounds it.
+  test('a second 401 is retryable', () async {
     await expectLater(
       run(proxy([http.Response('', 401), http.Response('', 401)])),
-      fails(retryable: false),
+      fails(retryable: true),
     );
     expect(requests, hasLength(2));
   });
 
-  test('a 403 is fatal and reports the rejection', () async {
+  // Retryable like an ineligible attestation: the row stays queued and is
+  // reprocessed on the byok/none path once the flag moves the mode.
+  test('a 403 reports the rejection and is retryable', () async {
     await expectLater(
       run(proxy([http.Response('{"error":"banned"}', 403)])),
-      fails(retryable: false),
+      fails(retryable: true),
     );
     expect(attestation.rejected, isTrue);
   });
