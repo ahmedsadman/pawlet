@@ -324,12 +324,59 @@ void main() {
       );
       await expectLater(s.token(), ineligible(false));
       await expectLater(s.token(forceRefresh: true), ineligible(false));
-      await s.warmUp();
       expect(server.challenges, 1);
 
       clock = clock.add(const Duration(seconds: 1));
       expect(await s.token(), 'jwt2');
       expect(server.challenges, 2);
+    });
+
+    Matcher retryAfter(Duration d) => throwsA(
+      isA<AttestationException>().having((e) => e.retryAfter, 'retryAfter', d),
+    );
+
+    test('a transient failure carries what is left of the cooldown', () async {
+      server.sessionStatus = 503;
+      final s = service();
+      await expectLater(
+        s.token(),
+        retryAfter(AttestationService.failureCooldown),
+      );
+      clock = clock.add(const Duration(minutes: 1));
+      await expectLater(
+        s.token(),
+        retryAfter(
+          AttestationService.failureCooldown - const Duration(minutes: 1),
+        ),
+      );
+    });
+
+    test('a permanent failure carries no retry hint', () async {
+      integrity.noChannel = true;
+      final s = service();
+      await expectLater(
+        s.token(),
+        throwsA(
+          isA<AttestationException>().having(
+            (e) => e.retryAfter,
+            'retryAfter',
+            isNull,
+          ),
+        ),
+      );
+    });
+
+    test('warmUp tries again despite a held transient failure', () async {
+      server.sessionStatus = 503;
+      final s = service();
+      await expectLater(s.token(), ineligible(false));
+      server.sessionStatus = 200;
+
+      await s.warmUp();
+      expect(server.challenges, 2);
+      // The success cleared the held failure.
+      await SecureStore().deleteSession();
+      expect(await s.token(), 'jwt3');
     });
 
     test('a cached session is still served while a failure is held', () async {
