@@ -1257,6 +1257,84 @@ void main() {
     expect(OpenRouterProvider.timeout, lessThan(ProcessingService.staleAfter));
   });
 
+  // A background isolate cannot mint a proxy session. That is not the
+  // message's fault, so it must not spend the retry budget of a user who
+  // simply has not opened the app.
+  group('an LLM that needs the foreground', () {
+    const needsForeground = LlmException(
+      'attestation: no channel',
+      retryable: true,
+      needsForeground: true,
+    );
+
+    test('releases the row without burning an attempt', () async {
+      final id = await queue('CHK', attempts: 3);
+      int? failed;
+      final llm = _FakeLlm(error: needsForeground);
+      await service(
+        llm,
+        local: _FakeLocal(_localUnsure),
+        onCounts: (f) async => failed = f,
+      ).process();
+
+      final r = await row(id);
+      expect(llm.calls, 1);
+      expect(r['status'], 'queued');
+      expect(r['attempts'], 3);
+      expect(r['next_attempt_at'], isNull); // still due for the foreground
+      expect(r['needs_llm'], 1); // the model's decline is still remembered
+      expect(failed, 0);
+      await db.close();
+    });
+
+    test('never fails the row, however many passes it takes', () async {
+      final id = await queue(
+        'CHK',
+        attempts: ProcessingService.maxAttempts - 1,
+      );
+      final svc = service(_FakeLlm(error: needsForeground));
+      await svc.process();
+      await svc.process();
+      expect((await row(id))['status'], 'queued');
+      await db.close();
+    });
+
+    test('waits before the next background catch-up', () async {
+      await queue('CHK');
+      Duration? scheduled;
+      await service(
+        _FakeLlm(error: needsForeground),
+        reschedule: (d) async => scheduled = d,
+      ).process();
+      expect(scheduled, ProcessingService.foregroundWait);
+      await db.close();
+    });
+
+    test('a later pass that can reach the LLM processes it at once', () async {
+      final id = await queue('CHK');
+      await service(_FakeLlm(error: needsForeground)).process();
+      now += 1000; // seconds later, not foregroundWait
+      await service(_FakeLlm(result: _expense())).process();
+      expect((await row(id))['status'], 'success');
+      await db.close();
+    });
+
+    test('the wait does not outlive the pass that needed it', () async {
+      await queue('CHK');
+      final scheduled = <Duration?>[];
+      final llm = _FakeLlm(error: needsForeground);
+      final svc = service(llm, reschedule: (d) async => scheduled.add(d));
+      await svc.process();
+      llm.error = const LlmException('rate', retryable: true);
+      await svc.process();
+      expect(scheduled, [
+        ProcessingService.foregroundWait,
+        const Duration(seconds: 15),
+      ]);
+      await db.close();
+    });
+  });
+
   test('a paused service does not drain the queue', () async {
     final llm = _FakeLlm(result: _expense());
     final svc = service(llm);

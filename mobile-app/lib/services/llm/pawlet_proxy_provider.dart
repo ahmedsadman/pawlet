@@ -104,8 +104,13 @@ class PawletProxyProvider implements LlmProvider {
     } on AttestationException catch (e) {
       // Retryable even when ineligible: the row stays queued, and once the
       // flag moves the install to byok/none it is reprocessed on that path
-      // rather than failing here.
-      throw LlmException('attestation: ${e.message}', retryable: true);
+      // rather than failing here. A background isolate that cannot mint
+      // passes that on, so the row waits for the foreground uncharged.
+      throw LlmException(
+        'attestation: ${e.message}',
+        retryable: true,
+        needsForeground: e.needsForeground,
+      );
     }
   }
 

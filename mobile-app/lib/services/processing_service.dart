@@ -96,8 +96,18 @@ class ProcessingService {
   /// processing across isolates. See the guard in processing_service_test.
   static const Duration staleAfter = Duration(minutes: 3);
 
+  /// Least delay before the next background catch-up after a pass met an LLM
+  /// that needs the foreground (see [LlmException.needsForeground]). The rows
+  /// themselves stay due, so opening the app drains them at once; this only
+  /// stops the background worker re-running a pass that cannot succeed.
+  static const Duration foregroundWait = Duration(hours: 1);
+
   bool _running = false;
   bool _paused = false;
+
+  /// Set when this pass released a row for the foreground; read by
+  /// [_rescheduleNext].
+  bool _awaitingForeground = false;
 
   /// Whether a pass is in flight in this isolate. The UI checks it before
   /// moving the LLM mode, since that rebuilds (and disposes) this service.
@@ -120,6 +130,7 @@ class ProcessingService {
   Future<void> process() async {
     if (_paused || _running) return;
     _running = true;
+    _awaitingForeground = false;
     try {
       await smsRepository.reclaimStale(_clock() - staleAfter.inMilliseconds);
 
@@ -217,6 +228,9 @@ class ProcessingService {
     var heldSince = _clock();
     if (!await smsRepository.claimLocal(id, heldSince)) return false;
 
+    // Whether the on-device model ran and turned this row down. Outside the
+    // try so a release for the foreground can remember it.
+    var declined = false;
     try {
       // Layer 1. Re-run even for a `needs_llm` row: the user may since have
       // deleted the bank that let it through.
@@ -255,7 +269,7 @@ class ProcessingService {
       // ungated pass [Classifier] now runs — and re-running it is also how
       // legacy flagged rows drain without a migration.
       final skipInference = hasLlm && record.needsLlm;
-      var declined = skipInference;
+      declined = skipInference;
       if (!skipInference) {
         final local = await classifier.classifyLocal(
           content: record.content,
@@ -308,6 +322,10 @@ class ProcessingService {
       );
       return _finish(record, outcome, banks, cur, heldSince);
     } on LlmException catch (e) {
+      if (e.needsForeground) {
+        _awaitingForeground = true;
+        return _releaseForForeground(record, heldSince, declined: declined);
+      }
       if (!e.retryable) {
         // Fatal (bad key / bad request): fail immediately with a clear error.
         return smsRepository.updateStatus(
@@ -432,6 +450,32 @@ class ProcessingService {
     return false;
   }
 
+  /// Returns a row the LLM could not take from this isolate to the queue as it
+  /// was: same `attempts`, same `next_attempt_at`, no failure — the same terms
+  /// as an offline release, so a user who goes days without opening the app
+  /// does not see the message fail as retry-exhausted. It stays due, so the UI
+  /// isolate's pass on launch or resume picks it up immediately;
+  /// [foregroundWait] keeps the background worker from spinning on it.
+  ///
+  /// Uses the guarded [SmsRepository.updateStatus] because the row holds the
+  /// LLM slot (`sending`) by now. Always returns false: nothing was decided.
+  Future<bool> _releaseForForeground(
+    SmsRecord record,
+    int heldSince, {
+    required bool declined,
+  }) async {
+    await smsRepository.updateStatus(
+      record.id!,
+      SmsStatus.queued,
+      attempts: record.attempts,
+      updatedAt: _clock(),
+      nextAttemptAt: record.nextAttemptAt,
+      needsLlm: declined,
+      heldSince: heldSince,
+    );
+    return false;
+  }
+
   Future<bool> _reschedule(
     SmsRecord record,
     String error, {
@@ -540,6 +584,11 @@ class ProcessingService {
       // pass reschedules itself), a livelock that pegs the device. Wait for the
       // slot's stale-reclaim time instead.
       wake = slotFloor == null ? soonestQueued : max(soonestQueued, slotFloor);
+      // A row released for the foreground is due now but cannot run in any
+      // background pass, so a due-now wake would just repeat this one.
+      if (_awaitingForeground) {
+        wake = max(wake, now + foregroundWait.inMilliseconds);
+      }
     }
 
     // Safety net for a claimed row whose holder died. With nothing queued,

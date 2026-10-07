@@ -233,6 +233,39 @@ void main() {
     },
   );
 
+  test('no session obtainable here asks for the foreground', () async {
+    attestation.error = const AttestationException(
+      'no channel',
+      ineligible: false,
+      needsForeground: true,
+    );
+    await expectLater(
+      run(proxy([])),
+      throwsA(
+        isA<LlmException>().having(
+          (e) => e.needsForeground,
+          'needsForeground',
+          isTrue,
+        ),
+      ),
+    );
+    expect(requests, isEmpty);
+  });
+
+  test('other attestation failures do not ask for the foreground', () async {
+    attestation.error = const AttestationException('down', ineligible: false);
+    await expectLater(
+      run(proxy([])),
+      throwsA(
+        isA<LlmException>().having(
+          (e) => e.needsForeground,
+          'needsForeground',
+          isFalse,
+        ),
+      ),
+    );
+  });
+
   test('content over 2048 bytes is fatal with no request sent', () async {
     // 'অ' is 3 bytes in UTF-8
     final longContent = 'অ' * 700; // 2100 bytes
