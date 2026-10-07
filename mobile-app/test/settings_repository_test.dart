@@ -109,10 +109,10 @@ void main() {
     }
 
     Map<String, Object> flagged({String? build}) => {
-          'attestation_ineligible': true,
-          'attestation_ineligible_since': t0.millisecondsSinceEpoch,
-          if (build != null) 'last_seen_build': build,
-        };
+      'attestation_ineligible': true,
+      'attestation_ineligible_since': t0.millisecondsSinceEpoch,
+      'last_seen_build': ?build,
+    };
 
     test('flagging records when it happened', () async {
       final r = await repo({});
