@@ -68,10 +68,16 @@ class LlmException implements Exception {
     required this.retryable,
     this.retryAfter,
     this.resetAtEpochMs,
+    this.needsForeground = false,
   });
 
   final String message;
   final bool retryable;
+
+  /// The call cannot be made from this isolate at all — the proxy needs a
+  /// session only the foreground app can mint. Not an attempt: the queue
+  /// releases the row untouched for the foreground instead of retrying it.
+  final bool needsForeground;
 
   /// From a `Retry-After` header: a relative "don't retry before" delay. Null
   /// when absent or unparseable. Both hints are floors combined with our
@@ -86,7 +92,8 @@ class LlmException implements Exception {
   @override
   String toString() =>
       'LlmException($message, retryable=$retryable, '
-      'retryAfter=$retryAfter, resetAtEpochMs=$resetAtEpochMs)';
+      'retryAfter=$retryAfter, resetAtEpochMs=$resetAtEpochMs, '
+      'needsForeground=$needsForeground)';
 }
 
 /// Provider-agnostic SMS classifier + extractor. Implementations perform one
