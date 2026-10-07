@@ -128,7 +128,7 @@ class AppServices {
     // from Play" and resolve a different mode from the UI isolate.
     final mode = resolveLlmMode(
       fromPlay: settings.installedFromPlay,
-      apiBaseConfigured: BuildConfig.apiBaseConfigured,
+      proxyConfigured: BuildConfig.proxyConfigured,
       hasKey: apiKey.isNotEmpty,
       attestationIneligible: settings.attestationIneligible,
     );
