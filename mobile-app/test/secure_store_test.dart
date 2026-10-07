@@ -40,4 +40,28 @@ void main() {
     await s.writeApiKey('sk-or-mine');
     expect(await s.readApiKey(), 'sk-or-mine');
   });
+
+  test('the install ID is 64 hex chars and stable across reads', () async {
+    final s = SecureStore();
+    final id = await s.installId();
+    expect(id, matches(RegExp(r'^[0-9a-f]{64}$')));
+    expect(await SecureStore().installId(), id);
+  });
+
+  test('a session round-trips with its expiry', () async {
+    final s = SecureStore();
+    final at = DateTime.fromMillisecondsSinceEpoch(1791394932000);
+    await s.writeSession('jwt', at);
+    final read = await s.readSession();
+    expect(read!.token, 'jwt');
+    expect(read.expiresAt, at);
+  });
+
+  test('no session reads as null, and deleting clears it', () async {
+    final s = SecureStore();
+    expect(await s.readSession(), isNull);
+    await s.writeSession('jwt', DateTime(2030));
+    await s.deleteSession();
+    expect(await s.readSession(), isNull);
+  });
 }
