@@ -115,14 +115,18 @@ jobs:
 
       # Runs after the GitHub release so a rejected upload (most likely a
       # versionCode Play has already seen) cannot cost us the sideload APKs.
-      # Promotion from internal to production stays manual in the Play Console.
-      - name: Upload to Play internal track
+      # One upload, two tracks: internal is unreviewed, so testers there get the
+      # build within minutes; closed (`alpha`) gets the same build once Google's
+      # review passes. A run dispatched on a branch goes to internal only, so
+      # closed testers never get unmerged code. Promotion to production stays
+      # manual in the Play Console.
+      - name: Upload to Play internal and closed tracks
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.pastabyte.pawlet
           releaseFiles: mobile-app/build/app/outputs/bundle/release/app-release.aab
-          tracks: internal
+          tracks: ${{ github.ref == 'refs/heads/main' && 'internal,alpha' || 'internal' }}
           status: completed
 
       - name: Prune old releases (keep newest 5)
