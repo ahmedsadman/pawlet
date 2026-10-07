@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'classify_result_parser.dart';
 import 'llm_provider.dart';
-import 'prompts.dart';
+import 'prompt_bundle.dart';
 
 /// [LlmProvider] backed by OpenRouter's chat-completions API. One call both
 /// classifies the SMS and extracts its metadata (fused prompt). Output is forced
@@ -20,16 +20,18 @@ import 'prompts.dart';
 class OpenRouterProvider implements LlmProvider {
   OpenRouterProvider({
     required this.apiKey,
-    required this.models,
+    PromptBundle Function()? bundle,
     http.Client? client,
-  }) : _client = client ?? http.Client(),
+  }) : _bundle = bundle ?? (() => PromptBundle.baked),
+       _client = client ?? http.Client(),
        _ownsClient = client == null;
 
   final String apiKey;
 
-  /// Ordered fallback list. OpenRouter tries these in order within one request,
-  /// falling through on any error (429/5xx/downtime/moderation/context).
-  final List<String> models;
+  /// Read on every call, so a bundle refreshed in the background applies to
+  /// the next message without rebuilding the provider. Its `models` are an
+  /// ordered fallback list OpenRouter walks within one request.
+  final PromptBundle Function() _bundle;
   final http.Client _client;
   final bool _ownsClient;
 
@@ -55,13 +57,14 @@ class OpenRouterProvider implements LlmProvider {
     required String sender,
     required String currency,
   }) async {
+    final b = _bundle();
     final body = jsonEncode({
-      'models': models,
+      'models': b.models,
       'messages': [
-        {'role': 'system', 'content': fusedSystemPrompt},
+        {'role': 'system', 'content': b.systemPrompt},
         {
           'role': 'user',
-          'content': buildUserContent(
+          'content': b.userContent(
             sender: sender,
             content: content,
             currency: currency,
@@ -71,10 +74,7 @@ class OpenRouterProvider implements LlmProvider {
       // Strict structured output. require_parameters keeps every fallback hop on
       // a provider that actually enforces the schema (else it would be silently
       // dropped and we'd be back to prose/null output).
-      'response_format': {
-        'type': 'json_schema',
-        'json_schema': fusedJsonSchema,
-      },
+      'response_format': {'type': 'json_schema', 'json_schema': b.jsonSchema},
       'provider': {'require_parameters': true},
     });
 

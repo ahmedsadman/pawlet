@@ -72,10 +72,7 @@ class AppServices {
     // on-device. Unreachable in practice: `proxy` requires PAWLET_API_BASE,
     // which no build sets yet.
     final llmProvider = mode == LlmMode.byok
-        ? OpenRouterProvider(
-            apiKey: apiKey,
-            models: SettingsRepository.defaultLlmModels,
-          )
+        ? OpenRouterProvider(apiKey: apiKey)
         : null;
 
     final matcher = FinanceMatcher(database);

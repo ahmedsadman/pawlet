@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:pawlet/services/llm/llm_provider.dart';
 import 'package:pawlet/services/llm/openrouter_provider.dart';
+import 'package:pawlet/services/llm/prompt_bundle.dart';
 import 'package:pawlet/services/llm/prompts.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -19,11 +20,19 @@ String _completion(String innerContent) => jsonEncode({
   ],
 });
 
-OpenRouterProvider _provider(http.Client client) => OpenRouterProvider(
-  apiKey: 'secret-key',
+final _bundle = PromptBundle(
+  systemPrompt: fusedSystemPrompt,
+  userTemplate: PromptBundle.baked.userTemplate,
   models: const ['test/model-a', 'test/model-b'],
-  client: client,
+  jsonSchema: fusedJsonSchema,
 );
+
+OpenRouterProvider _provider(http.Client client, {PromptBundle? bundle}) =>
+    OpenRouterProvider(
+      apiKey: 'secret-key',
+      bundle: () => bundle ?? _bundle,
+      client: client,
+    );
 
 Future<ClassifyResult> _run(http.Client client) => _provider(
   client,
@@ -265,6 +274,47 @@ void main() {
       expect(userContent, contains('BDT'));
       expect(userContent, contains('BRACBANK'));
       expect(userContent, contains('debit 50'));
+    });
+
+    test('sends whatever prompt bundle it is given', () async {
+      _stubOnce(
+        client,
+        http.Response(
+          _completion('{"category":null,"transaction":null,"bill":null}'),
+          200,
+        ),
+      );
+      final server = PromptBundle(
+        systemPrompt: 'server prompt',
+        userTemplate: 'C={currency} S={sender} M={content}',
+        models: const ['srv/a'],
+        jsonSchema: const {'name': 'x'},
+      );
+      await _provider(
+        client,
+        bundle: server,
+      ).classifyAndExtract(content: 'hi', sender: 'EBL', currency: 'BDT');
+
+      final body =
+          jsonDecode(
+                verify(
+                      () => client.post(
+                        any(),
+                        headers: any(named: 'headers'),
+                        body: captureAny(named: 'body'),
+                      ),
+                    ).captured.single
+                    as String,
+              )
+              as Map<String, dynamic>;
+      expect(body['models'], ['srv/a']);
+      expect(body['response_format'], {
+        'type': 'json_schema',
+        'json_schema': {'name': 'x'},
+      });
+      final messages = body['messages'] as List;
+      expect(messages[0]['content'], 'server prompt');
+      expect(messages[1]['content'], 'C=BDT S=EBL M=hi');
     });
   });
 
