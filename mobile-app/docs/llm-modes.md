@@ -105,7 +105,7 @@ The validation uses the metadata endpoint rather than a chat completion because 
 
 ## No key ships in the binary
 
-The app previously included an OpenRouter API key compiled into the build. That key is gone. Every LLM call now either goes through the proxy (not yet reachable) or uses a key the user entered.
+The app previously included an OpenRouter API key compiled into the build. That key is gone. Every LLM call now either goes through the proxy or uses a key the user entered.
 
 ## What happens with no LLM
 
@@ -115,4 +115,4 @@ If the ungated gate still rejects the message (structural failure), the row is m
 
 The `needs_llm` flag is never set when no LLM exists, because it is permanent (never cleared) and its two readers would otherwise strand the row. A row that already carries the flag from an earlier state (e.g. the user removed their key) is re-run through the ungated gate rather than skipped.
 
-Layer 3 is skipped entirely with no LLM — no provider is constructed, no HTTP client, no network call is reachable.
+Layer 3 is skipped entirely with no LLM — no provider is constructed, and no network call is made.

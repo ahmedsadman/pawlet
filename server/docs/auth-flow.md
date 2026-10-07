@@ -148,9 +148,9 @@ from Google being the one who reports it.
 | Status | Error | Meaning | What the app should do |
 |---|---|---|---|
 | 400 | `bad_request` | The request is malformed or missing a field. | Treat as a bug; don't retry. |
-| 400 | `upstream_rejected` | OpenRouter refused this request outright. | Don't retry the same message. |
-| 401 | `unauthorized` | The session token is missing, invalid, expired, or for an unknown install. | Get a new session (start again from the challenge). |
-| 403 | `attestation_failed` | The challenge was unknown, used or expired, or Google's verdict failed a check. | Usually permanent for this device or build. |
+| 400 | `upstream_rejected` | OpenRouter refused this request outright. | Retry with backoff; not the message's fault. |
+| 401 | `unauthorized` | The session token is missing, invalid, expired, or for an unknown install. | Refresh session and retry; second 401 is retryable. |
+| 403 | `attestation_failed` | The challenge was unknown, used or expired, or Google's verdict failed a check. | Retryable at `/v1/classify` (marks ineligible, switches mode); permanent at `/v1/session`. |
 | 403 | `banned` | This install has been banned. | Stop using the server. |
 | 429 | `rate_limited` | A rate limit or quota was hit, either the server's or OpenRouter's. Usually comes with a `Retry-After` header. | Wait at least that long. |
 | 503 | `attestation_unavailable` | The server couldn't get an answer from Google. | Retry later; this is the server's problem, not the device's. |
