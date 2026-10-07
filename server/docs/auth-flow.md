@@ -3,9 +3,7 @@
 How the server decides that a request really comes from the Pawlet app, installed from Google
 Play, on a genuine Android device — without user accounts, emails or any personal data.
 
-> **Status:** the server side described here is live. The app side is **not built yet**, so no
-> app currently runs this flow. Where this page describes what the app does, it describes the
-> contract the server expects.
+> **Status:** live end to end. Play Store installs of release builds run this flow; debug and sideloaded builds never do (see `mobile-app/docs/llm-modes.md`).
 
 ## Why this exists
 
