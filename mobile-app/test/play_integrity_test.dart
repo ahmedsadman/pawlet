@@ -35,6 +35,20 @@ void main() {
     );
   });
 
+  test('API not available is transient', () async {
+    respond((_) async => throw PlatformException(code: '-1'));
+    await expectLater(
+      integrity().requestToken('h'),
+      throwsA(
+        isA<IntegrityException>().having(
+          (e) => e.permanent,
+          'permanent',
+          false,
+        ),
+      ),
+    );
+  });
+
   test('a network error is transient', () async {
     respond((_) async => throw PlatformException(code: '-3'));
     await expectLater(
@@ -67,7 +81,13 @@ void main() {
     respond((_) async => '');
     await expectLater(
       integrity().requestToken('h'),
-      throwsA(isA<IntegrityException>()),
+      throwsA(
+        isA<IntegrityException>().having(
+          (e) => e.permanent,
+          'permanent',
+          false,
+        ),
+      ),
     );
   });
 }
