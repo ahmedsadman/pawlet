@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
@@ -17,11 +18,15 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final database = await AppDatabase.open();
   final apiKey = await SecureStore().readApiKey();
+  final settings = SettingsRepository(prefs);
   // Cached here because MainActivity serves this channel and background
   // isolates have no MainActivity — they read the cache instead.
-  await SettingsRepository(
-    prefs,
-  ).setInstalledFromPlay(await InstallSource().isFromPlayStore());
+  await settings.setInstalledFromPlay(await InstallSource().isFromPlayStore());
+  // Before runApp, so every provider and isolate sees the expired flag.
+  await settings.expireAttestationIneligible(
+    build: (await PackageInfo.fromPlatform()).buildNumber,
+    now: DateTime.now(),
+  );
   // Inits the shared plugin singleton; the provider's NotificationService wraps
   // the same native instance.
   await NotificationService().init();

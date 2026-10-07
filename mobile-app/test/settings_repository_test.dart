@@ -99,4 +99,74 @@ void main() {
       expect(repo.exportAll().containsKey('attestation_ineligible'), isFalse);
     });
   });
+
+  group('attestation ineligibility expiry', () {
+    final t0 = DateTime(2026, 10, 1, 12);
+
+    Future<SettingsRepository> repo(Map<String, Object> init) async {
+      SharedPreferences.setMockInitialValues(init);
+      return SettingsRepository(await SharedPreferences.getInstance());
+    }
+
+    Map<String, Object> flagged({String? build}) => {
+          'attestation_ineligible': true,
+          'attestation_ineligible_since': t0.millisecondsSinceEpoch,
+          if (build != null) 'last_seen_build': build,
+        };
+
+    test('flagging records when it happened', () async {
+      final r = await repo({});
+      await r.setAttestationIneligible(true, now: t0);
+      expect(r.attestationIneligibleSince, t0);
+      await r.setAttestationIneligible(false);
+      expect(r.attestationIneligibleSince, isNull);
+    });
+
+    test('the first launch records the build and keeps the flag', () async {
+      final r = await repo(flagged());
+      final cleared = await r.expireAttestationIneligible(
+        build: '30',
+        now: t0.add(const Duration(days: 1)),
+      );
+      expect(cleared, isFalse);
+      expect(r.attestationIneligible, isTrue);
+    });
+
+    test('the same build within a week keeps the flag', () async {
+      final r = await repo(flagged(build: '30'));
+      final cleared = await r.expireAttestationIneligible(
+        build: '30',
+        now: t0.add(const Duration(days: 6)),
+      );
+      expect(cleared, isFalse);
+      expect(r.attestationIneligible, isTrue);
+    });
+
+    test('an app update clears it', () async {
+      final r = await repo(flagged(build: '30'));
+      final cleared = await r.expireAttestationIneligible(
+        build: '31',
+        now: t0.add(const Duration(days: 1)),
+      );
+      expect(cleared, isTrue);
+      expect(r.attestationIneligible, isFalse);
+    });
+
+    test('a week clears it', () async {
+      final r = await repo(flagged(build: '30'));
+      final cleared = await r.expireAttestationIneligible(
+        build: '30',
+        now: t0.add(const Duration(days: 7)),
+      );
+      expect(cleared, isTrue);
+    });
+
+    test('a flag with no timestamp is treated as expired', () async {
+      final r = await repo({
+        'attestation_ineligible': true,
+        'last_seen_build': '30',
+      });
+      expect(await r.expireAttestationIneligible(build: '30', now: t0), isTrue);
+    });
+  });
 }

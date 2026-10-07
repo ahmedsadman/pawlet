@@ -18,6 +18,8 @@ class SettingsRepository {
   static const _kBulkImportOffered = 'bulk_import_offered';
   static const _kInstalledFromPlay = 'installed_from_play';
   static const _kAttestationIneligible = 'attestation_ineligible';
+  static const _kAttestationIneligibleSince = 'attestation_ineligible_since';
+  static const _kLastSeenBuild = 'last_seen_build';
 
   /// OpenRouter models tried in order (static ordered fallback in one request).
   /// All are structured-outputs-capable, so `response_format: json_schema` is
@@ -84,17 +86,57 @@ class SettingsRepository {
   Future<void> setInstalledFromPlay(bool value) =>
       _prefs.setBool(_kInstalledFromPlay, value);
 
-  /// Set once Pawlet's server rejects this install's Play Integrity verdict,
-  /// which means the proxy will never work on this device. Reveals the
-  /// bring-your-own-key input so the user is not left with no LLM and no way
-  /// to enable one. Also install-scoped, so also outside Backup & Restore.
+  /// Set once Pawlet's server (or Play itself) rejects this install's
+  /// attestation, which means the proxy will not work on this device. Reveals
+  /// the bring-your-own-key input so the user is not left with no LLM and no
+  /// way to enable one. Install-scoped, so outside Backup & Restore.
   ///
-  /// Nothing writes this yet — the writer arrives with attestation. It is read
-  /// from the start so the mode table is complete and testable.
+  /// Not permanent: [expireAttestationIneligible] clears it on app update or
+  /// after [attestationRetryAfter], so a transient Play Services fault heals.
   bool get attestationIneligible =>
       _prefs.getBool(_kAttestationIneligible) ?? false;
-  Future<void> setAttestationIneligible(bool value) =>
-      _prefs.setBool(_kAttestationIneligible, value);
+
+  DateTime? get attestationIneligibleSince {
+    final ms = _prefs.getInt(_kAttestationIneligibleSince);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> setAttestationIneligible(bool value, {DateTime? now}) async {
+    await _prefs.setBool(_kAttestationIneligible, value);
+    if (value) {
+      await _prefs.setInt(
+        _kAttestationIneligibleSince,
+        (now ?? DateTime.now()).millisecondsSinceEpoch,
+      );
+    } else {
+      await _prefs.remove(_kAttestationIneligibleSince);
+    }
+  }
+
+  /// How long an ineligible install waits before attestation is tried again.
+  static const Duration attestationRetryAfter = Duration(days: 7);
+
+  /// Run once per launch, from the UI isolate, before providers read the flag.
+  /// Records [build] and clears the flag when the app was updated since the
+  /// last launch or the flag is older than [attestationRetryAfter]. Returns
+  /// whether it cleared.
+  Future<bool> expireAttestationIneligible({
+    required String build,
+    required DateTime now,
+  }) async {
+    final previousBuild = _prefs.getString(_kLastSeenBuild);
+    await _prefs.setString(_kLastSeenBuild, build);
+    if (!attestationIneligible) return false;
+
+    final since = attestationIneligibleSince;
+    final updated = previousBuild != null && previousBuild != build;
+    final expired =
+        since == null || now.difference(since) >= attestationRetryAfter;
+    if (!updated && !expired) return false;
+
+    await setAttestationIneligible(false);
+    return true;
+  }
 
   /// Keys included in Backup & Restore, grouped by value type so [exportAll]
   /// and [importAll] round-trip them with the correct SharedPreferences
