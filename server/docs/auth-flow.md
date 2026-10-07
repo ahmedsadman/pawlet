@@ -149,9 +149,9 @@ from Google being the one who reports it.
 |---|---|---|---|
 | 400 | `bad_request` | The request is malformed or missing a field. | Treat as a bug; don't retry. |
 | 400 | `upstream_rejected` | OpenRouter refused this request outright. | Retry with backoff; not the message's fault. |
-| 401 | `unauthorized` | The session token is missing, invalid, expired, or for an unknown install. | Refresh session and retry; second 401 is retryable. |
-| 403 | `attestation_failed` | The challenge was unknown, used or expired, or Google's verdict failed a check. | Retryable at `/v1/classify` (marks ineligible, switches mode); permanent at `/v1/session`. |
-| 403 | `banned` | This install has been banned. | Stop using the server. |
+| 401 | `unauthorized` | The session token is missing, invalid, expired, or for an unknown install. | Get a new session and retry once; if that also fails, retry the message later with backoff. |
+| 403 | `attestation_failed` | The challenge was unknown, used or expired, or Google's verdict failed a check. | Treat the device as ineligible: fall back to the user's own key or on-device only, and attest again after an app update or a week. |
+| 403 | `banned` | This install has been banned. | Same as `attestation_failed`. On `/v1/classify`, the message is retried on the fallback path. |
 | 429 | `rate_limited` | A rate limit or quota was hit, either the server's or OpenRouter's. Usually comes with a `Retry-After` header. | Wait at least that long. |
 | 503 | `attestation_unavailable` | The server couldn't get an answer from Google. | Retry later; this is the server's problem, not the device's. |
 | 503 | `capacity` | The daily ceiling across all installs was reached. | Retry later. |
