@@ -45,12 +45,14 @@ class AttestationService {
     required Future<void> Function() onIneligible,
     http.Client? client,
     DateTime Function()? now,
+    Duration integrityTimeout = AttestationService.integrityTimeout,
   }) : _store = store,
        _integrity = integrity,
        _onIneligible = onIneligible,
        _client = client ?? http.Client(),
        _ownsClient = client == null,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _integrityTimeout = integrityTimeout;
 
   final String apiBase;
   final SecureStore _store;
@@ -59,6 +61,7 @@ class AttestationService {
   final http.Client _client;
   final bool _ownsClient;
   final DateTime Function() _now;
+  final Duration _integrityTimeout;
 
   /// Under this much validity left, a foreground [warmUp] renews early, so a
   /// background isolate — which cannot reach Play Integrity — rarely finds
@@ -70,6 +73,11 @@ class AttestationService {
   static const Duration expirySkew = Duration(minutes: 1);
 
   static const Duration requestTimeout = Duration(seconds: 20);
+
+  /// Cap on one Play Integrity request. Well inside the server's 2-minute
+  /// challenge lifetime, and a hung Play Services must not leave the shared
+  /// in-flight mint stuck forever.
+  static const Duration integrityTimeout = Duration(seconds: 60);
 
   Future<String>? _inflight;
 
@@ -102,15 +110,30 @@ class AttestationService {
         return;
       }
       await _mintOnce();
-    } on AttestationException {
+    } catch (_) {
       // See above.
     }
   }
 
   /// The server refused this install outright (403 on classify: banned).
+  /// Never throws: the caller is already handling a failed request.
   Future<void> reportRejected() async {
-    await _store.deleteSession();
-    await _onIneligible();
+    try {
+      await _store.deleteSession();
+    } catch (_) {
+      // A stale session is harmless: the server rejects it anyway.
+    }
+    await _flagIneligible();
+  }
+
+  /// Reports ineligibility without letting a failing callback replace the
+  /// error the caller is about to see.
+  Future<void> _flagIneligible() async {
+    try {
+      await _onIneligible();
+    } catch (_) {
+      // The flag is best effort; the next 403 sets it again.
+    }
   }
 
   Future<String> _mintOnce() =>
@@ -128,12 +151,17 @@ class AttestationService {
 
     final String integrityToken;
     try {
-      integrityToken = await _integrity.requestToken(
-        requestHash(installId, challenge),
+      integrityToken = await _integrity
+          .requestToken(requestHash(installId, challenge))
+          .timeout(_integrityTimeout);
+    } on TimeoutException {
+      throw const AttestationException(
+        'Play Integrity timed out',
+        ineligible: false,
       );
     } on IntegrityException catch (e) {
       if (e.permanent) {
-        await _onIneligible();
+        await _flagIneligible();
         throw AttestationException(
           'Play Integrity unavailable on this device (${e.code})',
           ineligible: true,
@@ -143,6 +171,8 @@ class AttestationService {
         'Play Integrity failed (${e.code})',
         ineligible: false,
       );
+    } catch (e) {
+      throw AttestationException('Play Integrity error: $e', ineligible: false);
     }
 
     final resp = await _send(
@@ -161,7 +191,7 @@ class AttestationService {
     // weekly expiry recovers that case. 503 means Google or the server is
     // unwell, never the device, so it is retried.
     if (resp.statusCode == 403) {
-      await _onIneligible();
+      await _flagIneligible();
       throw const AttestationException(
         'server rejected attestation',
         ineligible: true,
