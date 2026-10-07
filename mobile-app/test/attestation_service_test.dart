@@ -168,6 +168,17 @@ void main() {
     expect(await s.token(forceRefresh: true), 'jwt2');
   });
 
+  test(
+    'forceRefresh forgets the rejected session even if minting fails',
+    () async {
+      final s = service();
+      await s.token();
+      integrity.error = const IntegrityException('-3', permanent: false);
+      await expectLater(s.token(forceRefresh: true), ineligible(false));
+      expect(await SecureStore().readSession(), isNull);
+    },
+  );
+
   test('concurrent callers share one mint', () async {
     server.holdSession = Completer<void>();
     final s = service();
