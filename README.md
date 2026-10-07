@@ -2,9 +2,9 @@
 
 Pawlet is an on-device Android app that turns your bank SMS into a personal-finance
 dashboard — transactions, bills, balances, spending trends. It runs with **no backend**:
-everything happens on the phone. Most messages are read by a bundled on-device model; the
-only network calls are a fallback to a large language model (OpenRouter's free models) for
-the messages the on-device model can't confidently handle.
+everything happens on the phone. Most messages are read by a bundled on-device model. If you
+add your own OpenRouter API key, messages the on-device model can't confidently handle fall back
+to a large language model (OpenRouter's free models); without a key, they never leave the phone.
 
 > **Note:** Pawlet currently targets **Bangladeshi banks only**, with plans to expand to more regions in the future.
 
