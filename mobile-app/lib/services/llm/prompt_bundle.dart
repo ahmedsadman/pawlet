@@ -1,3 +1,7 @@
+// Private fields fed by named constructor params are assigned explicitly, as
+// elsewhere in the app.
+// ignore_for_file: prefer_initializing_formals
+
 import 'dart:async';
 import 'dart:convert';
 
