@@ -157,18 +157,30 @@ class _RootShellState extends ConsumerState<RootShell>
     // dialog to users who just declined the disclosure.
     if (granted) ref.read(smsListenerProvider).start();
     await ref.read(processingServiceProvider).process();
+    // Again after the pass: the early call skips the ineligible sync if it
+    // found the pass running.
+    if (mounted) await _refreshLlmNetwork();
     await _offerInboxImport();
   }
 
   /// Session warm-up (proxy) or prompt-bundle refresh (byok), plus picking up
   /// an attestation rejection recorded during a pass.
+  ///
+  /// The sync is skipped while a pass is running: it can move the mode, which
+  /// rebuilds AppServices and disposes the services that pass is using. A
+  /// skipped sync is picked up on the next resume or reconnect.
   Future<void> _refreshLlmNetwork() {
+    // Captured before any await, so they belong to the same AppServices.
     final services = ref.read(appServicesProvider);
+    final processing = services.processingService;
+    final notifier = ref.read(attestationIneligibleProvider.notifier);
     return refreshLlmNetworkState(
       mode: ref.read(llmModeProvider),
       attestation: services.attestation,
       promptBundles: services.promptBundles,
-      syncIneligible: ref.read(attestationIneligibleProvider.notifier).sync,
+      syncIneligible: () async {
+        if (!processing.isRunning) await notifier.sync();
+      },
     );
   }
 
@@ -243,9 +255,12 @@ class _RootShellState extends ConsumerState<RootShell>
         // pass commits, which the poller then picks up.
         ref.read(dataRevisionSyncProvider).resume();
         ref.read(dataRevisionProvider.notifier).bump();
-        unawaited(_refreshLlmNetwork());
-        // Fire-and-forget: process() swallows its own pass-level errors.
-        unawaited(ref.read(processingServiceProvider).process());
+        // Fire-and-forget: process() swallows its own pass-level errors. The
+        // refresh runs after the pass so its ineligible sync isn't skipped.
+        unawaited(() async {
+          await ref.read(processingServiceProvider).process();
+          if (mounted) await _refreshLlmNetwork();
+        }());
       case AppLifecycleState.paused:
         // Stop polling while backgrounded — no wake while the user is away.
         ref.read(dataRevisionSyncProvider).pause();

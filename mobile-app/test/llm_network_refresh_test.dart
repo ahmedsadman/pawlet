@@ -51,7 +51,11 @@ void main() {
     mode: mode,
     attestation: attestation,
     promptBundles: bundles,
-    syncIneligible: () => syncs++,
+    syncIneligible: () async {
+      // Yields first, so the count only lands if the sync is awaited.
+      await Future<void>.delayed(Duration.zero);
+      syncs++;
+    },
   );
 
   test('proxy warms the session and syncs the ineligible flag', () async {

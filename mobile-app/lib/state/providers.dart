@@ -99,8 +99,13 @@ class AttestationIneligible extends Notifier<bool> {
 
   /// Re-reads the flag after another code path wrote it to prefs — the
   /// attestation service, possibly from inside a processing pass.
-  void sync() =>
-      state = ref.read(settingsRepositoryProvider).attestationIneligible;
+  ///
+  /// Reloads first: SharedPreferences caches per isolate, so a write from a
+  /// background isolate is invisible here until then.
+  Future<void> sync() async {
+    await ref.read(sharedPreferencesProvider).reload();
+    state = ref.read(settingsRepositoryProvider).attestationIneligible;
+  }
 }
 
 final attestationIneligibleProvider =

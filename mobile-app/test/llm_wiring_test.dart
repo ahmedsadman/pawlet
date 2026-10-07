@@ -119,10 +119,15 @@ void main() {
     final c = await _container(fromPlay: true);
     expect(c.read(attestationIneligibleProvider), isFalse);
 
-    await c.read(settingsRepositoryProvider).setAttestationIneligible(true);
+    // Another isolate's write: it lands in the platform store but not in this
+    // isolate's SharedPreferences cache, which sync() has to reload.
+    SharedPreferences.setMockInitialValues({
+      'installed_from_play': true,
+      'attestation_ineligible': true,
+    });
     expect(c.read(attestationIneligibleProvider), isFalse);
 
-    c.read(attestationIneligibleProvider.notifier).sync();
+    await c.read(attestationIneligibleProvider.notifier).sync();
     expect(c.read(attestationIneligibleProvider), isTrue);
   });
 }
