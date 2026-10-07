@@ -35,7 +35,7 @@ The flag is also the reason the mode function is pure rather than reading the ch
 
 ## Settings UI per mode
 
-The Privacy section in Settings shows different controls depending on the mode:
+Settings shows different controls depending on the mode. The bring-your-own-key section, when shown, sits directly above the Privacy section:
 
 - **`proxy`:** No bring-your-own-key section. A short privacy paragraph explains the LLM runs server-side on Pawlet's infrastructure.
 - **`byok`:** The bring-your-own-key section is shown (`lib/ui/settings/byok_section.dart`). The user enters a key, which is validated before storage. The privacy paragraph notes the on-device model handles most messages, with the LLM used only for tricky ones.
