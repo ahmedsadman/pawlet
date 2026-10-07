@@ -30,7 +30,7 @@ The session is minted in the UI isolate and cached in the keystore for 24 hours,
 3. Ask Play Integrity for a token bound to `sha256(installId:challenge)`
 4. Exchange the token at `/v1/session` for a JWT
 
-A failed mint is remembered by that `AttestationService` instance rather than retried for every message. An ineligible result, or a missing Play Integrity channel, is held for the instance's lifetime; any other failure is held for a short cooldown. Instances are rebuilt for each background run and on every mode change.
+A failed mint is remembered by that `AttestationService` instance rather than retried for every message. An ineligible result, or a missing Play Integrity channel, is held for the instance's lifetime. A rejection reported by `/v1/classify` (403) is held the same way. Any other failure is held for a cooldown, and its remaining time is passed on as a retry hint, so the queue holds the message back until the cooldown ends rather than spending attempts during it. The foreground session renewal ignores a held cooldown failure and always tries once, because it runs on resume and reconnect, when a network failure may have cleared. Instances are rebuilt for each background run and on every mode change.
 
 Background isolates cannot mint, because the Play Integrity channel lives in `MainActivity`. A message that needs a session there is put back in the queue, still due, without using up a retry attempt. The next background catch-up waits at least an hour (`ProcessingService.foregroundWait`), and the UI processes the message as soon as the app is opened. The UI renews the session when under 2 hours remain, at launch, on resume and on reconnect (`lib/services/llm/llm_network_refresh.dart`).
 
@@ -41,7 +41,7 @@ When calling `/v1/classify`, the proxy provider (`lib/services/llm/pawlet_proxy_
 | 200 | — | Success: the result is already normalised. |
 | 400 `bad_request` | No | Malformed input: the client is broken. |
 | 400 `upstream_rejected` | Yes | Server's OpenRouter key/credits failing: not the message's fault. |
-| 401 | Yes | Session invalid: delete it, mint a fresh one, retry once. A second 401 is a retryable failure. |
+| 401 | Yes | Session invalid: delete it, mint a fresh one, retry once. A second 401 is a retryable failure. If this instance minted the rejected session within the failure cooldown, no new session is minted: the message is retried after the cooldown ends. |
 | 403 | Yes | Install banned: set the ineligible flag, move to `byok`/`none`. The message stays queued and is reprocessed in the new mode. |
 | 408, 429, 5xx | Yes | Rate limit, timeout or server/upstream unavailable. |
 
@@ -64,6 +64,8 @@ Values as of the last update of this page. Verify against the source before rely
 | Proxy classify timeout (per request) | 2 min 15 s | `lib/services/llm/pawlet_proxy_provider.dart` |
 | Proxy classify budget (whole flow) | 2 min 45 s | `lib/services/llm/pawlet_proxy_provider.dart` |
 | Play Integrity timeout | 60 s | `lib/services/auth/attestation_service.dart` |
+| Attestation failure cooldown | 3 min | `lib/services/auth/attestation_service.dart` |
+| Background wait after a foreground-only release | 1 hour | `lib/services/processing_service.dart` |
 
 ## Install source is a UI affordance, not a security boundary
 
