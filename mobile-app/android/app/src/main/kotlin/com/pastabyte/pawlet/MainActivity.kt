@@ -6,6 +6,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import com.google.android.play.core.integrity.IntegrityManagerFactory
+import com.google.android.play.core.integrity.StandardIntegrityException
+import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIntegrityTokenRequest
+import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenProvider
+import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenRequest
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -15,11 +20,17 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterFragmentActivity() {
     private val channelName = "pawlet/security"
     private val installChannelName = "pawlet/install"
+    private val integrityChannelName = "pawlet/integrity"
 
     // Debug-only: lets `adb` inject a fake SMS into the Dart pipeline.
     private val debugChannelName = "pawlet/debug"
     private val injectAction = "com.pastabyte.pawlet.INJECT_SMS"
     private var debugChannel: MethodChannel? = null
+
+    // Preparing a provider warms Play's verdict cache and costs a round trip,
+    // so one is kept per project and dropped whenever a request fails.
+    private var integrityProvider: StandardIntegrityTokenProvider? = null
+    private var integrityProviderProject: Long? = null
 
     // Set by the screen-off receiver; read (and reset) by the app on resume so it
     // can re-lock only when the device was actually locked, not on app-switching.
@@ -71,6 +82,22 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, integrityChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "requestToken" -> {
+                        val project = call.argument<String>("cloudProjectNumber")?.toLongOrNull()
+                        val hash = call.argument<String>("requestHash")
+                        if (project == null || hash.isNullOrEmpty()) {
+                            result.error("bad_args", "cloudProjectNumber and requestHash are required", null)
+                        } else {
+                            requestIntegrityToken(project, hash, result)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
         if (BuildConfig.DEBUG) {
             debugChannel = MethodChannel(
                 flutterEngine.dartExecutor.binaryMessenger,
@@ -96,6 +123,48 @@ class MainActivity : FlutterFragmentActivity() {
         }
     } catch (_: PackageManager.NameNotFoundException) {
         null
+    }
+
+    private fun requestIntegrityToken(project: Long, hash: String, result: MethodChannel.Result) {
+        withIntegrityProvider(project, onError = { reportIntegrityError(it, result) }) { provider ->
+            provider.request(StandardIntegrityTokenRequest.builder().setRequestHash(hash).build())
+                .addOnSuccessListener { result.success(it.token()) }
+                .addOnFailureListener {
+                    // A provider can go stale (INTEGRITY_TOKEN_PROVIDER_INVALID);
+                    // the next call prepares a fresh one.
+                    integrityProvider = null
+                    reportIntegrityError(it, result)
+                }
+        }
+    }
+
+    private fun withIntegrityProvider(
+        project: Long,
+        onError: (Exception) -> Unit,
+        use: (StandardIntegrityTokenProvider) -> Unit,
+    ) {
+        val cached = integrityProvider
+        if (cached != null && integrityProviderProject == project) {
+            use(cached)
+            return
+        }
+        IntegrityManagerFactory.createStandard(applicationContext)
+            .prepareIntegrityToken(
+                PrepareIntegrityTokenRequest.builder().setCloudProjectNumber(project).build(),
+            )
+            .addOnSuccessListener { provider ->
+                integrityProvider = provider
+                integrityProviderProject = project
+                use(provider)
+            }
+            .addOnFailureListener { onError(it) }
+    }
+
+    // The numeric StandardIntegrityErrorCode crosses as the error code string;
+    // the Dart side decides which ones are permanent.
+    private fun reportIntegrityError(e: Exception, result: MethodChannel.Result) {
+        val code = (e as? StandardIntegrityException)?.errorCode?.toString() ?: "unknown"
+        result.error(code, e.message, null)
     }
 
     override fun onDestroy() {
