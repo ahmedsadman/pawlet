@@ -123,6 +123,11 @@ class ProcessingService {
   /// concurrent background pass is wasteful, not incorrect.
   void pause() => _paused = true;
 
+  /// Whether [pause] is in force. The UI holds the LLM mode switch while it
+  /// is, for the same reason as [isRunning]: the bulk import is using this
+  /// service, and a switch would dispose it.
+  bool get isPaused => _paused;
+
   void resume() => _paused = false;
 
   /// Processes every due record. Safe to call concurrently within one isolate
