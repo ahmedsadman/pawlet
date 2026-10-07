@@ -88,8 +88,20 @@ class AttestationService {
   /// A usable session token, minting one when none is cached or it has
   /// expired. [forceRefresh] is for a 401: the server stopped honouring a
   /// token that still looks valid here.
+  ///
+  /// A forced refresh forgets the cached session before minting. In a
+  /// background isolate the mint fails (no Play Integrity channel); without
+  /// this the dead token would stay cached and every later background attempt
+  /// would re-send it and get 401 again. Deleted, the next attempt and the
+  /// UI's [warmUp] both see "no session", and the UI mints a fresh one.
   Future<String> token({bool forceRefresh = false}) async {
-    if (!forceRefresh) {
+    if (forceRefresh) {
+      try {
+        await _store.deleteSession();
+      } catch (_) {
+        // Best effort: the mint below overwrites it on success anyway.
+      }
+    } else {
       final cached = await _store.readSession();
       if (cached != null &&
           cached.expiresAt.subtract(expirySkew).isAfter(_now())) {
