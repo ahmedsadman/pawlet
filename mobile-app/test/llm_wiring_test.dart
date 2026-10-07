@@ -114,4 +114,15 @@ void main() {
     // be read back directly.
     expect(prefs.getBool('attestation_ineligible'), isTrue);
   });
+
+  test('sync pulls in a flag another code path wrote to prefs', () async {
+    final c = await _container(fromPlay: true);
+    expect(c.read(attestationIneligibleProvider), isFalse);
+
+    await c.read(settingsRepositoryProvider).setAttestationIneligible(true);
+    expect(c.read(attestationIneligibleProvider), isFalse);
+
+    c.read(attestationIneligibleProvider.notifier).sync();
+    expect(c.read(attestationIneligibleProvider), isTrue);
+  });
 }
