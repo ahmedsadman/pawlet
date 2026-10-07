@@ -256,6 +256,26 @@ void main() {
     expect(requests, isEmpty);
   });
 
+  test('an attestation cooldown is passed on as a retry hint', () async {
+    attestation.error = const AttestationException(
+      'down',
+      ineligible: false,
+      retryAfter: Duration(minutes: 2),
+    );
+    await expectLater(
+      run(proxy([])),
+      throwsA(
+        isA<LlmException>()
+            .having((e) => e.retryable, 'retryable', isTrue)
+            .having(
+              (e) => e.retryAfter,
+              'retryAfter',
+              const Duration(minutes: 2),
+            ),
+      ),
+    );
+  });
+
   test('other attestation failures do not ask for the foreground', () async {
     attestation.error = const AttestationException('down', ineligible: false);
     await expectLater(

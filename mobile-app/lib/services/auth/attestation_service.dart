@@ -17,21 +17,36 @@ import 'play_integrity.dart';
 ///
 /// [needsForeground] means this isolate has no Play Integrity channel (a
 /// background isolate), so only the foreground app can mint a session.
+///
+/// [retryAfter] is how long this instance will keep re-throwing the failure
+/// (see [AttestationService.failureCooldown]); null when it never will retry.
 class AttestationException implements Exception {
   const AttestationException(
     this.message, {
     required this.ineligible,
     this.needsForeground = false,
+    this.retryAfter,
   });
 
   final String message;
   final bool ineligible;
   final bool needsForeground;
+  final Duration? retryAfter;
+
+  /// Whether this instance holds the failure for its whole life.
+  bool get permanent => ineligible || needsForeground;
+
+  AttestationException _withRetryAfter(Duration d) => AttestationException(
+    message,
+    ineligible: ineligible,
+    needsForeground: needsForeground,
+    retryAfter: d,
+  );
 
   @override
   String toString() =>
       'AttestationException($message, ineligible=$ineligible, '
-      'needsForeground=$needsForeground)';
+      'needsForeground=$needsForeground, retryAfter=$retryAfter)';
 }
 
 /// Binds Google's verdict to one install and one challenge. Must match the
@@ -138,7 +153,11 @@ class AttestationService {
 
   /// Foreground top-up, run at launch, resume and reconnect. Never throws: an
   /// ineligible result has already been reported, and anything else is
-  /// retried on the next real use. Honours a remembered failure like [token].
+  /// retried on the next real use.
+  ///
+  /// Ignores a held transient failure and always tries once: it runs on
+  /// reconnect and resume, exactly when a network failure may have cleared.
+  /// A permanent one is still honoured.
   Future<void> warmUp() async {
     try {
       final cached = await _store.readSession();
@@ -146,7 +165,7 @@ class AttestationService {
           cached.expiresAt.difference(_now()) > refreshMargin) {
         return;
       }
-      await _mintOnce();
+      await _mintOnce(ignoreCooldown: true);
     } catch (_) {
       // See above.
     }
@@ -173,15 +192,22 @@ class AttestationService {
     }
   }
 
-  Future<String> _mintOnce() =>
-      _inflight ??= _mintRemembered().whenComplete(() => _inflight = null);
+  Future<String> _mintOnce({bool ignoreCooldown = false}) =>
+      _inflight ??= _mintRemembered(
+        ignoreCooldown: ignoreCooldown,
+      ).whenComplete(() => _inflight = null);
 
-  Future<String> _mintRemembered() async {
+  /// [_mint], unless a remembered failure is still held. A transient failure,
+  /// fresh or held, carries the rest of its cooldown as
+  /// [AttestationException.retryAfter], so the queue backs a row off past it
+  /// and the row loses at most one attempt per outage.
+  Future<String> _mintRemembered({required bool ignoreCooldown}) async {
     final held = _failure;
     if (held != null) {
-      final forLife = held.ineligible || held.needsForeground;
-      if (forLife || _failedAt!.add(failureCooldown).isAfter(_now())) {
-        throw held;
+      if (held.permanent) throw held;
+      final left = _failedAt!.add(failureCooldown).difference(_now());
+      if (!ignoreCooldown && left > Duration.zero) {
+        throw held._withRetryAfter(left);
       }
     }
     try {
@@ -192,7 +218,8 @@ class AttestationService {
     } on AttestationException catch (e) {
       _failure = e;
       _failedAt = _now();
-      rethrow;
+      if (e.permanent) rethrow;
+      throw e._withRetryAfter(failureCooldown);
     }
   }
 
