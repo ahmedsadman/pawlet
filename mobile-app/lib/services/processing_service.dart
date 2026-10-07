@@ -89,14 +89,19 @@ class ProcessingService {
   static const Duration maxRetryAfter = Duration(hours: 24);
 
   /// A `sending` row untouched for longer than this is treated as orphaned and
-  /// requeued. Kept comfortably above the provider's single-attempt HTTP timeout
-  /// (OpenRouterProvider.timeout, 2 min) so a genuinely slow in-flight call is
+  /// requeued. Kept comfortably above the providers' slow-call bounds
+  /// (OpenRouterProvider.timeout, 2 min; PawletProxyProvider.callBudget,
+  /// 2 min 45 s) so a genuinely slow in-flight call is
   /// never reclaimed mid-flight — which could otherwise cause duplicate
   /// processing across isolates. See the guard in processing_service_test.
   static const Duration staleAfter = Duration(minutes: 3);
 
   bool _running = false;
   bool _paused = false;
+
+  /// Whether a pass is in flight in this isolate. The UI checks it before
+  /// moving the LLM mode, since that rebuilds (and disposes) this service.
+  bool get isRunning => _running;
 
   /// Suspends the drain. The bulk inbox import holds this for the length of its
   /// pass so an LLM round-trip can't compete with the on-device model for the

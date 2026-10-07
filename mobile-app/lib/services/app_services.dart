@@ -87,9 +87,9 @@ class AppServices {
       apiBase: BuildConfig.apiBase,
     );
     // A rejection is written straight to prefs from whichever isolate saw it.
-    // The UI isolate moves its own mode later, outside any processing pass
-    // (refreshLlmNetworkState), because flipping the mode rebuilds this
-    // object.
+    // The UI isolate moves its own mode later via refreshLlmNetworkState, and
+    // only while its ProcessingService is idle, because flipping the mode
+    // rebuilds (and disposes) this object.
     final attestation = mode == LlmMode.proxy
         ? AttestationService(
             apiBase: BuildConfig.apiBase,
@@ -155,6 +155,9 @@ class AppServices {
   static Future<AppServices> bootstrap() async {
     final database = await AppDatabase.open();
     final prefs = await SharedPreferences.getInstance();
+    // The background-SMS isolate reuses its engine, so its cached prefs would
+    // otherwise keep a stale mode/flag for the life of the process.
+    await prefs.reload();
     final apiKey = await SecureStore().readApiKey();
     final settings = SettingsRepository(prefs);
     // Reads the cached install source rather than the channel: MainActivity

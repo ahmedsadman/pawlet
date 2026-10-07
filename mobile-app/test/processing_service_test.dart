@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:decimal/decimal.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/data/banks_repository.dart';
@@ -245,6 +247,22 @@ void main() {
       await db.close();
     },
   );
+
+  test('isRunning is true only while a pass is in flight', () async {
+    await queue('CHK');
+    final gate = Completer<ClassifyResult>();
+    final svc = service(_FnLlm((_) => gate.future));
+    expect(svc.isRunning, isFalse);
+
+    final pass = svc.process();
+    await pumpEventQueue();
+    expect(svc.isRunning, isTrue);
+
+    gate.complete(_expense());
+    await pass;
+    expect(svc.isRunning, isFalse);
+    await db.close();
+  });
 
   test('processes a matching SMS into a transaction', () async {
     final id = await queue('CHK');
