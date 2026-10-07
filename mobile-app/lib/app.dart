@@ -166,9 +166,10 @@ class _RootShellState extends ConsumerState<RootShell>
   /// Session warm-up (proxy) or prompt-bundle refresh (byok), plus picking up
   /// an attestation rejection recorded during a pass.
   ///
-  /// The sync is skipped while a pass is running: it can move the mode, which
-  /// rebuilds AppServices and disposes the services that pass is using. A
-  /// skipped sync is picked up on the next resume or reconnect.
+  /// The sync is skipped while a pass is running, or processing is paused for
+  /// the bulk import: it can move the mode, which rebuilds AppServices and
+  /// disposes the services they are using. A skipped sync is picked up on the
+  /// next resume or reconnect.
   Future<void> _refreshLlmNetwork() {
     // Captured before any await, so they belong to the same AppServices.
     final services = ref.read(appServicesProvider);
@@ -179,7 +180,9 @@ class _RootShellState extends ConsumerState<RootShell>
       attestation: services.attestation,
       promptBundles: services.promptBundles,
       // Checked after the reload, so a pass that starts during it still wins.
-      syncIneligible: () => notifier.sync(skipIf: () => processing.isRunning),
+      syncIneligible: () => notifier.sync(
+        skipIf: () => processing.isRunning || processing.isPaused,
+      ),
     );
   }
 

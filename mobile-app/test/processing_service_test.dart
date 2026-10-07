@@ -1340,11 +1340,14 @@ void main() {
     final svc = service(llm);
     await queue('CHK');
 
+    expect(svc.isPaused, isFalse);
     svc.pause();
+    expect(svc.isPaused, isTrue);
     await svc.process();
     expect(llm.calls, 0);
 
     svc.resume();
+    expect(svc.isPaused, isFalse);
     await svc.process();
     expect(llm.calls, 1);
     await db.close();
