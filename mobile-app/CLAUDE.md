@@ -20,14 +20,16 @@ changes on update — always go through `current`, which is a stable symlink.
 ## Debug build
 
 ```bash
-flutter build apk --debug
+flutter build apk --debug --dart-define-from-file=dart_define.json
 ```
 
 Or run straight onto a connected device:
 
 ```bash
-flutter run --debug
+flutter run --debug --dart-define-from-file=dart_define.json
 ```
+
+The define file points the build at Pawlet's server so BYOK fetches the live prompt bundle. It carries no secret and no Cloud project number, so a debug build never uses the proxy.
 
 Debug builds get `applicationIdSuffix = ".debug"`, i.e. package
 `com.pastabyte.pawlet.debug`, labelled "Pawlet Debug". They install alongside a

@@ -27,6 +27,11 @@ jobs:
     defaults:
       run:
         working-directory: mobile-app
+    env:
+      # Repository secrets, so the values stay out of the repo and the logs.
+      # Like every --dart-define, both still end up in the built app.
+      PAWLET_API_BASE: ${{ secrets.PAWLET_API_BASE }}
+      PLAY_CLOUD_PROJECT_NUMBER: ${{ secrets.PLAY_CLOUD_PROJECT_NUMBER }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -72,13 +77,15 @@ jobs:
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
           echo "tag=v${BASE}+${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
-      # No OpenRouter key is baked in. A key in a client APK is extractable, so
-      # sideload users supply their own through Settings → Privacy.
+      # No OpenRouter key is baked in. Play installs reach the LLM through
+      # Pawlet's server; sideload users supply their own key in Settings.
       - name: Build release APKs
         run: |
           flutter build apk --release --split-per-abi \
             --build-name=${{ steps.version.outputs.base }} \
-            --build-number=${{ github.run_number }}
+            --build-number=${{ github.run_number }} \
+            --dart-define=PAWLET_API_BASE="$PAWLET_API_BASE" \
+            --dart-define=PLAY_CLOUD_PROJECT_NUMBER="$PLAY_CLOUD_PROJECT_NUMBER"
           cd build/app/outputs/flutter-apk
           for abi in arm64-v8a armeabi-v7a x86_64; do
             cp "app-${abi}-release.apk" "Pawlet-${abi}.apk"
@@ -91,9 +98,12 @@ jobs:
         run: |
           flutter build appbundle --release \
             --build-name=${{ steps.version.outputs.base }} \
-            --build-number=${{ github.run_number }}
+            --build-number=${{ github.run_number }} \
+            --dart-define=PAWLET_API_BASE="$PAWLET_API_BASE" \
+            --dart-define=PLAY_CLOUD_PROJECT_NUMBER="$PLAY_CLOUD_PROJECT_NUMBER"
 
       - name: Publish release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
@@ -116,6 +126,7 @@ jobs:
           status: completed
 
       - name: Prune old releases (keep newest 5)
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
