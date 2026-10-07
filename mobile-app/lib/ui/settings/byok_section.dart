@@ -89,10 +89,7 @@ class _ByokSectionState extends ConsumerState<ByokSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 32),
-        const Divider(height: 1),
-        const SizedBox(height: 32),
-        Text('Use LLM to improve accuracy', style: theme.textTheme.titleSmall),
+        Text('Use LLM to improve accuracy', style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
           'The on-device model handles most messages, but you can add a personal '

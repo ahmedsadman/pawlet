@@ -191,6 +191,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               value: ref.watch(authControllerProvider).biometricEnabled,
               onChanged: _setBiometric,
             ),
+          if (mode.showsByokSection) ...[
+            const Divider(height: 32),
+            const ByokSection(),
+          ],
           const Divider(height: 32),
           Text('Privacy', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -209,7 +213,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             trailing: const Icon(Icons.open_in_new, size: 18),
             onTap: _openPrivacyPolicy,
           ),
-          if (mode.showsByokSection) const ByokSection(),
           if (_version != null) ...[
             const Divider(height: 32),
             Center(
