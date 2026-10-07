@@ -138,10 +138,32 @@ void main() {
     expect(attestation.rejected, isTrue);
   });
 
-  test('a 400 is fatal', () async {
+  test('a 400 bad_request is fatal and includes the error code', () async {
     await expectLater(
       run(proxy([http.Response('{"error":"bad_request"}', 400)])),
-      fails(retryable: false),
+      throwsA(
+        isA<LlmException>()
+            .having((e) => e.retryable, 'retryable', isFalse)
+            .having((e) => e.message, 'message', 'HTTP 400 bad_request'),
+      ),
+    );
+  });
+
+  test('a 400 upstream_rejected is retryable', () async {
+    await expectLater(
+      run(proxy([http.Response('{"error":"upstream_rejected"}', 400)])),
+      throwsA(
+        isA<LlmException>()
+            .having((e) => e.retryable, 'retryable', isTrue)
+            .having((e) => e.message, 'message', 'HTTP 400 upstream_rejected'),
+      ),
+    );
+  });
+
+  test('a 408 is retryable', () async {
+    await expectLater(
+      run(proxy([http.Response('', 408)])),
+      fails(retryable: true),
     );
   });
 
@@ -210,4 +232,47 @@ void main() {
       await expectLater(run(proxy([])), fails(retryable: true));
     },
   );
+
+  test('content over 2048 bytes is fatal with no request sent', () async {
+    // 'অ' is 3 bytes in UTF-8
+    final longContent = 'অ' * 700; // 2100 bytes
+    final p = proxy([]);
+    await expectLater(
+      p.classifyAndExtract(
+        content: longContent,
+        sender: 'EBL',
+        currency: 'BDT',
+      ),
+      throwsA(
+        isA<LlmException>()
+            .having((e) => e.retryable, 'retryable', isFalse)
+            .having(
+              (e) => e.message,
+              'message',
+              'message too long for Pawlet\'s service',
+            ),
+      ),
+    );
+    expect(requests, isEmpty);
+  });
+
+  test('budget expiry with a hanging client is retryable', () async {
+    final p = PawletProxyProvider(
+      apiBase: 'https://api.test',
+      attestation: attestation,
+      callBudget: const Duration(milliseconds: 100),
+      client: MockClient((_) async {
+        await Future.delayed(const Duration(seconds: 5));
+        return http.Response(_transaction, 200);
+      }),
+    );
+    await expectLater(
+      run(p),
+      throwsA(
+        isA<LlmException>()
+            .having((e) => e.retryable, 'retryable', isTrue)
+            .having((e) => e.message, 'message', 'request timed out'),
+      ),
+    );
+  });
 }
