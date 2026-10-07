@@ -151,5 +151,46 @@ void main() {
       final s = await store([], prefs: {'prompt_bundle_body': '{not json'});
       expect(s.current().systemPrompt, fusedSystemPrompt);
     });
+
+    test('clock moved back makes it refetch', () async {
+      final s = await store([ok, ok]);
+      await s.refresh();
+      clock = clock.subtract(const Duration(hours: 1));
+      await s.refresh();
+      expect(requests, hasLength(2));
+    });
+
+    test(
+      'a cached-but-unreadable body is fetched without If-None-Match',
+      () async {
+        final s = await store(
+          [ok],
+          prefs: {
+            'prompt_bundle_body': '{not json',
+            'prompt_bundle_etag': '"stale"',
+            'prompt_bundle_fetched_at': clock
+                .subtract(const Duration(hours: 25))
+                .millisecondsSinceEpoch,
+          },
+        );
+        await s.refresh();
+        expect(requests.last.headers.containsKey('If-None-Match'), isFalse);
+        expect(s.current().systemPrompt, 'server prompt');
+      },
+    );
+
+    test('a 200 without an ETag clears the stored one', () async {
+      final s = await store([
+        ok,
+        (_) => http.Response(_bundleJson(system: 'new'), 200),
+      ]);
+      await s.refresh();
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('prompt_bundle_etag'), '"v1"');
+
+      clock = clock.add(const Duration(hours: 25));
+      await s.refresh();
+      expect(prefs.getString('prompt_bundle_etag'), isNull);
+    });
   });
 }

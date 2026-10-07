@@ -128,21 +128,31 @@ class PromptBundleStore {
 
   bool get _fresh {
     final at = _prefs.getInt(_kFetchedAt);
-    return at != null &&
-        _now().difference(DateTime.fromMillisecondsSinceEpoch(at)) < ttl;
+    if (at == null) return false;
+    final age = _now().difference(DateTime.fromMillisecondsSinceEpoch(at));
+    return age >= Duration.zero && age < ttl;
   }
 
   /// Background refresh. A no-op while the cached bundle is under [ttl] old.
   /// Never throws: any failure leaves the cached (or baked) bundle in place.
   Future<void> refresh() async {
-    if (apiBase.isEmpty || _fresh) return;
+    if (apiBase.isEmpty) return;
     try {
+      if (_fresh) return;
       final etag = _prefs.getString(_kEtag);
-      final hasBody = _prefs.getString(_kBody) != null;
+      final body = _prefs.getString(_kBody);
+      var canRevalidate = false;
+      if (etag != null && body != null) {
+        try {
+          canRevalidate = PromptBundle.fromJson(jsonDecode(body)) != null;
+        } catch (_) {
+          // Corrupt cached body: fetch without revalidation.
+        }
+      }
       final resp = await _client
           .get(
             Uri.parse('$apiBase/v1/prompt-bundle'),
-            headers: {if (etag != null && hasBody) 'If-None-Match': etag},
+            headers: {if (canRevalidate) 'If-None-Match': etag!},
           )
           .timeout(fetchTimeout);
 
