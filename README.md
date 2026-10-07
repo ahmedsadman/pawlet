@@ -1,10 +1,7 @@
 # Pawlet
 
 Pawlet is an on-device Android app that turns your bank SMS into a personal-finance
-dashboard — transactions, bills, balances, spending trends. It runs with **no backend**:
-everything happens on the phone. Most messages are read by a bundled on-device model. If you
-add your own OpenRouter API key, messages the on-device model can't confidently handle fall back
-to a large language model (OpenRouter's free models); without a key, they never leave the phone.
+dashboard — transactions, bills, balances, spending trends. Your data lives only on the phone; there is no account and no cloud copy. Most messages are read by a bundled on-device model. Messages the on-device model can't confidently handle fall back to a large language model (OpenRouter's free models): through Pawlet's server for Play Store installs, or directly with your own OpenRouter key otherwise. With neither, they never leave the phone.
 
 > **Note:** Pawlet currently targets **Bangladeshi banks only**, with plans to expand to more regions in the future.
 
@@ -97,11 +94,18 @@ The Flutter app lives in `mobile-app/` — run the commands below from there (`c
 
 The app ships with **no** OpenRouter API key. A key in a client binary is extractable, which is why
 it was removed. LLM parsing is optional and off until the user adds their own OpenRouter key under
-**Settings → Privacy**, where it is validated and stored in the Android keystore. Without one, the
+**Settings → Privacy**, where it is validated and stored in the Android keystore. Play Store installs instead classify through Pawlet's server, which holds the key and accepts only genuine installs verified with Google Play Integrity. Without one, the
 on-device model is the only classifier, and messages it cannot parse are marked failed in Messages,
 where they can be retried later.
 
-**No `--dart-define` values are required to build.**
+**No `--dart-define` values are required to build.** Two optional ones exist:
+
+| Define | Effect |
+|---|---|
+| `PAWLET_API_BASE` | Pawlet's server. Lets a BYOK install fetch the current prompt bundle. |
+| `PLAY_CLOUD_PROJECT_NUMBER` | With `PAWLET_API_BASE`, enables proxy mode for Play installs. Only release builds set it. |
+
+Without them the app uses its built-in prompt and never contacts Pawlet's server.
 
 **Local development** — build and run directly:
 
