@@ -92,11 +92,13 @@ class SecureStore {
   }
 
   Future<void> writeSession(String token, DateTime expiresAt) async {
+    // Token first: a reader caught mid-overwrite pairs the new token with the
+    // old (earlier) expiry, which fails safe, instead of old token + new expiry.
+    await _storage.write(key: _kSessionToken, value: token);
     await _storage.write(
       key: _kSessionExpiresAt,
       value: '${expiresAt.millisecondsSinceEpoch}',
     );
-    await _storage.write(key: _kSessionToken, value: token);
   }
 
   Future<void> deleteSession() async {
