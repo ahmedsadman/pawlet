@@ -1,7 +1,11 @@
 # Pawlet
 
 Pawlet is an on-device Android app that turns your bank SMS into a personal-finance
-dashboard — transactions, bills, balances, spending trends. Your data lives only on the phone; there is no account and no cloud copy. Most messages are read by a bundled on-device model. Messages the on-device model can't confidently handle fall back to a large language model (OpenRouter's free models): through Pawlet's server for Play Store installs, or directly with your own OpenRouter key otherwise. With neither, they never leave the phone.
+dashboard — transactions, bills, balances, spending trends. Your data lives only on the phone;
+there is no account and no cloud copy. Most messages are read by a bundled on-device model.
+Messages it can't confidently handle fall back to a large language model (OpenRouter's free
+models): through Pawlet's server for Play Store installs, or directly with your own OpenRouter key
+otherwise. With neither, they never leave the phone.
 
 > **Note:** Pawlet currently targets **Bangladeshi banks only**, with plans to expand to more regions in the future.
 
@@ -93,10 +97,12 @@ the original app (trends over rolling windows, monthly summaries, balances, spen
 The Flutter app lives in `mobile-app/` — run the commands below from there (`cd mobile-app`).
 
 The app ships with **no** OpenRouter API key. A key in a client binary is extractable, which is why
-it was removed. LLM parsing is optional and off until the user adds their own OpenRouter key under
-**Settings → Privacy**, where it is validated and stored in the Android keystore. Play Store installs instead classify through Pawlet's server, which holds the key and accepts only genuine installs verified with Google Play Integrity. Without one, the
-on-device model is the only classifier, and messages it cannot parse are marked failed in Messages,
-where they can be retried later.
+it was removed. Play Store installs classify through Pawlet's server instead, which holds the key
+and accepts only genuine installs verified with Google Play Integrity. Other installs have LLM
+parsing off until the user adds their own OpenRouter key under **Settings → Privacy**, where it is
+validated and stored in the Android keystore. Without a key, the on-device model is the only
+classifier, and messages it cannot parse are marked failed in Messages, where they can be retried
+later.
 
 **No `--dart-define` values are required to build.** Two optional ones exist:
 
