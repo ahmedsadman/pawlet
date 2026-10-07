@@ -90,4 +90,27 @@ void main() {
       ),
     );
   });
+
+  group('ensureAvailable', () {
+    test('completes when MainActivity serves the channel', () async {
+      final calls = <String>[];
+      respond((call) async {
+        calls.add(call.method);
+        return true;
+      });
+      await integrity().ensureAvailable();
+      expect(calls, ['ping']);
+    });
+
+    test('no handler (a background isolate) is no_activity', () async {
+      await expectLater(
+        integrity().ensureAvailable(),
+        throwsA(
+          isA<IntegrityException>()
+              .having((e) => e.code, 'code', PlayIntegrity.noActivity)
+              .having((e) => e.permanent, 'permanent', false),
+        ),
+      );
+    });
+  });
 }

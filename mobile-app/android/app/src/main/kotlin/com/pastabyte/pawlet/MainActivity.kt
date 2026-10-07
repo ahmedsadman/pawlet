@@ -86,6 +86,9 @@ class MainActivity : FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, integrityChannelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    // Lets Dart tell "no MainActivity" (background isolate)
+                    // apart before it spends a server challenge.
+                    "ping" -> result.success(true)
                     "requestToken" -> {
                         val project = call.argument<String>("cloudProjectNumber")?.toLongOrNull()
                         val hash = call.argument<String>("requestHash")
