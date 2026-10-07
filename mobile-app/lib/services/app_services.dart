@@ -10,6 +10,8 @@ import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
 import '../models/sms_record.dart';
 import '../utils/currency_format.dart';
+import 'auth/attestation_service.dart';
+import 'auth/play_integrity.dart';
 import 'background_worker.dart';
 import 'classification/classifier.dart';
 import 'classification/tflite_local_classifier.dart';
@@ -18,7 +20,10 @@ import 'exchange_rate_service.dart';
 import 'finance/finance_matcher.dart';
 import 'finance/finance_writer.dart';
 import 'llm/llm_mode.dart';
+import 'llm/llm_provider.dart';
 import 'llm/openrouter_provider.dart';
+import 'llm/pawlet_proxy_provider.dart';
+import 'llm/prompt_bundle.dart';
 import 'notification_service.dart';
 import 'processing_service.dart';
 
@@ -34,6 +39,8 @@ class AppServices {
     required this.connectivity,
     required this.notifications,
     required this.llmProvider,
+    required this.attestation,
+    required this.promptBundles,
     required this.localClassifier,
     required this.processingService,
     required this.exchangeRate,
@@ -46,8 +53,16 @@ class AppServices {
   final ConnectivityService connectivity;
   final NotificationService notifications;
 
-  /// Null in [LlmMode.none] — and, for now, in [LlmMode.proxy] too.
-  final OpenRouterProvider? llmProvider;
+  /// Null in [LlmMode.none].
+  final LlmProvider? llmProvider;
+
+  /// Present only in [LlmMode.proxy]. The UI isolate warms it up on launch,
+  /// resume and reconnect (see `refreshLlmNetworkState`).
+  final AttestationService? attestation;
+
+  /// The server's prompt bundle for [LlmMode.byok]. Built in every mode
+  /// because it is free until refreshed, and only the UI refreshes it.
+  final PromptBundleStore promptBundles;
 
   /// Owned on-device model; closed on dispose so its native interpreter is freed
   /// (each isolate builds its own bundle).
@@ -67,13 +82,33 @@ class AppServices {
     final connectivity = ConnectivityService();
     final notifications = NotificationService(prefs: prefs);
 
-    // Proxy mode needs the server-backed provider, which arrives with
-    // attestation; until then a proxy install has no LLM and runs entirely
-    // on-device. Unreachable in practice: `proxy` requires PAWLET_API_BASE,
-    // which no build sets yet.
-    final llmProvider = mode == LlmMode.byok
-        ? OpenRouterProvider(apiKey: apiKey)
+    final promptBundles = PromptBundleStore(
+      prefs: prefs,
+      apiBase: BuildConfig.apiBase,
+    );
+    // A rejection is written straight to prefs from whichever isolate saw it.
+    // The UI isolate moves its own mode later, outside any processing pass
+    // (refreshLlmNetworkState), because flipping the mode rebuilds this
+    // object.
+    final attestation = mode == LlmMode.proxy
+        ? AttestationService(
+            apiBase: BuildConfig.apiBase,
+            store: SecureStore(),
+            integrity: PlayIntegrity(),
+            onIneligible: () => settings.setAttestationIneligible(true),
+          )
         : null;
+    final LlmProvider? llmProvider = switch (mode) {
+      LlmMode.proxy => PawletProxyProvider(
+        apiBase: BuildConfig.apiBase,
+        attestation: attestation!,
+      ),
+      LlmMode.byok => OpenRouterProvider(
+        apiKey: apiKey,
+        bundle: promptBundles.current,
+      ),
+      LlmMode.none => null,
+    };
 
     final matcher = FinanceMatcher(database);
     final localClassifier = TfliteLocalClassifier();
@@ -107,6 +142,8 @@ class AppServices {
       connectivity: connectivity,
       notifications: notifications,
       llmProvider: llmProvider,
+      attestation: attestation,
+      promptBundles: promptBundles,
       localClassifier: localClassifier,
       processingService: processingService,
       exchangeRate: exchangeRate,
@@ -143,7 +180,7 @@ class AppServices {
   /// model's native interpreter. The database is app-wide (owned by the provider
   /// scope) and must NOT be closed here.
   void dispose() {
-    llmProvider?.close();
+    _closeNetwork();
     localClassifier.close();
     exchangeRate.close();
   }
@@ -160,9 +197,22 @@ class AppServices {
   /// until the app is restarted. The shared connection is released when the
   /// process dies.
   Future<void> disposeStandalone() async {
-    llmProvider?.close();
+    _closeNetwork();
     localClassifier.close();
     exchangeRate.close();
+  }
+
+  void _closeNetwork() {
+    switch (llmProvider) {
+      case final OpenRouterProvider p:
+        p.close();
+      case final PawletProxyProvider p:
+        p.close();
+      default:
+        break;
+    }
+    attestation?.close();
+    promptBundles.close();
   }
 
   /// Manual per-message retry: returns one failed message to the queue for a

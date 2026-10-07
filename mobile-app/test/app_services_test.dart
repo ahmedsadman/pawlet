@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/services/app_services.dart';
 import 'package:pawlet/services/llm/llm_mode.dart';
+import 'package:pawlet/services/llm/openrouter_provider.dart';
+import 'package:pawlet/services/llm/pawlet_proxy_provider.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -31,5 +33,37 @@ void main() {
     await services.disposeStandalone();
 
     verifyNever(() => db.close());
+  });
+
+  group('the provider follows the mode', () {
+    Future<AppServices> build(LlmMode mode) async {
+      SharedPreferences.setMockInitialValues({});
+      final services = AppServices.from(
+        database: _MockDb(),
+        prefs: await SharedPreferences.getInstance(),
+        apiKey: 'sk-or-x',
+        mode: mode,
+      );
+      addTearDown(services.disposeStandalone);
+      return services;
+    }
+
+    test('proxy calls the server and can attest', () async {
+      final s = await build(LlmMode.proxy);
+      expect(s.llmProvider, isA<PawletProxyProvider>());
+      expect(s.attestation, isNotNull);
+    });
+
+    test('byok calls OpenRouter and never attests', () async {
+      final s = await build(LlmMode.byok);
+      expect(s.llmProvider, isA<OpenRouterProvider>());
+      expect(s.attestation, isNull);
+    });
+
+    test('none has no provider at all', () async {
+      final s = await build(LlmMode.none);
+      expect(s.llmProvider, isNull);
+      expect(s.attestation, isNull);
+    });
   });
 }
