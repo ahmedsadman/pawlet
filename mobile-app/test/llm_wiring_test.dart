@@ -130,4 +130,17 @@ void main() {
     await c.read(attestationIneligibleProvider.notifier).sync();
     expect(c.read(attestationIneligibleProvider), isTrue);
   });
+
+  test('sync leaves the state alone when skipIf says so', () async {
+    final c = await _container(fromPlay: true);
+    SharedPreferences.setMockInitialValues({
+      'installed_from_play': true,
+      'attestation_ineligible': true,
+    });
+
+    await c
+        .read(attestationIneligibleProvider.notifier)
+        .sync(skipIf: () => true);
+    expect(c.read(attestationIneligibleProvider), isFalse);
+  });
 }
