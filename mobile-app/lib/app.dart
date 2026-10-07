@@ -178,9 +178,8 @@ class _RootShellState extends ConsumerState<RootShell>
       mode: ref.read(llmModeProvider),
       attestation: services.attestation,
       promptBundles: services.promptBundles,
-      syncIneligible: () async {
-        if (!processing.isRunning) await notifier.sync();
-      },
+      // Checked after the reload, so a pass that starts during it still wins.
+      syncIneligible: () => notifier.sync(skipIf: () => processing.isRunning),
     );
   }
 

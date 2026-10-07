@@ -102,8 +102,12 @@ class AttestationIneligible extends Notifier<bool> {
   ///
   /// Reloads first: SharedPreferences caches per isolate, so a write from a
   /// background isolate is invisible here until then.
-  Future<void> sync() async {
+  ///
+  /// [skipIf] is checked after the reload, right before the state moves, so a
+  /// caller can veto the update without a gap across the await.
+  Future<void> sync({bool Function()? skipIf}) async {
     await ref.read(sharedPreferencesProvider).reload();
+    if (skipIf?.call() ?? false) return;
     state = ref.read(settingsRepositoryProvider).attestationIneligible;
   }
 }
