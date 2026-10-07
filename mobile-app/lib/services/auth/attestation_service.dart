@@ -194,7 +194,15 @@ class AttestationService {
 
   /// The server refused this install outright (403 on classify: banned).
   /// Never throws: the caller is already handling a failed request.
+  ///
+  /// Held as an ineligible failure, so the next message does not spend a
+  /// challenge on a session the server will refuse.
   Future<void> reportRejected() async {
+    _failure = const AttestationException(
+      'install rejected by server',
+      ineligible: true,
+    );
+    _failedAt = _now();
     try {
       await _store.deleteSession();
     } catch (_) {
@@ -225,7 +233,12 @@ class AttestationService {
   Future<String> _mintRemembered({required bool ignoreCooldown}) async {
     final held = _failure;
     if (held != null) {
-      if (held.permanent) throw held;
+      if (held.permanent) {
+        // Reported again each time: cheap and idempotent, and it recovers a
+        // first flag write that failed (the flag is best effort).
+        if (held.ineligible) await _flagIneligible();
+        throw held;
+      }
       final left = _failedAt!.add(failureCooldown).difference(_now());
       if (!ignoreCooldown && left > Duration.zero) {
         throw held._withRetryAfter(left);

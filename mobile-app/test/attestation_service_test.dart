@@ -316,7 +316,8 @@ void main() {
       await expectLater(s.token(forceRefresh: true), ineligible(true));
       await s.warmUp();
       expect(server.challenges, 1);
-      expect(flagged, 1);
+      // Re-reported on every re-throw: the first flag write is best effort.
+      expect(flagged, 4);
     });
 
     test('a transient failure is re-thrown until the cooldown ends', () async {
@@ -464,6 +465,16 @@ void main() {
     await s.reportRejected();
     expect(flagged, 1);
     expect(await SecureStore().readSession(), isNull);
+  });
+
+  test('after reportRejected no challenge is spent', () async {
+    final s = service();
+    await s.token();
+    await s.reportRejected();
+    await expectLater(s.token(), ineligible(true));
+    await s.warmUp();
+    expect(server.challenges, 1);
+    expect(flagged, 3);
   });
 
   test('reportRejected survives a keystore that cannot delete', () async {
