@@ -86,7 +86,8 @@ final apiKeyProvider = NotifierProvider<ApiKey, String>(ApiKey.new);
 /// has to move [llmModeProvider] immediately: the whole point of the flag is to
 /// reveal the bring-your-own-key input the moment the proxy turns out to be
 /// unusable, and a user stuck in a broken proxy mode has no other way out.
-/// Nothing calls [set] yet — the writer arrives with attestation.
+/// The attestation service records a rejection straight to prefs; [sync] pulls
+/// that in.
 class AttestationIneligible extends Notifier<bool> {
   @override
   bool build() => ref.watch(settingsRepositoryProvider).attestationIneligible;
@@ -95,6 +96,11 @@ class AttestationIneligible extends Notifier<bool> {
     await ref.read(settingsRepositoryProvider).setAttestationIneligible(value);
     state = value;
   }
+
+  /// Re-reads the flag after another code path wrote it to prefs — the
+  /// attestation service, possibly from inside a processing pass.
+  void sync() =>
+      state = ref.read(settingsRepositoryProvider).attestationIneligible;
 }
 
 final attestationIneligibleProvider =

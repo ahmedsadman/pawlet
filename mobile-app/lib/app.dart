@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'services/connectivity_service.dart';
+import 'services/llm/llm_network_refresh.dart';
 import 'services/permissions.dart';
 import 'state/auth_providers.dart';
 import 'state/providers.dart';
@@ -119,6 +121,8 @@ class _RootShellState extends ConsumerState<RootShell>
   /// Settings → Data still has the action, so nothing is lost by bailing.
   static const _unlockWait = Duration(minutes: 5);
 
+  StreamSubscription<bool>? _reconnects;
+
   List<Widget> get _pages => widget.pages ?? _defaultPages;
 
   @override
@@ -131,6 +135,12 @@ class _RootShellState extends ConsumerState<RootShell>
 
   Future<void> _bootstrap() async {
     if (kDebugMode) _installDebugInjector();
+    // Not awaited: it can take a Play Integrity round trip, and nothing below
+    // should wait on it. The first classify shares the same in-flight mint.
+    unawaited(_refreshLlmNetwork());
+    _reconnects = ConnectivityService().onConnected.listen(
+      (_) => unawaited(_refreshLlmNetwork()),
+    );
     // Notifications need no disclosure; asking here keeps them available even
     // if the user declines SMS.
     await AppPermissions.requestNotifications();
@@ -148,6 +158,18 @@ class _RootShellState extends ConsumerState<RootShell>
     if (granted) ref.read(smsListenerProvider).start();
     await ref.read(processingServiceProvider).process();
     await _offerInboxImport();
+  }
+
+  /// Session warm-up (proxy) or prompt-bundle refresh (byok), plus picking up
+  /// an attestation rejection recorded during a pass.
+  Future<void> _refreshLlmNetwork() {
+    final services = ref.read(appServicesProvider);
+    return refreshLlmNetworkState(
+      mode: ref.read(llmModeProvider),
+      attestation: services.attestation,
+      promptBundles: services.promptBundles,
+      syncIneligible: ref.read(attestationIneligibleProvider.notifier).sync,
+    );
   }
 
   /// One-time offer, on the first unlocked launch, to seed Pawlet from the SMS
@@ -221,6 +243,7 @@ class _RootShellState extends ConsumerState<RootShell>
         // pass commits, which the poller then picks up.
         ref.read(dataRevisionSyncProvider).resume();
         ref.read(dataRevisionProvider.notifier).bump();
+        unawaited(_refreshLlmNetwork());
         // Fire-and-forget: process() swallows its own pass-level errors.
         unawaited(ref.read(processingServiceProvider).process());
       case AppLifecycleState.paused:
@@ -234,6 +257,7 @@ class _RootShellState extends ConsumerState<RootShell>
   @override
   void dispose() {
     if (widget.pages == null) WidgetsBinding.instance.removeObserver(this);
+    _reconnects?.cancel();
     super.dispose();
   }
 
