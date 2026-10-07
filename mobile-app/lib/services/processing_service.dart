@@ -591,6 +591,7 @@ class ProcessingService {
       wake = slotFloor == null ? soonestQueued : max(soonestQueued, slotFloor);
       // A row released for the foreground is due now but cannot run in any
       // background pass, so a due-now wake would just repeat this one.
+      // Applies to every queued row; incoming SMS and resume still run passes.
       if (_awaitingForeground) {
         wake = max(wake, now + foregroundWait.inMilliseconds);
       }

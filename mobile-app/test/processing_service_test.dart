@@ -1287,6 +1287,37 @@ void main() {
       await db.close();
     });
 
+    test('a release does not stop the pass for local rows', () async {
+      const local = 'debit 50 BDT';
+      final waiting = await queue('CHK', content: 'debit 70', timestamp: now);
+      final solved = await queue('CHK', content: local, timestamp: now + 1);
+      final llm = _FakeLlm(error: needsForeground);
+      await service(
+        llm,
+        local: _FnLocal((c) => c == local ? _localExpense(c) : _localUnsure),
+      ).process();
+
+      expect(llm.calls, 1);
+      expect((await row(waiting))['status'], 'queued');
+      final r = await row(solved);
+      expect(r['status'], 'success');
+      expect(r['parse_source'], ParseSource.local.value);
+      await db.close();
+    });
+
+    test('a row the model never judged is not flagged', () async {
+      final id = await queue('CHK');
+      await service(
+        _FakeLlm(error: needsForeground),
+        local: _FakeLocal(null),
+      ).process();
+
+      final r = await row(id);
+      expect(r['status'], 'queued');
+      expect(r['needs_llm'], 0);
+      await db.close();
+    });
+
     test('never fails the row, however many passes it takes', () async {
       final id = await queue(
         'CHK',
