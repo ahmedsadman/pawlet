@@ -177,17 +177,23 @@ void main() {
     expect(await service().token(), 'jwt2');
   });
 
+  /// A session another isolate cached: this instance does not know when it
+  /// was minted.
+  Future<void> cacheForeignSession() =>
+      SecureStore().writeSession('cached', _t0.add(const Duration(hours: 24)));
+
   test('forceRefresh re-mints a session that is still valid', () async {
+    await cacheForeignSession();
     final s = service();
-    await s.token();
-    expect(await s.token(forceRefresh: true), 'jwt2');
+    expect(await s.token(), 'cached');
+    expect(await s.token(forceRefresh: true), 'jwt1');
   });
 
   test(
     'forceRefresh forgets the rejected session even if minting fails',
     () async {
+      await cacheForeignSession();
       final s = service();
-      await s.token();
       integrity.error = const IntegrityException('-3', permanent: false);
       await expectLater(s.token(forceRefresh: true), ineligible(false));
       expect(await SecureStore().readSession(), isNull);
@@ -366,6 +372,37 @@ void main() {
       );
     });
 
+    test(
+      'a fresh session rejected again is not re-minted per message',
+      () async {
+        await cacheForeignSession();
+        final s = service();
+        // Row 1: the cached token gets a 401, so it is refreshed once.
+        expect(await s.token(), 'cached');
+        expect(await s.token(forceRefresh: true), 'jwt1');
+        // Its fresh token gets a 401 too. Row 2 gets the same: another mint
+        // would only repeat it.
+        expect(await s.token(), 'jwt1');
+        await expectLater(
+          s.token(forceRefresh: true),
+          retryAfter(AttestationService.failureCooldown),
+        );
+        expect(await s.token(), 'jwt1');
+        clock = clock.add(const Duration(minutes: 1));
+        await expectLater(
+          s.token(forceRefresh: true),
+          retryAfter(
+            AttestationService.failureCooldown - const Duration(minutes: 1),
+          ),
+        );
+        expect(server.sessions, 1);
+
+        // Past the cooldown the server is given another chance.
+        clock = clock.add(AttestationService.failureCooldown);
+        expect(await s.token(forceRefresh: true), 'jwt2');
+      },
+    );
+
     test('warmUp tries again despite a held transient failure', () async {
       server.sessionStatus = 503;
       final s = service();
@@ -380,8 +417,8 @@ void main() {
     });
 
     test('a cached session is still served while a failure is held', () async {
+      await cacheForeignSession();
       final s = service();
-      await s.token();
       server.sessionStatus = 503;
       await expectLater(s.token(forceRefresh: true), ineligible(false));
       // Another isolate minted meanwhile and cached it in the keystore.

@@ -118,6 +118,10 @@ class AttestationService {
   AttestationException? _failure;
   DateTime? _failedAt;
 
+  /// When this instance last minted a session. Null for a session read from
+  /// the keystore, whose mint time is unknown here.
+  DateTime? _mintedAt;
+
   void close() {
     if (_ownsClient) _client.close();
   }
@@ -134,8 +138,25 @@ class AttestationService {
   ///
   /// A remembered failure (see [failureCooldown]) is re-thrown instead of
   /// minting, forced or not.
+  ///
+  /// A forced refresh within [failureCooldown] of this instance's own mint
+  /// throws a retryable error without network instead: the server is
+  /// rejecting sessions it just issued (e.g. a rotated signing key), and
+  /// minting again for every queued message would only repeat that. The
+  /// session is kept; deleting it would just mean minting for the next row.
   Future<String> token({bool forceRefresh = false}) async {
     if (forceRefresh) {
+      final mintedAt = _mintedAt;
+      if (mintedAt != null) {
+        final left = mintedAt.add(failureCooldown).difference(_now());
+        if (left > Duration.zero) {
+          throw AttestationException(
+            'server rejected a fresh session',
+            ineligible: false,
+            retryAfter: left,
+          );
+        }
+      }
       try {
         await _store.deleteSession();
       } catch (_) {
@@ -214,6 +235,7 @@ class AttestationService {
       final token = await _mint();
       _failure = null;
       _failedAt = null;
+      _mintedAt = _now();
       return token;
     } on AttestationException catch (e) {
       _failure = e;
