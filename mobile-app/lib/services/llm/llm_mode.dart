@@ -25,11 +25,11 @@ enum LlmMode {
 /// receiving permanent 403s with the key input hidden.
 LlmMode resolveLlmMode({
   required bool fromPlay,
-  required bool apiBaseConfigured,
+  required bool proxyConfigured,
   required bool hasKey,
   required bool attestationIneligible,
 }) {
-  if (fromPlay && apiBaseConfigured && !attestationIneligible) {
+  if (fromPlay && proxyConfigured && !attestationIneligible) {
     return LlmMode.proxy;
   }
   return hasKey ? LlmMode.byok : LlmMode.none;

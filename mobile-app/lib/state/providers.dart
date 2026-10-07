@@ -107,7 +107,7 @@ final llmModeProvider = Provider<LlmMode>(
     // Read directly, not through a notifier: this is written once in `main()`
     // before `runApp`, so it cannot change while providers are alive.
     fromPlay: ref.watch(settingsRepositoryProvider).installedFromPlay,
-    apiBaseConfigured: BuildConfig.apiBaseConfigured,
+    proxyConfigured: BuildConfig.proxyConfigured,
     hasKey: ref.watch(apiKeyProvider).isNotEmpty,
     attestationIneligible: ref.watch(attestationIneligibleProvider),
   ),

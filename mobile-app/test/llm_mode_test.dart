@@ -7,7 +7,7 @@ void main() {
       expect(
         resolveLlmMode(
           fromPlay: true,
-          apiBaseConfigured: true,
+          proxyConfigured: true,
           hasKey: false,
           attestationIneligible: false,
         ),
@@ -21,7 +21,7 @@ void main() {
       expect(
         resolveLlmMode(
           fromPlay: true,
-          apiBaseConfigured: true,
+          proxyConfigured: true,
           hasKey: true,
           attestationIneligible: false,
         ),
@@ -33,7 +33,7 @@ void main() {
       expect(
         resolveLlmMode(
           fromPlay: true,
-          apiBaseConfigured: false,
+          proxyConfigured: false,
           hasKey: false,
           attestationIneligible: false,
         ),
@@ -45,7 +45,7 @@ void main() {
       expect(
         resolveLlmMode(
           fromPlay: true,
-          apiBaseConfigured: true,
+          proxyConfigured: true,
           hasKey: true,
           attestationIneligible: true,
         ),
@@ -57,7 +57,7 @@ void main() {
       expect(
         resolveLlmMode(
           fromPlay: true,
-          apiBaseConfigured: true,
+          proxyConfigured: true,
           hasKey: false,
           attestationIneligible: true,
         ),
@@ -69,7 +69,7 @@ void main() {
       expect(
         resolveLlmMode(
           fromPlay: false,
-          apiBaseConfigured: true,
+          proxyConfigured: true,
           hasKey: true,
           attestationIneligible: false,
         ),
@@ -81,7 +81,7 @@ void main() {
       expect(
         resolveLlmMode(
           fromPlay: false,
-          apiBaseConfigured: true,
+          proxyConfigured: true,
           hasKey: false,
           attestationIneligible: false,
         ),
