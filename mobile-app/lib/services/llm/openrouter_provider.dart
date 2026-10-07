@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:decimal/decimal.dart';
 import 'package:http/http.dart' as http;
 
+import 'classify_result_parser.dart';
 import 'llm_provider.dart';
 import 'prompts.dart';
 
@@ -112,33 +112,9 @@ class OpenRouterProvider implements LlmProvider {
     throw LlmException(
       'HTTP $code',
       retryable: retryable,
-      retryAfter: _parseRetryAfter(resp.headers['retry-after']),
-      resetAtEpochMs: _parseResetAt(resp.headers['x-ratelimit-reset']),
+      retryAfter: parseRetryAfter(resp.headers['retry-after']),
+      resetAtEpochMs: parseResetAt(resp.headers['x-ratelimit-reset']),
     );
-  }
-
-  /// Parses a `Retry-After` header. Only the delta-seconds form OpenRouter
-  /// sends is honored: a non-negative integer becomes that many seconds.
-  /// Missing / non-integer / negative / HTTP-date forms return null (an
-  /// HTTP-date would need a clock, which the provider deliberately avoids).
-  Duration? _parseRetryAfter(String? value) {
-    if (value == null) return null;
-    final n = int.tryParse(value.trim());
-    if (n == null || n < 0) return null;
-    return Duration(seconds: n);
-  }
-
-  /// Parses an `X-RateLimit-Reset` header to epoch **milliseconds**. OpenRouter
-  /// sends an absolute epoch-ms timestamp (13-digit; confirmed via captured 429
-  /// responses), so the raw integer is carried as-is — no unit conversion. A
-  /// stray seconds value would land in 1970, becoming a past timestamp that
-  /// ProcessingService floors to backoff; its 24h clamp bounds any bad value.
-  /// Missing / non-integer / negative returns null.
-  int? _parseResetAt(String? value) {
-    if (value == null) return null;
-    final n = int.tryParse(value.trim());
-    if (n == null || n < 0) return null;
-    return n;
   }
 
   ClassifyResult _parse(String raw) {
@@ -154,24 +130,7 @@ class OpenRouterProvider implements LlmProvider {
       throw LlmException('malformed response: $e', retryable: true);
     }
 
-    // `category` is authoritative: the matching block is read and the other is
-    // intentionally ignored (spec/04). Absent/null → neither; any other
-    // unexpected value is malformed and retried rather than silently ignored.
-    final category = obj['category'];
-    if (category == 'transaction') {
-      return ClassifyResult(
-        category: SmsCategory.transaction,
-        transaction: _metadata(obj['transaction']),
-      );
-    }
-    if (category == 'bill') {
-      return ClassifyResult(
-        category: SmsCategory.bill,
-        bill: _bill(obj['bill']),
-      );
-    }
-    if (category == null) return const ClassifyResult.none();
-    throw LlmException('unexpected category: $category', retryable: true);
+    return parseClassifyObject(obj);
   }
 
   /// Free models sometimes ignore `response_format` and wrap the JSON in a
@@ -184,88 +143,5 @@ class OpenRouterProvider implements LlmProvider {
       if (t.endsWith('```')) t = t.substring(0, t.length - 3);
     }
     return t.trim();
-  }
-
-  MetadataResult _metadata(Object? raw) {
-    if (raw is! Map) return const MetadataResult();
-    final balance = _numStr(raw['balance']);
-
-    var amount = _numStr(raw['amount']);
-    var originalAmount = _numStr(raw['original_amount']);
-    var type = _txType(raw['transaction_type']);
-    // amount / original_amount / transaction_type are all-or-nothing.
-    if (amount == null || originalAmount == null || type == null) {
-      amount = null;
-      originalAmount = null;
-      type = null;
-    }
-
-    // original_currency is only meaningful alongside a number (amount/balance).
-    var currency = _currency(raw['original_currency']);
-    if (amount == null && balance == null) currency = null;
-
-    return MetadataResult(
-      balance: balance,
-      amount: amount,
-      originalAmount: originalAmount,
-      transactionType: type,
-      originalCurrency: currency,
-    );
-  }
-
-  BillMetadataResult _bill(Object? raw) {
-    if (raw is! Map) return const BillMetadataResult();
-
-    // normalized_total_due / original_amount / original_currency are
-    // all-or-nothing; the statement period components stay independent.
-    var total = _numStr(raw['normalized_total_due']);
-    var originalAmount = _numStr(raw['original_amount']);
-    var currency = _currency(raw['original_currency']);
-    if (total == null || originalAmount == null || currency == null) {
-      total = null;
-      originalAmount = null;
-      currency = null;
-    }
-
-    return BillMetadataResult(
-      normalizedTotalDue: total,
-      originalAmount: originalAmount,
-      originalCurrency: currency,
-      statementMonth: _month(raw['statement_month']),
-      statementYear: _year(raw['statement_year']),
-    );
-  }
-
-  // ---- validation helpers -------------------------------------------------
-
-  /// Returns a decimal-as-string when [value] parses as a number, else null.
-  String? _numStr(Object? value) {
-    if (value == null) return null;
-    final s = value.toString();
-    return Decimal.tryParse(s) == null ? null : s;
-  }
-
-  String? _currency(Object? value) {
-    if (value is! String) return null;
-    return RegExp(r'^[A-Za-z]{3}$').hasMatch(value)
-        ? value.toUpperCase()
-        : null;
-  }
-
-  String? _txType(Object? value) {
-    if (value is! String) return null;
-    return const {'income', 'expense', 'transfer'}.contains(value)
-        ? value
-        : null;
-  }
-
-  int? _month(Object? value) {
-    final n = value is num ? value.toInt() : int.tryParse('$value');
-    return (n != null && n >= 1 && n <= 12) ? n : null;
-  }
-
-  int? _year(Object? value) {
-    final n = value is num ? value.toInt() : int.tryParse('$value');
-    return (n != null && n >= 2000 && n <= 2100) ? n : null;
   }
 }
