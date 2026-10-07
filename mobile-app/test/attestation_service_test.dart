@@ -16,6 +16,21 @@ class _FakeIntegrity extends PlayIntegrity {
   final hashes = <String>[];
   Object? error;
 
+  /// Nothing serves the channel, as in a background isolate.
+  bool noChannel = false;
+  int probes = 0;
+
+  @override
+  Future<void> ensureAvailable() async {
+    probes++;
+    if (noChannel) {
+      throw const IntegrityException(
+        PlayIntegrity.noActivity,
+        permanent: false,
+      );
+    }
+  }
+
   /// When set, requests wait on it: a Play Services that never answers.
   Completer<String>? hang;
 
@@ -227,8 +242,10 @@ void main() {
     await expectLater(s.token(), ineligible(false));
     expect(flagged, 0);
 
-    // The in-flight mint was released, so the next call can succeed.
+    // The in-flight mint was released, so once the cooldown passes the next
+    // call can succeed.
     integrity.hang = null;
+    clock = clock.add(AttestationService.failureCooldown);
     expect(await s.token(), 'jwt1');
   });
 
@@ -245,6 +262,88 @@ void main() {
       ineligible(true),
     );
     expect(flagged, 1);
+  });
+
+  group('a failed mint is remembered', () {
+    Matcher needsForeground() => throwsA(
+      isA<AttestationException>().having(
+        (e) => e.needsForeground,
+        'needsForeground',
+        true,
+      ),
+    );
+
+    test('no integrity channel fails before spending a challenge', () async {
+      integrity.noChannel = true;
+      await expectLater(service().token(), needsForeground());
+      expect(server.challenges, 0);
+      expect(integrity.hashes, isEmpty);
+      expect(flagged, 0);
+    });
+
+    test('no integrity channel is never retried by this instance', () async {
+      integrity.noChannel = true;
+      final s = service();
+      await expectLater(s.token(), needsForeground());
+      clock = clock.add(const Duration(days: 2));
+      await expectLater(s.token(), needsForeground());
+      await expectLater(s.token(forceRefresh: true), needsForeground());
+      await s.warmUp();
+      expect(integrity.probes, 1);
+      expect(server.challenges, 0);
+    });
+
+    test('a fresh instance tries again', () async {
+      integrity.noChannel = true;
+      await expectLater(service().token(), needsForeground());
+      integrity.noChannel = false;
+      expect(await service().token(), 'jwt1');
+    });
+
+    test('ineligible is never retried by this instance', () async {
+      server.sessionStatus = 403;
+      final s = service();
+      await expectLater(s.token(), ineligible(true));
+      server.sessionStatus = 200;
+      clock = clock.add(const Duration(days: 2));
+      await expectLater(s.token(), ineligible(true));
+      await expectLater(s.token(forceRefresh: true), ineligible(true));
+      await s.warmUp();
+      expect(server.challenges, 1);
+      expect(flagged, 1);
+    });
+
+    test('a transient failure is re-thrown until the cooldown ends', () async {
+      server.sessionStatus = 503;
+      final s = service();
+      await expectLater(s.token(), ineligible(false));
+      server.sessionStatus = 200;
+
+      clock = clock.add(
+        AttestationService.failureCooldown - const Duration(seconds: 1),
+      );
+      await expectLater(s.token(), ineligible(false));
+      await expectLater(s.token(forceRefresh: true), ineligible(false));
+      await s.warmUp();
+      expect(server.challenges, 1);
+
+      clock = clock.add(const Duration(seconds: 1));
+      expect(await s.token(), 'jwt2');
+      expect(server.challenges, 2);
+    });
+
+    test('a cached session is still served while a failure is held', () async {
+      final s = service();
+      await s.token();
+      server.sessionStatus = 503;
+      await expectLater(s.token(forceRefresh: true), ineligible(false));
+      // Another isolate minted meanwhile and cached it in the keystore.
+      await SecureStore().writeSession(
+        'other',
+        _t0.add(const Duration(hours: 24)),
+      );
+      expect(await s.token(), 'other');
+    });
   });
 
   group('warmUp', () {

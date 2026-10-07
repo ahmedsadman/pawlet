@@ -35,6 +35,21 @@ class PlayIntegrity {
   /// (a misconfiguration must not mark every install ineligible).
   static const Set<String> permanentErrorCodes = {'-2', '-6'};
 
+  /// Code for "nothing serves the channel": a background isolate, which has no
+  /// MainActivity. Nothing will serve it for the rest of that isolate's life.
+  static const String noActivity = 'no_activity';
+
+  /// Throws [IntegrityException] [noActivity] when nothing serves the channel.
+  /// One local platform-channel hop, so a caller can learn it before spending
+  /// a server challenge on a token it cannot mint.
+  Future<void> ensureAvailable() async {
+    try {
+      await _channel.invokeMethod<void>('ping');
+    } on MissingPluginException {
+      throw const IntegrityException(noActivity, permanent: false);
+    }
+  }
+
   /// A token bound to [requestHash], which the server recomputes and compares.
   Future<String> requestToken(String requestHash) async {
     final String? token;
@@ -51,7 +66,7 @@ class PlayIntegrity {
     } on MissingPluginException {
       // Background isolates have no MainActivity, so nothing serves the
       // channel. Not the device's fault: the foreground will retry.
-      throw const IntegrityException('no_activity', permanent: false);
+      throw const IntegrityException(noActivity, permanent: false);
     }
     if (token == null || token.isEmpty) {
       throw const IntegrityException('empty_token', permanent: false);

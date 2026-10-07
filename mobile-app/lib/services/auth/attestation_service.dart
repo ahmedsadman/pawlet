@@ -14,14 +14,24 @@ import 'play_integrity.dart';
 /// Attestation did not produce a session. [ineligible] means the server or
 /// Play said this install cannot attest (the caller has already been told via
 /// `onIneligible`); otherwise the failure is worth retrying.
+///
+/// [needsForeground] means this isolate has no Play Integrity channel (a
+/// background isolate), so only the foreground app can mint a session.
 class AttestationException implements Exception {
-  const AttestationException(this.message, {required this.ineligible});
+  const AttestationException(
+    this.message, {
+    required this.ineligible,
+    this.needsForeground = false,
+  });
 
   final String message;
   final bool ineligible;
+  final bool needsForeground;
 
   @override
-  String toString() => 'AttestationException($message, ineligible=$ineligible)';
+  String toString() =>
+      'AttestationException($message, ineligible=$ineligible, '
+      'needsForeground=$needsForeground)';
 }
 
 /// Binds Google's verdict to one install and one challenge. Must match the
@@ -79,7 +89,19 @@ class AttestationService {
   /// in-flight mint stuck forever.
   static const Duration integrityTimeout = Duration(seconds: 60);
 
+  /// How long an ordinary failed mint is re-thrown before a new one is tried.
+  /// Without it every queued message in a pass would draw its own challenge
+  /// and Play Integrity request for the same outage.
+  static const Duration failureCooldown = Duration(minutes: 3);
+
   Future<String>? _inflight;
+
+  /// The last failed mint and when it happened; cleared by a success. An
+  /// ineligible or [AttestationException.needsForeground] failure is held for
+  /// the instance's life: neither changes within it, and instances are rebuilt
+  /// per background run and on every mode flip.
+  AttestationException? _failure;
+  DateTime? _failedAt;
 
   void close() {
     if (_ownsClient) _client.close();
@@ -94,6 +116,9 @@ class AttestationService {
   /// this the dead token would stay cached and every later background attempt
   /// would re-send it and get 401 again. Deleted, the next attempt and the
   /// UI's [warmUp] both see "no session", and the UI mints a fresh one.
+  ///
+  /// A remembered failure (see [failureCooldown]) is re-thrown instead of
+  /// minting, forced or not.
   Future<String> token({bool forceRefresh = false}) async {
     if (forceRefresh) {
       try {
@@ -113,7 +138,7 @@ class AttestationService {
 
   /// Foreground top-up, run at launch, resume and reconnect. Never throws: an
   /// ineligible result has already been reported, and anything else is
-  /// retried on the next real use.
+  /// retried on the next real use. Honours a remembered failure like [token].
   Future<void> warmUp() async {
     try {
       final cached = await _store.readSession();
@@ -149,7 +174,27 @@ class AttestationService {
   }
 
   Future<String> _mintOnce() =>
-      _inflight ??= _mint().whenComplete(() => _inflight = null);
+      _inflight ??= _mintRemembered().whenComplete(() => _inflight = null);
+
+  Future<String> _mintRemembered() async {
+    final held = _failure;
+    if (held != null) {
+      final forLife = held.ineligible || held.needsForeground;
+      if (forLife || _failedAt!.add(failureCooldown).isAfter(_now())) {
+        throw held;
+      }
+    }
+    try {
+      final token = await _mint();
+      _failure = null;
+      _failedAt = null;
+      return token;
+    } on AttestationException catch (e) {
+      _failure = e;
+      _failedAt = _now();
+      rethrow;
+    }
+  }
 
   Future<String> _mint() async {
     final String installId;
@@ -157,6 +202,16 @@ class AttestationService {
       installId = await _store.installId();
     } catch (e) {
       throw AttestationException('keystore unavailable: $e', ineligible: false);
+    }
+
+    // Before the challenge: a background isolate learns it cannot reach Play
+    // Integrity without spending one of the server's rate-limited challenges.
+    try {
+      await _integrity.ensureAvailable();
+    } on IntegrityException catch (e) {
+      throw _integrityFailure(e);
+    } catch (_) {
+      // Not a verdict on the channel; the token request below reports it.
     }
 
     final challenge = await _fetchChallenge();
@@ -179,10 +234,7 @@ class AttestationService {
           ineligible: true,
         );
       }
-      throw AttestationException(
-        'Play Integrity failed (${e.code})',
-        ineligible: false,
-      );
+      throw _integrityFailure(e);
     } catch (e) {
       throw AttestationException('Play Integrity error: $e', ineligible: false);
     }
@@ -237,6 +289,14 @@ class AttestationService {
     }
     return token;
   }
+
+  /// A non-permanent Play Integrity failure, marking the no-channel case.
+  AttestationException _integrityFailure(IntegrityException e) =>
+      AttestationException(
+        'Play Integrity failed (${e.code})',
+        ineligible: false,
+        needsForeground: e.code == PlayIntegrity.noActivity,
+      );
 
   Future<String> _fetchChallenge() async {
     final resp = await _send(
