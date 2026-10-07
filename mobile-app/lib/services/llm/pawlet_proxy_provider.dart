@@ -22,19 +22,31 @@ class PawletProxyProvider implements LlmProvider {
     required this.apiBase,
     required AttestationService attestation,
     http.Client? client,
+    Duration callBudget = callBudget,
   }) : _attestation = attestation,
        _client = client ?? http.Client(),
-       _ownsClient = client == null;
+       _ownsClient = client == null,
+       _callBudget = callBudget;
 
   final String apiBase;
   final AttestationService _attestation;
   final http.Client _client;
   final bool _ownsClient;
+  final Duration _callBudget;
 
   /// The server's own OpenRouter call is capped at two minutes; the margin
   /// covers the hop to the server. Must stay below
   /// ProcessingService.staleAfter so a slow call is never reclaimed.
   static const Duration timeout = Duration(minutes: 2, seconds: 15);
+
+  /// Whole classify flow must complete before this. Must stay below
+  /// ProcessingService.staleAfter (3 min) so a slow call cannot be reclaimed
+  /// and charged twice from another isolate.
+  static const Duration callBudget = Duration(minutes: 2, seconds: 45);
+
+  /// Server limit on content length in bytes. See
+  /// `server/internal/httpapi/classify.go`.
+  static const int maxContentBytes = 2048;
 
   void close() {
     if (_ownsClient) _client.close();
@@ -46,23 +58,44 @@ class PawletProxyProvider implements LlmProvider {
     required String sender,
     required String currency,
   }) async {
-    final body = jsonEncode({
-      'sender': sender,
-      'content': content,
-      'currency': currency,
-    });
-
-    var resp = await _post(body, await _token());
-    if (resp.statusCode == 401) {
-      resp = await _post(body, await _token(forceRefresh: true));
-      if (resp.statusCode == 401) {
-        throw const LlmException(
-          'session rejected after refresh',
-          retryable: false,
-        );
-      }
+    if (utf8.encode(content).length > maxContentBytes) {
+      throw const LlmException(
+        'message too long for Pawlet\'s service',
+        retryable: false,
+      );
     }
-    return _handle(resp);
+
+    try {
+      return await _classifyWithBudget(content, sender, currency);
+    } on TimeoutException {
+      throw const LlmException('request timed out', retryable: true);
+    }
+  }
+
+  Future<ClassifyResult> _classifyWithBudget(
+    String content,
+    String sender,
+    String currency,
+  ) async {
+    return Future(() async {
+      final body = jsonEncode({
+        'sender': sender,
+        'content': content,
+        'currency': currency,
+      });
+
+      var resp = await _post(body, await _token());
+      if (resp.statusCode == 401) {
+        resp = await _post(body, await _token(forceRefresh: true));
+        if (resp.statusCode == 401) {
+          throw const LlmException(
+            'session rejected after refresh',
+            retryable: false,
+          );
+        }
+      }
+      return _handle(resp);
+    }).timeout(_callBudget);
   }
 
   Future<String> _token({bool forceRefresh = false}) async {
@@ -95,6 +128,15 @@ class PawletProxyProvider implements LlmProvider {
     }
   }
 
+  String? _parseErrorCode(http.Response resp) {
+    try {
+      final obj = jsonDecode(resp.body) as Map<String, dynamic>;
+      return obj['error'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<ClassifyResult> _handle(http.Response resp) async {
     final code = resp.statusCode;
     if (code == 200) {
@@ -110,9 +152,21 @@ class PawletProxyProvider implements LlmProvider {
       await _attestation.reportRejected();
       throw const LlmException('install rejected by server', retryable: false);
     }
-    final retryable = code == 429 || code == 408 || code >= 500;
+
+    final errorCode = _parseErrorCode(resp);
+    final message = errorCode != null ? 'HTTP $code $errorCode' : 'HTTP $code';
+
+    // upstream_rejected means the server's own OpenRouter key/credits are
+    // failing — must not permanently fail every queued message;
+    // ProcessingService's retry budget bounds it. Other 400s (bad_request,
+    // malformed inputs) are the client's fault and stay fatal.
+    var retryable = code == 429 || code == 408 || code >= 500;
+    if (code == 400 && errorCode == 'upstream_rejected') {
+      retryable = true;
+    }
+
     throw LlmException(
-      'HTTP $code',
+      message,
       retryable: retryable,
       retryAfter: parseRetryAfter(resp.headers['retry-after']),
       resetAtEpochMs: parseResetAt(resp.headers['x-ratelimit-reset']),
