@@ -13,13 +13,54 @@ Defined in `lib/services/llm/llm_mode.dart` and resolved by `resolveLlmMode()`:
 The four inputs:
 
 1. **`fromPlay`** — Whether the Play Store installed this app. Read from the platform over a channel served by `MainActivity` (`lib/services/install_source.dart`), compared against the known Play package name.
-2. **`apiBaseConfigured`** — Whether the build points at Pawlet's server via the `PAWLET_API_BASE` environment variable. No current build sets this.
+2. **`proxyConfigured`** — Whether the build sets both `PAWLET_API_BASE` and `PLAY_CLOUD_PROJECT_NUMBER` (`lib/config/build_config.dart`). Release builds set both; debug builds set only the API base (for the prompt bundle).
 3. **`hasKey`** — Whether the user has saved an OpenRouter key in Settings. Older builds copied their baked-in key into the same keystore slot on every launch; `lib/data/secure_store.dart` tells the two apart and discards the old one on first read, so upgrading never lands an install in `byok` on Pawlet's former shared key.
-4. **`attestationIneligible`** — Whether Pawlet's server has rejected this device's Play Integrity verdict (rooted device, custom ROM, or absent Play Services). Nothing writes this flag yet; the writer arrives with the attestation stage.
+4. **`attestationIneligible`** — Whether Pawlet's server or Play itself has rejected this device. Set when the server answers 403 at `/v1/session` or `/v1/classify`, or when Play Integrity reports that Play Store or Play Services is missing (`lib/services/auth/attestation_service.dart`, `lib/services/auth/play_integrity.dart`). Cleared on app update or after 7 days (`SettingsRepository.expireAttestationIneligible`).
 
-Resolution logic: if all of `fromPlay`, `apiBaseConfigured`, and not `attestationIneligible` hold, the mode is `proxy`. Otherwise, `byok` if a key exists, else `none`.
+Resolution logic: if all of `fromPlay`, `proxyConfigured`, and not `attestationIneligible` hold, the mode is `proxy`. Otherwise, `byok` if a key exists, else `none`.
 
-**Current reachability:** The `proxy` mode is defined but never reached. No build sets `PAWLET_API_BASE`, so every install today resolves to either `byok` or `none`. The code and the UI exist so the mode is ready when the server stage lands; a reader finding what looks like dead `proxy` paths should know they are deliberately staged.
+**Current reachability:** `proxy` is live for Play installs of release builds. Debug and sideloaded builds never reach it because they are not from Play or do not set both environment variables.
+
+## Proxy mode
+
+The session is minted in the UI isolate and cached in the keystore for 24 hours, so background isolates reuse it. The full attestation flow (`lib/services/auth/attestation_service.dart`):
+
+1. Fetch a challenge from `/v1/challenge`
+2. Ask Play Integrity for a token bound to `sha256(installId:challenge)`
+3. Exchange the token at `/v1/session` for a JWT
+
+Background isolates cannot mint, because the Play Integrity channel lives in `MainActivity`. A missing or expired session there is a retryable failure, and the message stays queued. The UI renews the session when under 2 hours remain, at launch, on resume and on reconnect (`lib/services/llm/llm_network_refresh.dart`).
+
+When calling `/v1/classify`, the proxy provider (`lib/services/llm/pawlet_proxy_provider.dart`) maps server responses:
+
+| Server status | Retryable | Notes |
+|---|---|---|
+| 200 | — | Success: the result is already normalised. |
+| 400 `bad_request` | No | Malformed input: the client is broken. |
+| 400 `upstream_rejected` | Yes | Server's OpenRouter key/credits failing: not the message's fault. |
+| 401 | Once | Session invalid: delete it, mint a fresh one, retry once. |
+| 403 | No | Install banned: set the ineligible flag, move to `byok`/`none`. |
+| 408, 429, 5xx | Yes | Rate limit, timeout or server/upstream unavailable. |
+
+A 403 records the ineligible flag, and the UI moves to `byok`/`none` on its next launch, resume or reconnect, never mid-pass.
+
+## Prompt bundle
+
+`byok` builds that set `PAWLET_API_BASE` fetch the prompt, models and schema from the server (`lib/services/llm/prompt_bundle.dart`). The bundle is cached for 24 hours and revalidated with an ETag. The fetch never blocks a classify: `current()` is synchronous and always answers, serving the cached or baked-in bundle. Without the define, or with an unreadable bundle (unrecognised schema version, corrupt body), the built-in prompt is used. `none` never fetches.
+
+## Snapshot of timeouts and lifetimes
+
+Values as of the last update of this page. Verify against the source before relying on them.
+
+| Setting | Value | Source |
+|---|---|---|
+| Session lifetime | 24 hours | Server (`cmd/pawletd/main.go`) |
+| Early session renewal margin | 2 hours | `lib/services/auth/attestation_service.dart` |
+| Prompt bundle TTL | 24 hours | `lib/services/llm/prompt_bundle.dart` |
+| Ineligible retry | 7 days | `lib/data/settings_repository.dart` |
+| Proxy classify timeout (per request) | 2 min 15 s | `lib/services/llm/pawlet_proxy_provider.dart` |
+| Proxy classify budget (whole flow) | 2 min 45 s | `lib/services/llm/pawlet_proxy_provider.dart` |
+| Play Integrity timeout | 60 s | `lib/services/auth/attestation_service.dart` |
 
 ## Install source is a UI affordance, not a security boundary
 
