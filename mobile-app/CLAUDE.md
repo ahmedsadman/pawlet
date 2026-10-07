@@ -20,13 +20,13 @@ changes on update — always go through `current`, which is a stable symlink.
 ## Debug build
 
 ```bash
-flutter build apk --debug --dart-define-from-file=dart_define.json
+flutter build apk --debug
 ```
 
 Or run straight onto a connected device:
 
 ```bash
-flutter run --debug --dart-define-from-file=dart_define.json
+flutter run --debug
 ```
 
 Debug builds get `applicationIdSuffix = ".debug"`, i.e. package
