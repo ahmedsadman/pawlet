@@ -28,7 +28,8 @@ class MainActivity : FlutterFragmentActivity() {
     private var debugChannel: MethodChannel? = null
 
     // Preparing a provider warms Play's verdict cache and costs a round trip,
-    // so one is kept per project and dropped whenever a request fails.
+    // so a single cached provider is kept and replaced when the project changes
+    // or a request fails.
     private var integrityProvider: StandardIntegrityTokenProvider? = null
     private var integrityProviderProject: Long? = null
 
@@ -127,14 +128,23 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun requestIntegrityToken(project: Long, hash: String, result: MethodChannel.Result) {
         withIntegrityProvider(project, onError = { reportIntegrityError(it, result) }) { provider ->
-            provider.request(StandardIntegrityTokenRequest.builder().setRequestHash(hash).build())
-                .addOnSuccessListener { result.success(it.token()) }
-                .addOnFailureListener {
-                    // A provider can go stale (INTEGRITY_TOKEN_PROVIDER_INVALID);
-                    // the next call prepares a fresh one.
-                    integrityProvider = null
-                    reportIntegrityError(it, result)
-                }
+            try {
+                provider.request(StandardIntegrityTokenRequest.builder().setRequestHash(hash).build())
+                    .addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            result.success(task.result.token())
+                        } else if (task.isCanceled) {
+                            result.error("cancelled", "Integrity request was cancelled", null)
+                        } else {
+                            // A provider can go stale (INTEGRITY_TOKEN_PROVIDER_INVALID);
+                            // the next call prepares a fresh one.
+                            integrityProvider = null
+                            reportIntegrityError(task.exception ?: Exception("Unknown error"), result)
+                        }
+                    }
+            } catch (e: Exception) {
+                reportIntegrityError(e, result)
+            }
         }
     }
 
@@ -145,19 +155,37 @@ class MainActivity : FlutterFragmentActivity() {
     ) {
         val cached = integrityProvider
         if (cached != null && integrityProviderProject == project) {
-            use(cached)
+            try {
+                use(cached)
+            } catch (e: Exception) {
+                onError(e)
+            }
             return
         }
-        IntegrityManagerFactory.createStandard(applicationContext)
-            .prepareIntegrityToken(
-                PrepareIntegrityTokenRequest.builder().setCloudProjectNumber(project).build(),
-            )
-            .addOnSuccessListener { provider ->
-                integrityProvider = provider
-                integrityProviderProject = project
-                use(provider)
-            }
-            .addOnFailureListener { onError(it) }
+        try {
+            IntegrityManagerFactory.createStandard(applicationContext)
+                .prepareIntegrityToken(
+                    PrepareIntegrityTokenRequest.builder().setCloudProjectNumber(project).build(),
+                )
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        val provider = task.result
+                        integrityProvider = provider
+                        integrityProviderProject = project
+                        try {
+                            use(provider)
+                        } catch (e: Exception) {
+                            onError(e)
+                        }
+                    } else if (task.isCanceled) {
+                        onError(Exception("Prepare cancelled"))
+                    } else {
+                        onError(task.exception ?: Exception("Unknown prepare error"))
+                    }
+                }
+        } catch (e: Exception) {
+            onError(e)
+        }
     }
 
     // The numeric StandardIntegrityErrorCode crosses as the error code string;

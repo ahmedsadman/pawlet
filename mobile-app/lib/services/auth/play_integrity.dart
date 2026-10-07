@@ -28,10 +28,12 @@ class PlayIntegrity {
   final String cloudProjectNumber;
 
   /// `StandardIntegrityErrorCode` values meaning the device can never mint a
-  /// token: API_NOT_AVAILABLE (-1), PLAY_STORE_NOT_FOUND (-2),
-  /// PLAY_SERVICES_NOT_FOUND (-6). Network errors, throttling, and outdated
-  /// Play components the user can update are all retried instead.
-  static const Set<String> permanentErrorCodes = {'-1', '-2', '-6'};
+  /// token: PLAY_STORE_NOT_FOUND (-2), PLAY_SERVICES_NOT_FOUND (-6). Network
+  /// errors, throttling, and outdated Play components the user can update are
+  /// retried. API_NOT_AVAILABLE (-1) is also transient because it can mean the
+  /// API is not enabled in the Cloud/Play Console or the Play Store is too old
+  /// (a misconfiguration must not mark every install ineligible).
+  static const Set<String> permanentErrorCodes = {'-2', '-6'};
 
   /// A token bound to [requestHash], which the server recomputes and compares.
   Future<String> requestToken(String requestHash) async {
