@@ -14,7 +14,7 @@ The four inputs:
 
 1. **`fromPlay`** — Whether the Play Store installed this app. Read from the platform over a channel served by `MainActivity` (`lib/services/install_source.dart`), compared against the known Play package name.
 2. **`apiBaseConfigured`** — Whether the build points at Pawlet's server via the `PAWLET_API_BASE` environment variable. No current build sets this.
-3. **`hasKey`** — Whether an OpenRouter key is stored in the keystore.
+3. **`hasKey`** — Whether the user has saved an OpenRouter key in Settings. Older builds copied their baked-in key into the same keystore slot on every launch; `lib/data/secure_store.dart` tells the two apart and discards the old one on first read, so upgrading never lands an install in `byok` on Pawlet's former shared key.
 4. **`attestationIneligible`** — Whether Pawlet's server has rejected this device's Play Integrity verdict (rooted device, custom ROM, or absent Play Services). Nothing writes this flag yet; the writer arrives with the attestation stage.
 
 Resolution logic: if all of `fromPlay`, `apiBaseConfigured`, and not `attestationIneligible` hold, the mode is `proxy`. Otherwise, `byok` if a key exists, else `none`.
