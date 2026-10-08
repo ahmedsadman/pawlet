@@ -20,6 +20,7 @@ class SettingsRepository {
   static const _kAttestationIneligible = 'attestation_ineligible';
   static const _kAttestationIneligibleSince = 'attestation_ineligible_since';
   static const _kLastSeenBuild = 'last_seen_build';
+  static const _kUpdatePromptSnoozedUntil = 'update_prompt_snoozed_until';
 
   /// OpenRouter models tried in order (static ordered fallback in one request).
   /// All are structured-outputs-capable, so `response_format: json_schema` is
@@ -85,6 +86,19 @@ class SettingsRepository {
   bool get installedFromPlay => _prefs.getBool(_kInstalledFromPlay) ?? false;
   Future<void> setInstalledFromPlay(bool value) =>
       _prefs.setBool(_kInstalledFromPlay, value);
+
+  /// Until when the automatic in-app update prompt stays quiet after the user
+  /// says "Not now". Settings → Check for updates ignores it.
+  ///
+  /// Install-scoped (it is about this install's Play state), so outside
+  /// Backup & Restore.
+  DateTime? get updatePromptSnoozedUntil {
+    final ms = _prefs.getInt(_kUpdatePromptSnoozedUntil);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> setUpdatePromptSnoozedUntil(DateTime until) =>
+      _prefs.setInt(_kUpdatePromptSnoozedUntil, until.millisecondsSinceEpoch);
 
   /// Set once Pawlet's server (or Play itself) rejects this install's
   /// attestation, which means the proxy will not work on this device. Reveals
