@@ -11,6 +11,7 @@ import 'services/permissions.dart';
 import 'state/auth_providers.dart';
 import 'state/providers.dart';
 import 'theme/catppuccin_theme.dart';
+import 'ui/app_update_flow.dart';
 import 'ui/bulk_import_flow.dart';
 import 'ui/finance_page.dart';
 import 'ui/messages_page.dart';
@@ -123,6 +124,10 @@ class _RootShellState extends ConsumerState<RootShell>
 
   StreamSubscription<bool>? _reconnects;
 
+  /// Set once the first-launch flow finishes, so a resume during it (closing
+  /// the SMS permission dialog fires one) can't slide the update sheet over it.
+  bool _bootstrapped = false;
+
   List<Widget> get _pages => widget.pages ?? _defaultPages;
 
   @override
@@ -161,6 +166,9 @@ class _RootShellState extends ConsumerState<RootShell>
     // found the pass running.
     if (mounted) await _refreshLlmNetwork();
     await _offerInboxImport();
+    _bootstrapped = true;
+    // Last, so it never competes with the disclosure or the import offer.
+    await _checkForAppUpdate();
   }
 
   /// Session warm-up (proxy) or prompt-bundle refresh (byok), plus picking up
@@ -207,6 +215,20 @@ class _RootShellState extends ConsumerState<RootShell>
     final accepted = await confirmBulkImport(context);
     if (!accepted || !mounted) return;
     await runBulkImport(context, ref);
+  }
+
+  /// Offers a Play update once the app is unlocked. The lock screen is an
+  /// overlay inside the home route, and a modal sheet is pushed above it, so a
+  /// sheet shown while locked would cover the lock screen.
+  Future<void> _checkForAppUpdate() async {
+    if (!await _awaitUnlocked() || !mounted) return;
+    await runAppUpdateCheck(
+      context,
+      ref,
+      // onResume re-locks asynchronously, so look again right before showing.
+      canPrompt: () =>
+          ref.read(authControllerProvider).status == AuthStatus.unlocked,
+    );
   }
 
   /// Completes true once the app is unlocked, false if it stays locked for
@@ -263,6 +285,9 @@ class _RootShellState extends ConsumerState<RootShell>
           await ref.read(processingServiceProvider).process();
           if (mounted) await _refreshLlmNetwork();
         }());
+        // Play's answer is a local service call, so asking on every resume is
+        // cheap. The snooze and the busy guard keep it from nagging.
+        if (_bootstrapped) unawaited(_checkForAppUpdate());
       case AppLifecycleState.paused:
         // Stop polling while backgrounded — no wake while the user is away.
         ref.read(dataRevisionSyncProvider).pause();
