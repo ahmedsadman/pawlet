@@ -160,18 +160,18 @@
         0
       ]
     ],
-    "class_label": "null",
-    "class_conf": 0.9998,
+    "class_label": "expense",
+    "class_conf": 0.9995,
     "spans": [
       {
         "ent": "AMOUNT",
         "text": "500.00",
-        "conf": 0.6899
+        "conf": 0.9749
       },
       {
         "ent": "BALANCE",
         "text": "1,200.50",
-        "conf": 0.9441
+        "conf": 0.8949
       }
     ]
   },
@@ -292,17 +292,12 @@
       {
         "ent": "AMOUNT",
         "text": "3",
-        "conf": 0.9903
-      },
-      {
-        "ent": "AMOUNT",
-        "text": "8",
-        "conf": 0.901
+        "conf": 0.7261
       },
       {
         "ent": "BALANCE",
-        "text": ",",
-        "conf": 0.9592
+        "text": "8",
+        "conf": 0.8649
       }
     ]
   },
@@ -508,12 +503,12 @@
       {
         "ent": "PERIOD",
         "text": "AUG2026",
-        "conf": 0.9942
+        "conf": 1.0
       },
       {
         "ent": "DUE",
         "text": "4924.35",
-        "conf": 0.9996
+        "conf": 0.9999
       }
     ]
   },
@@ -699,12 +694,12 @@
       {
         "ent": "PERIOD",
         "text": "JUL 2026",
-        "conf": 0.9996
+        "conf": 0.9998
       },
       {
         "ent": "DUE",
         "text": "4111.79",
-        "conf": 0.9989
+        "conf": 0.9999
       }
     ]
   },
@@ -1326,12 +1321,12 @@
       {
         "ent": "PERIOD",
         "text": "Sep'26",
-        "conf": 0.964
+        "conf": 0.9981
       },
       {
         "ent": "DUE",
         "text": "5,900.00",
-        "conf": 0.9858
+        "conf": 0.9911
       }
     ]
   },
@@ -1542,7 +1537,7 @@
       {
         "ent": "AMOUNT",
         "text": "1,25,00,000.00",
-        "conf": 0.9983
+        "conf": 1.0
       }
     ]
   }
