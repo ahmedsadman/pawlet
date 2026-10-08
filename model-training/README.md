@@ -22,8 +22,8 @@ re-evaluation it costs before deciding.
 
 ## Data
 
-`data/sms-dataset-v1.jsonl` — 635 records: expense 171, bill 126, transfer 120,
-null 118, income 100.
+`data/sms-dataset-v1.jsonl` — 685 records: expense 186, bill 126, transfer 120,
+null 118, income 135.
 
 Every row is a real bank SMS format with the values substituted (amounts, card
 numbers, client ids, merchants, dates). The layout is what the model learns, so
