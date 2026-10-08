@@ -5,11 +5,12 @@ import '../services/app_update_service.dart';
 import '../state/providers.dart';
 import 'widgets/sheet_parts.dart';
 
-/// Set while a check, the sheet or a download is under way, so a resume or a
-/// second tap can't stack another sheet on top. A download holds it for its
-/// whole length, which also keeps the prompt away while Play is fetching.
-@visibleForTesting
-bool appUpdateBusy = false;
+/// Per-app guard so a resume or a second tap can't stack another sheet.
+final _flowGuardProvider = Provider<_FlowGuard>((_) => _FlowGuard());
+
+class _FlowGuard {
+  bool busy = false;
+}
 
 /// Asks Play whether there is an update and walks the user through it.
 ///
@@ -26,8 +27,9 @@ Future<void> runAppUpdateCheck(
   bool manual = false,
   bool Function()? canPrompt,
 }) async {
-  if (appUpdateBusy) return;
-  appUpdateBusy = true;
+  final guard = ref.read(_flowGuardProvider);
+  if (guard.busy) return;
+  guard.busy = true;
   try {
     final service = ref.read(appUpdateServiceProvider);
     // Captured up front: the download below can outlive this context.
@@ -46,7 +48,13 @@ Future<void> runAppUpdateCheck(
       case UpdateStatus.available:
         if (!manual && service.isSnoozed) return;
         if (canPrompt != null && !canPrompt()) return;
-        if (!await confirmAppUpdate(context)) {
+        final accepted = await confirmAppUpdate(context);
+        // Release the guard before starting the download. Play may never
+        // resolve the future (download cancelled from Play's notification, app
+        // killed), and while it runs, check() reports inProgress so nothing
+        // re-offers it anyway.
+        guard.busy = false;
+        if (!accepted) {
           await service.snooze();
           return;
         }
@@ -61,9 +69,10 @@ Future<void> runAppUpdateCheck(
               "The update couldn't download. Try again from Settings.",
             );
         }
+        return; // Guard already released above.
     }
   } finally {
-    appUpdateBusy = false;
+    guard.busy = false;
   }
 }
 
