@@ -1,0 +1,61 @@
+import 'package:in_app_update/in_app_update.dart';
+import 'package:pawlet/services/app_update_service.dart';
+
+/// Stands in for Google Play. Tests set [info] / [startResult] (or the error
+/// fields) and read the call counters.
+class FakePlayUpdateApi implements PlayUpdateApi {
+  FakePlayUpdateApi({
+    AppUpdateInfo? info,
+    this.startResult = AppUpdateResult.success,
+  }) : info = info ?? updateInfo();
+
+  AppUpdateInfo info;
+  Object? checkError;
+  AppUpdateResult startResult;
+  Object? startError;
+
+  int checkCalls = 0;
+  int startCalls = 0;
+  int completeCalls = 0;
+
+  @override
+  Future<AppUpdateInfo> checkForUpdate() async {
+    checkCalls++;
+    final error = checkError;
+    if (error != null) throw error;
+    return info;
+  }
+
+  @override
+  Future<AppUpdateResult> startFlexibleUpdate() async {
+    startCalls++;
+    final error = startError;
+    if (error != null) throw error;
+    return startResult;
+  }
+
+  @override
+  Future<void> completeFlexibleUpdate() async => completeCalls++;
+}
+
+/// An [AppUpdateInfo] with only the fields the app reads made adjustable.
+AppUpdateInfo updateInfo({
+  UpdateAvailability availability = UpdateAvailability.updateNotAvailable,
+  InstallStatus installStatus = InstallStatus.unknown,
+  bool flexibleAllowed = true,
+}) => AppUpdateInfo(
+  updateAvailability: availability,
+  immediateUpdateAllowed: false,
+  immediateAllowedPreconditions: null,
+  flexibleUpdateAllowed: flexibleAllowed,
+  flexibleAllowedPreconditions: null,
+  availableVersionCode: 42,
+  installStatus: installStatus,
+  packageName: 'com.pastabyte.pawlet',
+  clientVersionStalenessDays: null,
+  updatePriority: 0,
+);
+
+/// Shorthand for "Play has a new version and allows a flexible update".
+AppUpdateInfo availableUpdate() =>
+    updateInfo(availability: UpdateAvailability.updateAvailable);
