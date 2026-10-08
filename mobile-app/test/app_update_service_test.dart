@@ -1,0 +1,156 @@
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:in_app_update/in_app_update.dart';
+import 'package:pawlet/data/settings_repository.dart';
+import 'package:pawlet/services/app_update_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/play_update_fakes.dart';
+
+void main() {
+  final now = DateTime(2026, 10, 9, 12);
+
+  Future<(AppUpdateService, FakePlayUpdateApi, SettingsRepository)> make({
+    bool fromPlay = true,
+    AppUpdateInfo? info,
+    AppUpdateResult startResult = AppUpdateResult.success,
+  }) async {
+    SharedPreferences.setMockInitialValues({'installed_from_play': fromPlay});
+    final settings = SettingsRepository(await SharedPreferences.getInstance());
+    final api = FakePlayUpdateApi(info: info, startResult: startResult);
+    final service = AppUpdateService(
+      api: api,
+      settings: settings,
+      now: () => now,
+    );
+    return (service, api, settings);
+  }
+
+  group('statusOf', () {
+    test('a finished download wins over availability', () {
+      expect(
+        statusOf(
+          updateInfo(
+            availability: UpdateAvailability.updateAvailable,
+            installStatus: InstallStatus.downloaded,
+          ),
+        ),
+        UpdateStatus.downloaded,
+      );
+    });
+
+    test('a running download reads as in progress', () {
+      for (final s in [
+        InstallStatus.pending,
+        InstallStatus.downloading,
+        InstallStatus.installing,
+      ]) {
+        expect(
+          statusOf(
+            updateInfo(
+              availability: UpdateAvailability.updateAvailable,
+              installStatus: s,
+            ),
+          ),
+          UpdateStatus.inProgress,
+          reason: '$s',
+        );
+      }
+    });
+
+    test('an available update needs Play to allow the flexible flow', () {
+      expect(statusOf(availableUpdate()), UpdateStatus.available);
+      // e.g. not enough free storage for a background download.
+      expect(
+        statusOf(
+          updateInfo(
+            availability: UpdateAvailability.updateAvailable,
+            flexibleAllowed: false,
+          ),
+        ),
+        UpdateStatus.unsupported,
+      );
+    });
+
+    test('the remaining availability values', () {
+      expect(statusOf(updateInfo()), UpdateStatus.upToDate);
+      expect(
+        statusOf(
+          updateInfo(
+            availability: UpdateAvailability.developerTriggeredUpdateInProgress,
+          ),
+        ),
+        UpdateStatus.inProgress,
+      );
+      expect(
+        statusOf(updateInfo(availability: UpdateAvailability.unknown)),
+        UpdateStatus.unsupported,
+      );
+    });
+  });
+
+  group('check', () {
+    test('a non-Play install never asks Play', () async {
+      final (service, api, _) = await make(fromPlay: false);
+      expect(await service.check(), UpdateStatus.unsupported);
+      expect(api.checkCalls, 0);
+    });
+
+    test('maps what Play reports', () async {
+      final (service, _, _) = await make(info: availableUpdate());
+      expect(await service.check(), UpdateStatus.available);
+    });
+
+    test('a Play error reads as unsupported', () async {
+      final (service, api, _) = await make();
+      api.checkError = PlatformException(code: 'ERROR_APP_NOT_OWNED');
+      expect(await service.check(), UpdateStatus.unsupported);
+    });
+  });
+
+  group('snooze', () {
+    test('lasts three days from now', () async {
+      final (service, _, settings) = await make();
+      expect(service.isSnoozed, isFalse);
+
+      await service.snooze();
+
+      expect(
+        settings.updatePromptSnoozedUntil,
+        now.add(const Duration(days: 3)),
+      );
+      expect(service.isSnoozed, isTrue);
+    });
+
+    test('ends once its time has passed', () async {
+      final (service, _, settings) = await make();
+      await settings.setUpdatePromptSnoozedUntil(now);
+      expect(service.isSnoozed, isFalse);
+    });
+  });
+
+  group('start', () {
+    test('maps each plugin result', () async {
+      for (final (result, expected) in [
+        (AppUpdateResult.success, UpdateStartResult.downloaded),
+        (AppUpdateResult.userDeniedUpdate, UpdateStartResult.declined),
+        (AppUpdateResult.inAppUpdateFailed, UpdateStartResult.failed),
+      ]) {
+        final (service, _, _) = await make(startResult: result);
+        expect(await service.start(), expected, reason: '$result');
+      }
+    });
+
+    test('a raw install error reads as failed', () async {
+      final (service, api, _) = await make();
+      api.startError = PlatformException(code: 'Error during installation');
+      expect(await service.start(), UpdateStartResult.failed);
+    });
+  });
+
+  test('restart completes the flexible update', () async {
+    final (service, api, _) = await make();
+    await service.restart();
+    expect(api.completeCalls, 1);
+  });
+}
