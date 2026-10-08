@@ -15,3 +15,5 @@ the code disagree, trust the code.
 - [Backup & Restore](backup-restore.md) — exporting all local data to a JSON file and
   restoring it (replace-all, IDs preserved), including the expected file format, plus
   the one-off import that back-fills records from the messages already on the phone.
+- [App updates](app-updates.md) — how Play installs are offered new versions in-app, the
+  "Not now" snooze, and how to test an update for real.
