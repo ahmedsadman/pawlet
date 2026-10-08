@@ -10,6 +10,7 @@ import '../state/finance_providers.dart';
 import '../state/messages_providers.dart';
 import '../state/providers.dart';
 import 'banks_page.dart';
+import 'widgets/sheet_parts.dart';
 
 /// Offers the inbox import. Resolves true when the user accepts.
 Future<bool> confirmBulkImport(BuildContext context) async {
@@ -128,9 +129,9 @@ class _ImportOfferSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return _SheetBody(
+    return SheetBody(
       children: [
-        const _SheetIcon(Icons.inbox_outlined),
+        const SheetIcon(Icons.inbox_outlined),
         const SizedBox(height: 16),
         Text(
           'Import existing messages',
@@ -148,14 +149,14 @@ class _ImportOfferSheet extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
-        const _NoteRow(
+        const SheetNoteRow(
           icon: Icons.phone_android,
           text:
               'This pass uses only the on-device model. Messages with low '
               'confidence score will be skipped.',
         ),
         const SizedBox(height: 10),
-        const _NoteRow(
+        const SheetNoteRow(
           icon: Icons.credit_card_outlined,
           text:
               'Pawlet does its best to create bank accounts as it goes, '
@@ -165,14 +166,14 @@ class _ImportOfferSheet extends StatelessWidget {
               'again any time.',
         ),
         const SizedBox(height: 10),
-        const _NoteRow(
+        const SheetNoteRow(
           icon: Icons.hourglass_empty,
           text:
               'Keep Pawlet open while it runs; the rest of the app pauses '
               'until it finishes.',
         ),
         const SizedBox(height: 10),
-        const _NoteRow(
+        const SheetNoteRow(
           icon: Icons.settings_outlined,
           text:
               'Find this again under Settings → Data → Import existing '
@@ -292,9 +293,9 @@ class _ImportSummarySheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return _SheetBody(
+    return SheetBody(
       children: [
-        _SheetIcon(
+        SheetIcon(
           result.cancelled ? Icons.pause_circle_outline : Icons.task_alt,
         ),
         const SizedBox(height: 16),
@@ -324,14 +325,14 @@ class _ImportSummarySheet extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 20),
-        const _NoteRow(
+        const SheetNoteRow(
           icon: Icons.memory,
           text:
               'Only the on-device model was used, no LLM. Some messages '
               'might get dropped due to lower confidence.',
         ),
         const SizedBox(height: 10),
-        const _NoteRow(
+        const SheetNoteRow(
           icon: Icons.credit_card_off_outlined,
           text:
               'Credit card linking with non-existent credit accounts was '
@@ -372,9 +373,9 @@ class _ImportErrorSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return _SheetBody(
+    return SheetBody(
       children: [
-        const _SheetIcon(Icons.error_outline),
+        const SheetIcon(Icons.error_outline),
         const SizedBox(height: 16),
         Text(
           "Import couldn't finish",
@@ -398,77 +399,6 @@ class _ImportErrorSheet extends StatelessWidget {
           child: FilledButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Done'),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Shared body for the three sheets: safe-area inset, consistent padding, and
-/// scrollable — the offer sheet already runs close to the height of a short
-/// screen, and a large font scale pushes any of them over.
-class _SheetBody extends StatelessWidget {
-  const _SheetBody({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => SafeArea(
-    child: SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: children,
-        ),
-      ),
-    ),
-  );
-}
-
-class _SheetIcon extends StatelessWidget {
-  const _SheetIcon(this.icon);
-
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Icon(icon, color: scheme.primary),
-    );
-  }
-}
-
-class _NoteRow extends StatelessWidget {
-  const _NoteRow({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: theme.colorScheme.outline),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.outline,
-              height: 1.4,
-            ),
           ),
         ),
       ],
