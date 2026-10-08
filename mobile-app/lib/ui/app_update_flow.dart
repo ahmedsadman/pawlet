@@ -5,11 +5,15 @@ import '../services/app_update_service.dart';
 import '../state/providers.dart';
 import 'widgets/sheet_parts.dart';
 
+/// How long the restart bar shows before auto-hiding.
+const restartBarDuration = Duration(seconds: 10);
+
 /// Per-app guard so a resume or a second tap can't stack another sheet.
 final _flowGuardProvider = Provider<_FlowGuard>((_) => _FlowGuard());
 
 class _FlowGuard {
   bool busy = false;
+  bool restartBarShowing = false;
 }
 
 /// Asks Play whether there is an update and walks the user through it.
@@ -27,13 +31,24 @@ Future<void> runAppUpdateCheck(
   bool manual = false,
   bool Function()? canPrompt,
 }) async {
-  final guard = ref.read(_flowGuardProvider);
-  if (guard.busy) return;
-  guard.busy = true;
-
+  // Read providers before acquiring the guard.
   final service = ref.read(appUpdateServiceProvider);
-  // Captured up front: the download below can outlive this context.
   final messenger = ScaffoldMessenger.of(context);
+  final guard = ref.read(_flowGuardProvider);
+
+  if (guard.busy) return;
+
+  // For automatic checks: if a download is known, show the restart bar
+  // without asking Play; if the last check was recent, skip.
+  if (!manual) {
+    if (service.isDownloaded) {
+      _showRestartSnackBar(guard, messenger, service);
+      return;
+    }
+    if (!service.takeAutomaticCheck()) return;
+  }
+
+  guard.busy = true;
   bool? updateAccepted;
 
   try {
@@ -41,13 +56,13 @@ Future<void> runAppUpdateCheck(
     if (!context.mounted) return;
     switch (status) {
       case UpdateStatus.downloaded:
-        _showRestartSnackBar(messenger, service);
+        _showRestartSnackBar(guard, messenger, service);
       case UpdateStatus.inProgress:
         if (manual) _toast(messenger, 'The update is downloading');
       case UpdateStatus.upToDate:
         if (manual) _toast(messenger, "You're on the latest version");
       case UpdateStatus.unsupported:
-        if (manual) _toast(messenger, "Couldn't reach Google Play");
+        if (manual) _toast(messenger, "Couldn't check for updates right now");
       case UpdateStatus.available:
         if (!manual && service.isSnoozed) return;
         if (canPrompt != null && !canPrompt()) return;
@@ -63,7 +78,7 @@ Future<void> runAppUpdateCheck(
   if (updateAccepted == true) {
     switch (await service.start()) {
       case UpdateStartResult.downloaded:
-        _showRestartSnackBar(messenger, service);
+        _showRestartSnackBar(guard, messenger, service);
       case UpdateStartResult.declined:
         await service.snooze();
       case UpdateStartResult.failed:
@@ -89,44 +104,51 @@ Future<bool> confirmAppUpdate(BuildContext context) async {
   return accepted ?? false;
 }
 
-/// Stays up until acted on: a downloaded update does nothing until the app
-/// restarts into it.
+/// Shows the restart bar. Returns to foreground after a check reminds
+/// the user, and it does not block other snackbars.
 void _showRestartSnackBar(
+  _FlowGuard guard,
   ScaffoldMessengerState messenger,
   AppUpdateService service,
 ) {
+  if (!messenger.mounted) return;
+
+  // Skip if we're already showing a restart bar (avoids queueing duplicates).
+  if (guard.restartBarShowing) return;
+  guard.restartBarShowing = true;
+
   final scheme = Theme.of(messenger.context).colorScheme;
-  messenger
-    // A resume re-checks and lands here again; replace, don't queue.
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: scheme.primaryContainer,
-        duration: const Duration(days: 1),
-        content: Row(
-          children: [
-            Icon(Icons.download_done_rounded, color: scheme.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Update downloaded',
-                style: TextStyle(color: scheme.onPrimaryContainer),
-              ),
+  final controller = messenger.showSnackBar(
+    SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: scheme.primaryContainer,
+      duration: restartBarDuration,
+      content: Row(
+        children: [
+          Icon(Icons.download_done_rounded, color: scheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Update downloaded',
+              style: TextStyle(color: scheme.onPrimaryContainer),
             ),
-          ],
-        ),
-        action: SnackBarAction(
-          label: 'Restart',
-          textColor: scheme.primary,
-          onPressed: service.restart,
-        ),
+          ),
+        ],
       ),
-    );
+      action: SnackBarAction(
+        label: 'Restart',
+        textColor: scheme.primary,
+        onPressed: service.restart,
+      ),
+    ),
+  );
+  controller.closed.then((_) => guard.restartBarShowing = false);
 }
 
-void _toast(ScaffoldMessengerState messenger, String message) =>
-    messenger.showSnackBar(SnackBar(content: Text(message)));
+void _toast(ScaffoldMessengerState messenger, String message) {
+  if (!messenger.mounted) return;
+  messenger.showSnackBar(SnackBar(content: Text(message)));
+}
 
 class _UpdateOfferSheet extends StatelessWidget {
   const _UpdateOfferSheet();
@@ -170,6 +192,11 @@ class _UpdateOfferSheet extends StatelessWidget {
           text:
               'Your records stay on your phone. Updating does not touch '
               'them.',
+        ),
+        const SizedBox(height: 10),
+        const SheetNoteRow(
+          icon: Icons.settings_outlined,
+          text: 'Check again any time under Settings → Check for updates.',
         ),
         const SizedBox(height: 24),
         SizedBox(

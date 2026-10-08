@@ -57,21 +57,47 @@ class AppUpdateService {
   /// How long "Not now" keeps the automatic prompt quiet.
   static const snoozeFor = Duration(days: 3);
 
+  /// Minimum time between automatic Play queries. The plugin registers
+  /// another lifecycle callback and AppUpdateManager on each check, so
+  /// repeated queries grow work over a session.
+  static const automaticCheckEvery = Duration(hours: 1);
+
   final PlayUpdateApi _api;
   final SettingsRepository _settings;
   final DateTime Function() _now;
+
+  DateTime? _lastAutomaticCheck;
+  bool _isDownloaded = false;
 
   Future<UpdateStatus> check() async {
     // Play rejects requests from installs it did not deliver (sideloads,
     // debug builds), so don't ask.
     if (!_settings.installedFromPlay) return UpdateStatus.unsupported;
     try {
-      return statusOf(await _api.checkForUpdate());
+      final status = statusOf(await _api.checkForUpdate());
+      if (status == UpdateStatus.downloaded) _isDownloaded = true;
+      return status;
     } catch (_) {
       // Play Services missing, offline, or the Play Store app too old.
       return UpdateStatus.unsupported;
     }
   }
+
+  /// Returns true if it's time for an automatic Play query, and records it
+  /// happened. A resume right after accepting Play's dialog should skip the
+  /// re-check.
+  bool takeAutomaticCheck() {
+    final last = _lastAutomaticCheck;
+    final now = _now();
+    if (last == null || now.difference(last) >= automaticCheckEvery) {
+      _lastAutomaticCheck = now;
+      return true;
+    }
+    return false;
+  }
+
+  /// True when a download is known to be ready (from [check] or [start]).
+  bool get isDownloaded => _isDownloaded;
 
   bool get isSnoozed {
     final until = _settings.updatePromptSnoozedUntil;
@@ -81,18 +107,21 @@ class AppUpdateService {
   Future<void> snooze() =>
       _settings.setUpdatePromptSnoozedUntil(_now().add(snoozeFor));
 
-  /// Shows Play's own confirmation, then downloads. Completes when the download
-  /// finishes, the user declines, or it fails — but may also never complete
-  /// (download cancelled from Play's notification, app killed), so callers must
-  /// not hold UI or state on it; the next [check] reports [UpdateStatus.inProgress]
-  /// or [UpdateStatus.downloaded] either way.
+  /// Shows Play's own confirmation, then downloads. Completes when the
+  /// download finishes, the user declines, or it fails — but may also
+  /// never complete (download cancelled from Play's notification, app
+  /// killed), so callers must not hold UI or state on it; the next
+  /// [check] reports the download's state, or offers the update again
+  /// if it was cancelled.
   Future<UpdateStartResult> start() async {
     try {
-      return switch (await _api.startFlexibleUpdate()) {
+      final result = switch (await _api.startFlexibleUpdate()) {
         AppUpdateResult.success => UpdateStartResult.downloaded,
         AppUpdateResult.userDeniedUpdate => UpdateStartResult.declined,
         AppUpdateResult.inAppUpdateFailed => UpdateStartResult.failed,
       };
+      if (result == UpdateStartResult.downloaded) _isDownloaded = true;
+      return result;
     } catch (_) {
       // The plugin rethrows install errors (e.g. an interrupted download) raw.
       return UpdateStartResult.failed;
