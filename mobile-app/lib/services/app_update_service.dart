@@ -96,6 +96,13 @@ class AppUpdateService {
     return false;
   }
 
+  /// Gives back the slot a [takeAutomaticCheck] took, for a check whose result
+  /// couldn't be shown (the app re-locked meanwhile), so the next resume asks
+  /// again instead of waiting out the hour. Call it only after a
+  /// [takeAutomaticCheck] that returned true; that slot was always free, so
+  /// clearing the timestamp is the same as restoring the one before it.
+  void releaseAutomaticCheck() => _lastAutomaticCheck = null;
+
   /// True when a download is known to be ready (from [check] or [start]).
   bool get isDownloaded => _isDownloaded;
 
@@ -131,11 +138,16 @@ class AppUpdateService {
   /// Installs the downloaded update. Fire-and-forget: on success Play restarts
   /// the app; the future may never complete. Never await it before updating UI.
   Future<void> restart() async {
+    // Forget the download first. On success the process dies anyway; if Play
+    // can't install, the next check asks Play rather than offering a Restart
+    // that does nothing.
+    _isDownloaded = false;
     try {
       await _api.completeFlexibleUpdate();
     } catch (_) {
-      // The plugin throws when no check ran in this engine, and its future
-      // never resolves on success (Play kills the process mid-call).
+      // The plugin throws when no check ran in this engine. Its future may
+      // also never resolve, on success (Play kills the process mid-call) or on
+      // failure.
     }
   }
 }

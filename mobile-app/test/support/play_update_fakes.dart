@@ -17,6 +17,9 @@ class FakePlayUpdateApi implements PlayUpdateApi {
   Object? startError;
   Object? completeError;
 
+  /// Lets a test hold Play's answer to a check, e.g. to lock the app meanwhile.
+  Completer<AppUpdateInfo>? checkCompleter;
+
   /// Lets a test model Play never resolving the download.
   Completer<AppUpdateResult>? startCompleter;
 
@@ -29,6 +32,8 @@ class FakePlayUpdateApi implements PlayUpdateApi {
     checkCalls++;
     final error = checkError;
     if (error != null) throw error;
+    final completer = checkCompleter;
+    if (completer != null) return completer.future;
     return info;
   }
 

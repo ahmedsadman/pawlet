@@ -171,6 +171,21 @@ void main() {
       expect(api.completeCalls, 1);
     });
 
+    test('forgets the known download, so the next check asks Play', () async {
+      final (service, api, _) = await make(
+        info: updateInfo(
+          availability: UpdateAvailability.updateAvailable,
+          installStatus: InstallStatus.downloaded,
+        ),
+      );
+      await service.check();
+      // Play's completeUpdate failing must not leave a Restart that does
+      // nothing on every later check.
+      api.completeError = PlatformException(code: 'ERROR_INTERNAL_ERROR');
+      await service.restart();
+      expect(service.isDownloaded, isFalse);
+    });
+
     test('swallows errors from the plugin', () async {
       final (service, api, _) = await make();
       api.completeError = PlatformException(code: 'REQUIRE_CHECK_FOR_UPDATE');
@@ -188,6 +203,14 @@ void main() {
     test('throttles a second check within the hour', () async {
       final (service, _, _) = await make();
       service.takeAutomaticCheck(); // First check.
+      expect(service.takeAutomaticCheck(), isFalse);
+    });
+
+    test('a released check gives the slot back', () async {
+      final (service, _, _) = await make();
+      service.takeAutomaticCheck();
+      service.releaseAutomaticCheck();
+      expect(service.takeAutomaticCheck(), isTrue);
       expect(service.takeAutomaticCheck(), isFalse);
     });
 
