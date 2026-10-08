@@ -30,10 +30,13 @@ Future<void> runAppUpdateCheck(
   final guard = ref.read(_flowGuardProvider);
   if (guard.busy) return;
   guard.busy = true;
+
+  final service = ref.read(appUpdateServiceProvider);
+  // Captured up front: the download below can outlive this context.
+  final messenger = ScaffoldMessenger.of(context);
+  bool? updateAccepted;
+
   try {
-    final service = ref.read(appUpdateServiceProvider);
-    // Captured up front: the download below can outlive this context.
-    final messenger = ScaffoldMessenger.of(context);
     final status = await service.check();
     if (!context.mounted) return;
     switch (status) {
@@ -48,31 +51,29 @@ Future<void> runAppUpdateCheck(
       case UpdateStatus.available:
         if (!manual && service.isSnoozed) return;
         if (canPrompt != null && !canPrompt()) return;
-        final accepted = await confirmAppUpdate(context);
-        // Release the guard before starting the download. Play may never
-        // resolve the future (download cancelled from Play's notification, app
-        // killed), and while it runs, check() reports inProgress so nothing
-        // re-offers it anyway.
-        guard.busy = false;
-        if (!accepted) {
-          await service.snooze();
-          return;
-        }
-        switch (await service.start()) {
-          case UpdateStartResult.downloaded:
-            _showRestartSnackBar(messenger, service);
-          case UpdateStartResult.declined:
-            await service.snooze();
-          case UpdateStartResult.failed:
-            _toast(
-              messenger,
-              "The update couldn't download. Try again from Settings.",
-            );
-        }
-        return; // Guard already released above.
+        updateAccepted = await confirmAppUpdate(context);
     }
   } finally {
     guard.busy = false;
+  }
+
+  // Handle the update decision outside the guard. Play may never resolve the
+  // download (cancelled from Play's notification, app killed), and while it
+  // runs, check() reports inProgress so nothing re-offers it anyway.
+  if (updateAccepted == true) {
+    switch (await service.start()) {
+      case UpdateStartResult.downloaded:
+        _showRestartSnackBar(messenger, service);
+      case UpdateStartResult.declined:
+        await service.snooze();
+      case UpdateStartResult.failed:
+        _toast(
+          messenger,
+          "The update couldn't download. Try again from Settings.",
+        );
+    }
+  } else if (updateAccepted == false) {
+    await service.snooze();
   }
 }
 
