@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -63,11 +65,6 @@ Future<SettingsRepository> _run(
 
 void main() {
   const offerTitle = 'A new version is ready';
-
-  tearDown(() {
-    // Reset the module-level busy flag between tests.
-    appUpdateBusy = false;
-  });
 
   testWidgets('an available update is offered, downloaded, then restarted', (
     tester,
@@ -228,5 +225,59 @@ void main() {
 
     expect(api.checkCalls, 0);
     expect(find.text(offerTitle), findsNothing);
+  });
+
+  testWidgets("a download Play never resolves doesn't block later checks", (
+    tester,
+  ) async {
+    final api = FakePlayUpdateApi(info: availableUpdate())
+      ..startCompleter = Completer<AppUpdateResult>();
+    SharedPreferences.setMockInitialValues({'installed_from_play': true});
+    final settings = SettingsRepository(await SharedPreferences.getInstance());
+    final service = AppUpdateService(
+      api: api,
+      settings: settings,
+      now: () => _now,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appUpdateServiceProvider.overrideWithValue(service)],
+        child: MaterialApp(
+          theme: AppTheme.theme,
+          home: Consumer(
+            builder: (context, ref, _) => Scaffold(
+              body: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    onPressed: () => runAppUpdateCheck(context, ref),
+                    child: const Text('automatic'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () =>
+                        runAppUpdateCheck(context, ref, manual: true),
+                    child: const Text('manual'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Start the automatic check and accept the update.
+    await tester.tap(find.text('automatic'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    // The download never resolves. Set Play to report it's downloading.
+    api.info = updateInfo(installStatus: InstallStatus.downloading);
+
+    // A manual check should still work.
+    await tester.tap(find.text('manual'));
+    await tester.pumpAndSettle();
+    expect(find.text('The update is downloading'), findsOneWidget);
   });
 }
