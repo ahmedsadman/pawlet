@@ -161,11 +161,24 @@ class AuthController extends Notifier<AuthState> {
     }
   }
 
+  Future<void> _resuming = Future.value();
+
+  /// Completes once the latest [onResume] has decided whether to lock. Until
+  /// then the status can still read unlocked after the screen went off, so
+  /// anything a resume shows over the app should wait for this first.
+  ///
+  /// [AuthGate] calls [onResume] from its lifecycle observer, which registers
+  /// before RootShell's (a parent's initState runs first), so a resume handler
+  /// in RootShell already sees this resume's future.
+  Future<void> get resumeSettled => _resuming;
+
   /// Called when the app returns to the foreground. Always drains the native
   /// screen-off flag (so a flag set while locked can't linger and trigger a
   /// false re-lock on a later app-switch), then re-locks if the device screen
   /// went off while we were away.
-  Future<void> onResume() async {
+  Future<void> onResume() => _resuming = _relockIfScreenWasOff();
+
+  Future<void> _relockIfScreenWasOff() async {
     final screenWasOff = await _screenLock.consumeScreenOff();
     if (screenWasOff && state.status == AuthStatus.unlocked) lock();
   }

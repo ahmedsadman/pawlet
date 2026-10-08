@@ -221,13 +221,21 @@ class _RootShellState extends ConsumerState<RootShell>
   /// overlay inside the home route, and a modal sheet is pushed above it, so a
   /// sheet shown while locked would cover the lock screen.
   Future<void> _checkForAppUpdate() async {
-    if (!await _awaitUnlocked() || !mounted) return;
+    // On a resume after the screen went off, the status still reads unlocked
+    // until the platform answers whether to re-lock. Without waiting, a known
+    // download's restart bar would show at once and end up over the lock
+    // screen.
+    await ref.read(authControllerProvider.notifier).resumeSettled;
+    if (!mounted || !await _awaitUnlocked() || !mounted) return;
     await runAppUpdateCheck(
       context,
       ref,
-      // onResume re-locks asynchronously; and while the inbox import runs, its
-      // progress dialog must stay the top route because it closes itself with pop().
+      // Read again later, possibly after this state is gone (the download can
+      // finish long after). The app can re-lock in the meantime; and while the
+      // inbox import runs, its progress dialog must stay the top route because
+      // it closes itself with pop().
       canPrompt: () =>
+          mounted &&
           ref.read(authControllerProvider).status == AuthStatus.unlocked &&
           !ref.read(processingServiceProvider).isPaused,
     );

@@ -115,6 +115,7 @@ void main() {
   // A tap that lands on a sheet's barrier instead of its target would let a
   // test pass without running the check it means to run.
   setUp(() => WidgetController.hitTestWarningShouldBeFatal = true);
+  tearDown(() => WidgetController.hitTestWarningShouldBeFatal = false);
 
   testWidgets('an available update is offered, downloaded, then restarted', (
     tester,
