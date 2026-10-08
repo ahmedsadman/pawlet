@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:in_app_update/in_app_update.dart';
 import 'package:pawlet/services/app_update_service.dart';
 
@@ -13,6 +15,10 @@ class FakePlayUpdateApi implements PlayUpdateApi {
   Object? checkError;
   AppUpdateResult startResult;
   Object? startError;
+  Object? completeError;
+
+  /// Lets a test model Play never resolving the download.
+  Completer<AppUpdateResult>? startCompleter;
 
   int checkCalls = 0;
   int startCalls = 0;
@@ -31,11 +37,17 @@ class FakePlayUpdateApi implements PlayUpdateApi {
     startCalls++;
     final error = startError;
     if (error != null) throw error;
+    final completer = startCompleter;
+    if (completer != null) return completer.future;
     return startResult;
   }
 
   @override
-  Future<void> completeFlexibleUpdate() async => completeCalls++;
+  Future<void> completeFlexibleUpdate() async {
+    completeCalls++;
+    final error = completeError;
+    if (error != null) throw error;
+  }
 }
 
 /// An [AppUpdateInfo] with only the fields the app reads made adjustable.
