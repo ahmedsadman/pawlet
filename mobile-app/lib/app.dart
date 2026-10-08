@@ -225,9 +225,11 @@ class _RootShellState extends ConsumerState<RootShell>
     await runAppUpdateCheck(
       context,
       ref,
-      // onResume re-locks asynchronously, so look again right before showing.
+      // onResume re-locks asynchronously; and while the inbox import runs, its
+      // progress dialog must stay the top route because it closes itself with pop().
       canPrompt: () =>
-          ref.read(authControllerProvider).status == AuthStatus.unlocked,
+          ref.read(authControllerProvider).status == AuthStatus.unlocked &&
+          !ref.read(processingServiceProvider).isPaused,
     );
   }
 
