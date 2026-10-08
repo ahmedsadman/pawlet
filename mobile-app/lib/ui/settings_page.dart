@@ -7,6 +7,7 @@ import '../services/permissions.dart';
 import '../services/privacy_policy.dart';
 import '../state/auth_providers.dart';
 import '../state/providers.dart';
+import 'app_update_flow.dart';
 import 'backup_restore_page.dart';
 import 'banks_page.dart';
 import 'bulk_import_flow.dart';
@@ -213,8 +214,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             trailing: const Icon(Icons.open_in_new, size: 18),
             onTap: _openPrivacyPolicy,
           ),
+          const Divider(height: 32),
+          // Play rejects update checks from installs it did not deliver.
+          if (ref.watch(settingsRepositoryProvider).installedFromPlay)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.system_update_alt_rounded),
+              title: const Text('Check for updates'),
+              subtitle: const Text('Get the latest version from Google Play'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => runAppUpdateCheck(context, ref, manual: true),
+            ),
           if (_version != null) ...[
-            const Divider(height: 32),
+            const SizedBox(height: 8),
             Center(
               child: Text(
                 _version!,
