@@ -11,6 +11,7 @@ import '../data/secure_store.dart';
 import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
 import '../services/app_services.dart';
+import '../services/app_update_service.dart';
 import '../services/backup_service.dart';
 import '../services/llm/key_validator.dart';
 import '../services/llm/llm_mode.dart';
@@ -29,6 +30,14 @@ final databaseProvider = Provider<Database>(
 
 final settingsRepositoryProvider = Provider<SettingsRepository>(
   (ref) => SettingsRepository(ref.watch(sharedPreferencesProvider)),
+);
+
+/// Play in-app updates. UI isolate only (see [AppUpdateService]).
+final appUpdateServiceProvider = Provider<AppUpdateService>(
+  (ref) => AppUpdateService(
+    api: const InAppUpdatePlayApi(),
+    settings: ref.watch(settingsRepositoryProvider),
+  ),
 );
 
 final banksRepositoryProvider = Provider<BanksRepository>(
