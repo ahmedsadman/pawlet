@@ -81,9 +81,11 @@ class AppUpdateService {
   Future<void> snooze() =>
       _settings.setUpdatePromptSnoozedUntil(_now().add(snoozeFor));
 
-  /// Shows Play's own confirmation, then downloads. Completes only when the
-  /// download finishes, the user declines, or it fails, so this can take
-  /// minutes.
+  /// Shows Play's own confirmation, then downloads. Completes when the download
+  /// finishes, the user declines, or it fails — but may also never complete
+  /// (download cancelled from Play's notification, app killed), so callers must
+  /// not hold UI or state on it; the next [check] reports [UpdateStatus.inProgress]
+  /// or [UpdateStatus.downloaded] either way.
   Future<UpdateStartResult> start() async {
     try {
       return switch (await _api.startFlexibleUpdate()) {
@@ -97,9 +99,16 @@ class AppUpdateService {
     }
   }
 
-  /// Installs the downloaded update. Play restarts the app, so nothing after
-  /// this call runs.
-  Future<void> restart() => _api.completeFlexibleUpdate();
+  /// Installs the downloaded update. Fire-and-forget: on success Play restarts
+  /// the app; the future may never complete. Never await it before updating UI.
+  Future<void> restart() async {
+    try {
+      await _api.completeFlexibleUpdate();
+    } catch (_) {
+      // The plugin throws when no check ran in this engine, and its future
+      // never resolves on success (Play kills the process mid-call).
+    }
+  }
 }
 
 @visibleForTesting
@@ -113,7 +122,12 @@ UpdateStatus statusOf(AppUpdateInfo info) {
         InstallStatus.downloading ||
         InstallStatus.installing:
       return UpdateStatus.inProgress;
-    default:
+    // Failed/canceled fall back to availability so the user can retry; unknown
+    // is the normal idle value; installed is a brief state before the restart.
+    case InstallStatus.failed ||
+        InstallStatus.canceled ||
+        InstallStatus.unknown ||
+        InstallStatus.installed:
       break;
   }
   return switch (info.updateAvailability) {

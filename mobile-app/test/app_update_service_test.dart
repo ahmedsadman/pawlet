@@ -87,6 +87,21 @@ void main() {
         UpdateStatus.unsupported,
       );
     });
+
+    test('failed and canceled fall through to availability for retry', () {
+      for (final s in [InstallStatus.failed, InstallStatus.canceled]) {
+        expect(
+          statusOf(
+            updateInfo(
+              availability: UpdateAvailability.updateAvailable,
+              installStatus: s,
+            ),
+          ),
+          UpdateStatus.available,
+          reason: '$s',
+        );
+      }
+    });
   });
 
   group('check', () {
@@ -148,9 +163,18 @@ void main() {
     });
   });
 
-  test('restart completes the flexible update', () async {
-    final (service, api, _) = await make();
-    await service.restart();
-    expect(api.completeCalls, 1);
+  group('restart', () {
+    test('completes the flexible update', () async {
+      final (service, api, _) = await make();
+      await service.restart();
+      expect(api.completeCalls, 1);
+    });
+
+    test('swallows errors from the plugin', () async {
+      final (service, api, _) = await make();
+      api.completeError = PlatformException(code: 'REQUIRE_CHECK_FOR_UPDATE');
+      await service.restart(); // Should not throw.
+      expect(api.completeCalls, 1);
+    });
   });
 }
