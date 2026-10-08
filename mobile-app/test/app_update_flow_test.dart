@@ -280,4 +280,70 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('The update is downloading'), findsOneWidget);
   });
+
+  testWidgets(
+    "a download that resolves later doesn't clear another check's guard",
+    (tester) async {
+      final api = FakePlayUpdateApi(info: availableUpdate())
+        ..startCompleter = Completer<AppUpdateResult>();
+      SharedPreferences.setMockInitialValues({'installed_from_play': true});
+      final settings = SettingsRepository(
+        await SharedPreferences.getInstance(),
+      );
+      final service = AppUpdateService(
+        api: api,
+        settings: settings,
+        now: () => _now,
+      );
+      BuildContext? savedContext;
+      WidgetRef? savedRef;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appUpdateServiceProvider.overrideWithValue(service)],
+          child: MaterialApp(
+            theme: AppTheme.theme,
+            home: Consumer(
+              builder: (context, ref, _) {
+                savedContext = context;
+                savedRef = ref;
+                return Scaffold(
+                  body: Center(
+                    child: ElevatedButton(
+                      onPressed: () => runAppUpdateCheck(context, ref),
+                      child: const Text('check'),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      // Flow A: start automatic check, accept update (download pending).
+      await tester.tap(find.text('check'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Update'));
+      await tester.pumpAndSettle();
+
+      // Flow B: run manual check while A is awaiting start. Play still reports
+      // available, so B shows the sheet.
+      runAppUpdateCheck(savedContext!, savedRef!, manual: true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text(offerTitle), findsOneWidget);
+
+      // Flow A's download completes, hitting finally and clearing the guard.
+      api.startCompleter!.complete(AppUpdateResult.success);
+      await tester.pump();
+
+      // Flow C: another check while B's sheet is open. On buggy code where
+      // A's finally cleared B's guard, C can acquire the guard and stack a
+      // second sheet.
+      runAppUpdateCheck(savedContext!, savedRef!, manual: true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text(offerTitle), findsOneWidget); // Still just one.
+    },
+  );
 }
