@@ -8,7 +8,8 @@ import 'widgets/sheet_parts.dart';
 /// How long the restart bar shows before auto-hiding.
 const restartBarDuration = Duration(seconds: 10);
 
-/// Per-app guard so a resume or a second tap can't stack another sheet.
+/// Per-app guard so a resume or a second tap can't stack another sheet. It
+/// also tracks whether the restart bar is up, so checks don't queue copies.
 final _flowGuardProvider = Provider<_FlowGuard>((_) => _FlowGuard());
 
 class _FlowGuard {
@@ -22,9 +23,13 @@ class _FlowGuard {
 /// what it found. The automatic check stays silent unless it has something to
 /// offer.
 ///
-/// [canPrompt] is read again right before the sheet goes up. The automatic
-/// check passes "is the app still unlocked", because a modal sheet would
-/// otherwise cover the lock screen.
+/// [canPrompt] says whether the app may show the sheet or the restart bar now.
+/// The automatic check passes "unlocked, and no inbox import running", so
+/// neither covers the lock screen or the import's progress dialog. It is read
+/// before asking Play (an automatic check that couldn't show anything doesn't
+/// ask), and again right before anything goes up, since the app can re-lock
+/// while Play answers. An automatic check blocked at that point gives its
+/// hourly slot back, so the next resume asks again.
 Future<void> runAppUpdateCheck(
   BuildContext context,
   WidgetRef ref, {
@@ -36,11 +41,15 @@ Future<void> runAppUpdateCheck(
   final messenger = ScaffoldMessenger.of(context);
   final guard = ref.read(_flowGuardProvider);
 
+  bool blocked() => canPrompt != null && !canPrompt();
+
   if (guard.busy) return;
 
-  // For automatic checks: if a download is known, show the restart bar
-  // without asking Play; if the last check was recent, skip.
+  // For automatic checks: nothing to do if nothing could be shown; if a
+  // download is known, show the restart bar without asking Play; if the last
+  // check was recent, skip.
   if (!manual) {
+    if (blocked()) return;
     if (service.isDownloaded) {
       _showRestartSnackBar(guard, messenger, service);
       return;
@@ -51,11 +60,20 @@ Future<void> runAppUpdateCheck(
   guard.busy = true;
   bool? updateAccepted;
 
+  // Skips showing a result the app can't show right now. An automatic check
+  // then gives its slot back; a known download is shown on the next check.
+  bool blockedAfterCheck() {
+    if (!blocked()) return false;
+    if (!manual) service.releaseAutomaticCheck();
+    return true;
+  }
+
   try {
     final status = await service.check();
     if (!context.mounted) return;
     switch (status) {
       case UpdateStatus.downloaded:
+        if (blockedAfterCheck()) return;
         _showRestartSnackBar(guard, messenger, service);
       case UpdateStatus.inProgress:
         if (manual) _toast(messenger, 'The update is downloading');
@@ -65,7 +83,7 @@ Future<void> runAppUpdateCheck(
         if (manual) _toast(messenger, "Couldn't check for updates right now");
       case UpdateStatus.available:
         if (!manual && service.isSnoozed) return;
-        if (canPrompt != null && !canPrompt()) return;
+        if (blockedAfterCheck()) return;
         updateAccepted = await confirmAppUpdate(context);
     }
   } finally {
@@ -78,7 +96,9 @@ Future<void> runAppUpdateCheck(
   if (updateAccepted == true) {
     switch (await service.start()) {
       case UpdateStartResult.downloaded:
-        _showRestartSnackBar(guard, messenger, service);
+        // The download can take minutes; the app may be locked by now. The
+        // service remembers it, so the next check shows the bar.
+        if (!blocked()) _showRestartSnackBar(guard, messenger, service);
       case UpdateStartResult.declined:
         await service.snooze();
       case UpdateStartResult.failed:
@@ -104,8 +124,8 @@ Future<bool> confirmAppUpdate(BuildContext context) async {
   return accepted ?? false;
 }
 
-/// Shows the restart bar. Returns to foreground after a check reminds
-/// the user, and it does not block other snackbars.
+/// Shows the restart bar unless one is already up. It hides after
+/// [restartBarDuration]; a later check shows it again.
 void _showRestartSnackBar(
   _FlowGuard guard,
   ScaffoldMessengerState messenger,
@@ -123,6 +143,9 @@ void _showRestartSnackBar(
       behavior: SnackBarBehavior.floating,
       backgroundColor: scheme.primaryContainer,
       duration: restartBarDuration,
+      // An action makes a snackbar persist by default, ignoring [duration];
+      // that would block every other snackbar in the app.
+      persist: false,
       content: Row(
         children: [
           Icon(Icons.download_done_rounded, color: scheme.primary),

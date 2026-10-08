@@ -287,8 +287,9 @@ class _RootShellState extends ConsumerState<RootShell>
           await ref.read(processingServiceProvider).process();
           if (mounted) await _refreshLlmNetwork();
         }());
-        // Play's answer is a local service call, so asking on every resume is
-        // cheap. The snooze and the busy guard keep it from nagging.
+        // Play is asked at most once an hour, and not at all while a finished
+        // download is known. The snooze and the busy guard keep it from
+        // nagging.
         if (_bootstrapped) unawaited(_checkForAppUpdate());
       case AppLifecycleState.paused:
         // Stop polling while backgrounded — no wake while the user is away.

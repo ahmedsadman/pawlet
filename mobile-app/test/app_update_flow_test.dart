@@ -15,67 +15,25 @@ import 'support/play_update_fakes.dart';
 
 final _now = DateTime(2026, 10, 9, 12);
 
-/// Builds the test harness with an automatic and optional manual button.
-Future<AppUpdateService> _pumpHarness(
-  WidgetTester tester,
-  FakePlayUpdateApi api, {
-  bool fromPlay = true,
-  DateTime? snoozedUntil,
-  DateTime Function()? now,
-  bool withManualButton = false,
-}) async {
-  SharedPreferences.setMockInitialValues({
-    'installed_from_play': fromPlay,
-    if (snoozedUntil != null)
-      'update_prompt_snoozed_until': snoozedUntil.millisecondsSinceEpoch,
-  });
-  final settings = SettingsRepository(await SharedPreferences.getInstance());
-  final service = AppUpdateService(
-    api: api,
-    settings: settings,
-    now: now ?? (() => _now),
-  );
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [appUpdateServiceProvider.overrideWithValue(service)],
-      child: MaterialApp(
-        theme: AppTheme.theme,
-        home: Consumer(
-          builder: (context, ref, _) => Scaffold(
-            body: Center(
-              child: withManualButton
-                  ? Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ElevatedButton(
-                          onPressed: () => runAppUpdateCheck(context, ref),
-                          child: const Text('automatic'),
-                        ),
-                        ElevatedButton(
-                          onPressed: () =>
-                              runAppUpdateCheck(context, ref, manual: true),
-                          child: const Text('manual'),
-                        ),
-                      ],
-                    )
-                  : ElevatedButton(
-                      onPressed: () => runAppUpdateCheck(context, ref),
-                      child: const Text('check'),
-                    ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-  return service;
+/// What a test needs from the pumped app.
+class _Harness {
+  _Harness(this.service, this.settings);
+
+  final AppUpdateService service;
+  final SettingsRepository settings;
+
+  /// Captured from the page, for starting a check while a sheet covers the
+  /// buttons.
+  late BuildContext context;
+  late WidgetRef ref;
 }
 
-/// Pumps a button that runs the flow, taps it, and settles.
-Future<SettingsRepository> _run(
+/// Pumps a page with two buttons: 'check' runs the automatic check (gated by
+/// [canPrompt], which defaults to always allowed) and 'manual' runs the
+/// Settings check.
+Future<_Harness> _pumpHarness(
   WidgetTester tester,
   FakePlayUpdateApi api, {
-  bool manual = false,
   bool fromPlay = true,
   DateTime? snoozedUntil,
   bool Function()? canPrompt,
@@ -86,41 +44,77 @@ Future<SettingsRepository> _run(
       'update_prompt_snoozed_until': snoozedUntil.millisecondsSinceEpoch,
   });
   final settings = SettingsRepository(await SharedPreferences.getInstance());
-  final service = AppUpdateService(
-    api: api,
-    settings: settings,
-    now: () => _now,
+  final harness = _Harness(
+    AppUpdateService(api: api, settings: settings, now: () => _now),
+    settings,
   );
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [appUpdateServiceProvider.overrideWithValue(service)],
+      overrides: [appUpdateServiceProvider.overrideWithValue(harness.service)],
       child: MaterialApp(
         theme: AppTheme.theme,
         home: Consumer(
-          builder: (context, ref, _) => Scaffold(
-            body: Center(
-              child: ElevatedButton(
-                onPressed: () => runAppUpdateCheck(
-                  context,
-                  ref,
-                  manual: manual,
-                  canPrompt: canPrompt ?? () => true,
+          builder: (context, ref, _) {
+            harness
+              ..context = context
+              ..ref = ref;
+            return Scaffold(
+              body: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () => runAppUpdateCheck(
+                        context,
+                        ref,
+                        canPrompt: canPrompt ?? () => true,
+                      ),
+                      child: const Text('check'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () =>
+                          runAppUpdateCheck(context, ref, manual: true),
+                      child: const Text('manual'),
+                    ),
+                  ],
                 ),
-                child: const Text('check'),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     ),
   );
-  await tester.tap(find.text('check'));
+  return harness;
+}
+
+/// Pumps the harness, taps the automatic (or [manual]) check, and settles.
+Future<_Harness> _run(
+  WidgetTester tester,
+  FakePlayUpdateApi api, {
+  bool manual = false,
+  bool fromPlay = true,
+  DateTime? snoozedUntil,
+  bool Function()? canPrompt,
+}) async {
+  final harness = await _pumpHarness(
+    tester,
+    api,
+    fromPlay: fromPlay,
+    snoozedUntil: snoozedUntil,
+    canPrompt: canPrompt,
+  );
+  await tester.tap(find.text(manual ? 'manual' : 'check'));
   await tester.pumpAndSettle();
-  return settings;
+  return harness;
 }
 
 void main() {
   const offerTitle = 'A new version is ready';
+
+  // A tap that lands on a sheet's barrier instead of its target would let a
+  // test pass without running the check it means to run.
+  setUp(() => WidgetController.hitTestWarningShouldBeFatal = true);
 
   testWidgets('an available update is offered, downloaded, then restarted', (
     tester,
@@ -143,11 +137,23 @@ void main() {
     expect(api.completeCalls, 1);
   });
 
+  testWidgets('the restart bar hides on its own', (tester) async {
+    final api = FakePlayUpdateApi(info: availableUpdate());
+    await _run(tester, api);
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+    expect(find.text('Update downloaded'), findsOneWidget);
+
+    await tester.pump(restartBarDuration);
+    await tester.pumpAndSettle();
+    expect(find.text('Update downloaded'), findsNothing);
+  });
+
   testWidgets('Not now snoozes the automatic prompt for three days', (
     tester,
   ) async {
     final api = FakePlayUpdateApi(info: availableUpdate());
-    final settings = await _run(tester, api);
+    final settings = (await _run(tester, api)).settings;
 
     await tester.tap(find.text('Not now'));
     await tester.pumpAndSettle();
@@ -161,7 +167,7 @@ void main() {
 
   testWidgets('dismissing the sheet counts as Not now', (tester) async {
     final api = FakePlayUpdateApi(info: availableUpdate());
-    final settings = await _run(tester, api);
+    final settings = (await _run(tester, api)).settings;
 
     // Tap the scrim above the sheet.
     await tester.tapAt(const Offset(20, 20));
@@ -190,15 +196,42 @@ void main() {
     expect(find.text(offerTitle), findsOneWidget);
   });
 
-  testWidgets('no sheet when the app re-locked during the check', (
+  testWidgets("an automatic check while locked doesn't ask Play", (
     tester,
   ) async {
     final api = FakePlayUpdateApi(info: availableUpdate());
-    final settings = await _run(tester, api, canPrompt: () => false);
+    final settings = (await _run(tester, api, canPrompt: () => false)).settings;
 
+    expect(api.checkCalls, 0);
     expect(find.text(offerTitle), findsNothing);
     // Not the user's choice, so it must not snooze either.
     expect(settings.updatePromptSnoozedUntil, isNull);
+  });
+
+  testWidgets("a sheet blocked by a re-lock doesn't use up the hour's check", (
+    tester,
+  ) async {
+    var unlocked = true;
+    final api = FakePlayUpdateApi(info: availableUpdate())
+      ..checkCompleter = Completer<AppUpdateInfo>();
+    final harness = await _pumpHarness(tester, api, canPrompt: () => unlocked);
+
+    // The app re-locks while Play is answering.
+    await tester.tap(find.text('check'));
+    await tester.pump();
+    unlocked = false;
+    api.checkCompleter!.complete(availableUpdate());
+    await tester.pumpAndSettle();
+    expect(find.text(offerTitle), findsNothing);
+    expect(harness.settings.updatePromptSnoozedUntil, isNull);
+
+    // Unlocked again within the hour: the offer still comes.
+    unlocked = true;
+    api.checkCompleter = null;
+    await tester.tap(find.text('check'));
+    await tester.pumpAndSettle();
+    expect(api.checkCalls, 2);
+    expect(find.text(offerTitle), findsOneWidget);
   });
 
   testWidgets('an already-downloaded update goes straight to Restart', (
@@ -221,7 +254,7 @@ void main() {
       info: availableUpdate(),
       startResult: AppUpdateResult.userDeniedUpdate,
     );
-    final settings = await _run(tester, api);
+    final settings = (await _run(tester, api)).settings;
 
     await tester.tap(find.text('Update'));
     await tester.pumpAndSettle();
@@ -288,10 +321,10 @@ void main() {
   ) async {
     final api = FakePlayUpdateApi(info: availableUpdate())
       ..startCompleter = Completer<AppUpdateResult>();
-    await _pumpHarness(tester, api, withManualButton: true);
+    await _pumpHarness(tester, api);
 
     // Start the automatic check and accept the update.
-    await tester.tap(find.text('automatic'));
+    await tester.tap(find.text('check'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Update'));
     await tester.pumpAndSettle();
@@ -310,39 +343,7 @@ void main() {
     (tester) async {
       final api = FakePlayUpdateApi(info: availableUpdate())
         ..startCompleter = Completer<AppUpdateResult>();
-      SharedPreferences.setMockInitialValues({'installed_from_play': true});
-      final settings = SettingsRepository(
-        await SharedPreferences.getInstance(),
-      );
-      final service = AppUpdateService(
-        api: api,
-        settings: settings,
-        now: () => _now,
-      );
-      BuildContext? savedContext;
-      WidgetRef? savedRef;
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [appUpdateServiceProvider.overrideWithValue(service)],
-          child: MaterialApp(
-            theme: AppTheme.theme,
-            home: Consumer(
-              builder: (context, ref, _) {
-                savedContext = context;
-                savedRef = ref;
-                return Scaffold(
-                  body: Center(
-                    child: ElevatedButton(
-                      onPressed: () => runAppUpdateCheck(context, ref),
-                      child: const Text('check'),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      );
+      final harness = await _pumpHarness(tester, api);
 
       // Flow A: start automatic check, accept update (download pending).
       await tester.tap(find.text('check'));
@@ -352,7 +353,7 @@ void main() {
 
       // Flow B: run manual check while A is awaiting start. Play still reports
       // available, so B shows the sheet.
-      runAppUpdateCheck(savedContext!, savedRef!, manual: true);
+      runAppUpdateCheck(harness.context, harness.ref, manual: true);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text(offerTitle), findsOneWidget);
@@ -364,7 +365,7 @@ void main() {
       // Flow C: another check while B's sheet is open. On buggy code where
       // A's finally cleared B's guard, C can acquire the guard and stack a
       // second sheet.
-      runAppUpdateCheck(savedContext!, savedRef!, manual: true);
+      runAppUpdateCheck(harness.context, harness.ref, manual: true);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text(offerTitle), findsOneWidget); // Still just one.
@@ -374,7 +375,8 @@ void main() {
   testWidgets('a second automatic check within the hour is throttled', (
     tester,
   ) async {
-    final api = FakePlayUpdateApi(info: availableUpdate());
+    // Up to date, so no sheet covers the button for the second tap.
+    final api = FakePlayUpdateApi();
     await _pumpHarness(tester, api);
 
     // First automatic check calls Play.
@@ -389,8 +391,8 @@ void main() {
   });
 
   testWidgets(
-    'an automatic check shows the restart bar without calling Play when '
-    'a download is known',
+    'once the restart bar hides, an automatic check shows it again without '
+    'calling Play',
     (tester) async {
       final api = FakePlayUpdateApi(
         info: updateInfo(
@@ -406,6 +408,11 @@ void main() {
       expect(api.checkCalls, 1);
       expect(find.text('Update downloaded'), findsOneWidget);
 
+      // Let the bar hide, so the next check has to bring it back.
+      await tester.pump(restartBarDuration);
+      await tester.pumpAndSettle();
+      expect(find.text('Update downloaded'), findsNothing);
+
       // Second automatic check shows the bar without calling Play again.
       await tester.tap(find.text('check'));
       await tester.pumpAndSettle();
@@ -414,11 +421,85 @@ void main() {
     },
   );
 
+  group('no restart bar over the lock screen', () {
+    final downloaded = updateInfo(
+      availability: UpdateAvailability.updateAvailable,
+      installStatus: InstallStatus.downloaded,
+    );
+
+    testWidgets('for a download already known', (tester) async {
+      var unlocked = false;
+      final api = FakePlayUpdateApi(info: downloaded);
+      final harness = await _pumpHarness(
+        tester,
+        api,
+        canPrompt: () => unlocked,
+      );
+      await harness.service.check();
+
+      await tester.tap(find.text('check'));
+      await tester.pumpAndSettle();
+      expect(find.text('Update downloaded'), findsNothing);
+      expect(api.checkCalls, 1); // Only the check above.
+
+      unlocked = true;
+      await tester.tap(find.text('check'));
+      await tester.pumpAndSettle();
+      expect(find.text('Update downloaded'), findsOneWidget);
+      expect(api.checkCalls, 1);
+    });
+
+    testWidgets('for a download Play reports after the app re-locked', (
+      tester,
+    ) async {
+      var unlocked = true;
+      final api = FakePlayUpdateApi()
+        ..checkCompleter = Completer<AppUpdateInfo>();
+      await _pumpHarness(tester, api, canPrompt: () => unlocked);
+
+      await tester.tap(find.text('check'));
+      await tester.pump();
+      unlocked = false;
+      api.checkCompleter!.complete(downloaded);
+      await tester.pumpAndSettle();
+      expect(find.text('Update downloaded'), findsNothing);
+
+      unlocked = true;
+      await tester.tap(find.text('check'));
+      await tester.pumpAndSettle();
+      expect(find.text('Update downloaded'), findsOneWidget);
+    });
+
+    testWidgets('for a download that finishes after the app re-locked', (
+      tester,
+    ) async {
+      var unlocked = true;
+      final api = FakePlayUpdateApi(info: availableUpdate())
+        ..startCompleter = Completer<AppUpdateResult>();
+      await _pumpHarness(tester, api, canPrompt: () => unlocked);
+
+      await tester.tap(find.text('check'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Update'));
+      await tester.pumpAndSettle();
+
+      unlocked = false;
+      api.startCompleter!.complete(AppUpdateResult.success);
+      await tester.pumpAndSettle();
+      expect(find.text('Update downloaded'), findsNothing);
+
+      unlocked = true;
+      await tester.tap(find.text('check'));
+      await tester.pumpAndSettle();
+      expect(find.text('Update downloaded'), findsOneWidget);
+    });
+  });
+
   testWidgets('Not now on a manual check also writes the snooze', (
     tester,
   ) async {
     final api = FakePlayUpdateApi(info: availableUpdate());
-    final settings = await _run(tester, api, manual: true);
+    final settings = (await _run(tester, api, manual: true)).settings;
 
     await tester.tap(find.text('Not now'));
     await tester.pumpAndSettle();
