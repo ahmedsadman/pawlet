@@ -14,6 +14,7 @@ void main() {
     bool fromPlay = true,
     AppUpdateInfo? info,
     AppUpdateResult startResult = AppUpdateResult.success,
+    DateTime Function()? now,
   }) async {
     SharedPreferences.setMockInitialValues({'installed_from_play': fromPlay});
     final settings = SettingsRepository(await SharedPreferences.getInstance());
@@ -21,7 +22,7 @@ void main() {
     final service = AppUpdateService(
       api: api,
       settings: settings,
-      now: () => now,
+      now: now ?? (() => DateTime(2026, 10, 9, 12)),
     );
     return (service, api, settings);
   }
@@ -175,6 +176,49 @@ void main() {
       api.completeError = PlatformException(code: 'REQUIRE_CHECK_FOR_UPDATE');
       await service.restart(); // Should not throw.
       expect(api.completeCalls, 1);
+    });
+  });
+
+  group('takeAutomaticCheck', () {
+    test('allows the first automatic check', () async {
+      final (service, _, _) = await make();
+      expect(service.takeAutomaticCheck(), isTrue);
+    });
+
+    test('throttles a second check within the hour', () async {
+      final (service, _, _) = await make();
+      service.takeAutomaticCheck(); // First check.
+      expect(service.takeAutomaticCheck(), isFalse);
+    });
+
+    test('allows a check after an hour has passed', () async {
+      var now = DateTime(2026, 10, 9, 12);
+      final (service, _, _) = await make(now: () => now);
+      service.takeAutomaticCheck(); // First check at 12:00.
+      now = now.add(const Duration(hours: 1)); // Advance to 13:00.
+      expect(service.takeAutomaticCheck(), isTrue);
+    });
+  });
+
+  group('isDownloaded', () {
+    test('is set when check() reports downloaded', () async {
+      final (service, api, _) = await make();
+      api.info = updateInfo(
+        availability: UpdateAvailability.updateAvailable,
+        installStatus: InstallStatus.downloaded,
+      );
+      expect(service.isDownloaded, isFalse);
+      await service.check();
+      expect(service.isDownloaded, isTrue);
+    });
+
+    test('is set when start() completes with downloaded', () async {
+      final (service, api, _) = await make();
+      api.info = availableUpdate();
+      api.startResult = AppUpdateResult.success;
+      expect(service.isDownloaded, isFalse);
+      await service.start();
+      expect(service.isDownloaded, isTrue);
     });
   });
 }
