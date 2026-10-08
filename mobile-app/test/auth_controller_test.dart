@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -63,6 +65,30 @@ void main() {
 
     when(t.screenLock.consumeScreenOff).thenAnswer((_) async => true);
     await notifier.onResume();
+    expect(container.read(authControllerProvider).status, AuthStatus.locked);
+  });
+
+  test('resumeSettled waits for the screen-off answer', () async {
+    final t = authTestOverrides(hasPin: true);
+    final container = ProviderContainer(overrides: t.overrides);
+    addTearDown(container.dispose);
+    container.read(authControllerProvider);
+    await _settle();
+    final notifier = container.read(authControllerProvider.notifier);
+    await notifier.submitPin('1234');
+
+    final screenOff = Completer<bool>();
+    when(t.screenLock.consumeScreenOff).thenAnswer((_) => screenOff.future);
+    var settled = false;
+    unawaited(notifier.onResume());
+    unawaited(notifier.resumeSettled.then((_) => settled = true));
+    await _settle();
+    expect(settled, isFalse);
+    expect(container.read(authControllerProvider).status, AuthStatus.unlocked);
+
+    screenOff.complete(true);
+    await notifier.resumeSettled;
+    expect(settled, isTrue);
     expect(container.read(authControllerProvider).status, AuthStatus.locked);
   });
 
