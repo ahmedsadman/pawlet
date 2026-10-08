@@ -13,23 +13,26 @@ never check: Play only serves updates to installs it delivered.
 3. **The download.** Play downloads in the background while the app stays usable. Play's
    notification shows progress; the app shows nothing while it runs.
 4. **The restart.** When the download finishes, a snackbar says "Update downloaded" with a
-   **Restart** action. It stays until tapped. Restarting hands over to Play, which installs the
-   update and reopens the app. If the user ignores it, the snackbar comes back on the next resume
-   or launch.
+   **Restart** action. It shows for a few seconds, then auto-hides, but comes back each time the
+   app returns to the foreground. **Settings → Check for updates** also shows it. Tapping
+   **Restart** hands over to Play, which installs the update and reopens the app.
 
 ## When it checks
 
-- On launch, after the first-run flow (SMS disclosure, inbox import) is done, and on every return
-  to the foreground.
+- On launch, after the first-run flow (SMS disclosure, inbox import) is done.
+- On every return to the foreground, but at most once an hour. A download already known to be ready
+  is reminded without asking Play again.
 - Only once the app is unlocked, so the sheet never covers the lock screen.
 - **Not now**, dismissing the sheet, and declining Play's dialog all snooze the automatic offer.
   The snooze is not tied to one version.
 - **Settings → Check for updates** (Play installs only) ignores the snooze and always says what it
-  found: up to date, couldn't reach Google Play, already downloading, or the offer itself.
+  found: up to date, couldn't check right now, already downloading, or the offer itself.
 
 | Constant (snapshot) | Value | Source |
 |---|---|---|
 | Snooze after "Not now" | 3 days | `lib/services/app_update_service.dart` (`AppUpdateService.snoozeFor`) |
+| Automatic re-check on return | 1 hour | `lib/services/app_update_service.dart` (`AppUpdateService.automaticCheckEvery`) |
+| Restart bar on screen | 10 seconds | `lib/ui/app_update_flow.dart` (`restartBarDuration`) |
 
 ## Where it lives
 
