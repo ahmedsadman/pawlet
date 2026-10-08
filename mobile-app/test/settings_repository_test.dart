@@ -169,4 +169,20 @@ void main() {
       expect(await r.expireAttestationIneligible(build: '30', now: t0), isTrue);
     });
   });
+
+  test(
+    'updatePromptSnoozedUntil defaults null, persists, and stays out of backups',
+    () async {
+      final r = await repo();
+      expect(r.updatePromptSnoozedUntil, isNull);
+
+      final until = DateTime(2026, 10, 12, 9, 30);
+      await r.setUpdatePromptSnoozedUntil(until);
+      expect(r.updatePromptSnoozedUntil, until);
+
+      // Install-scoped, like installedFromPlay: restoring a backup onto
+      // another phone must not carry this phone's snooze across.
+      expect(r.exportAll().containsKey('update_prompt_snoozed_until'), isFalse);
+    },
+  );
 }
