@@ -14,15 +14,16 @@ never check: Play only serves updates to installs it delivered.
    notification shows progress; the app shows nothing while it runs.
 4. **The restart.** When the download finishes, a snackbar says "Update downloaded" with a
    **Restart** action. It shows for a few seconds, then auto-hides, but comes back each time the
-   app returns to the foreground. **Settings → Check for updates** also shows it. Tapping
-   **Restart** hands over to Play, which installs the update and reopens the app.
+   app returns to the foreground, once unlocked. **Settings → Check for updates** also shows it.
+   Tapping **Restart** hands over to Play, which installs the update and reopens the app.
 
 ## When it checks
 
 - On launch, after the first-run flow (SMS disclosure, inbox import) is done.
-- On every return to the foreground, but at most once an hour. A download already known to be ready
-  is reminded without asking Play again.
-- Only once the app is unlocked, so the sheet never covers the lock screen.
+- On every return to the foreground, but at most once an hour. A check whose result couldn't be
+  shown (the app locked again, or an inbox import started, while Play answered) doesn't count. A
+  download already known to be ready is reminded without asking Play again.
+- Only once the app is unlocked, so neither the sheet nor the restart bar covers the lock screen.
 - **Not now**, dismissing the sheet, and declining Play's dialog all snooze the automatic offer.
   The snooze is not tied to one version.
 - **Settings → Check for updates** (Play installs only) ignores the snooze and always says what it
