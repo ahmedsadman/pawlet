@@ -31,6 +31,20 @@ describe("InfoTip", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
+  it("renders outside clipping containers and stays open when tapped", () => {
+    render(
+      <div data-testid="scroller" style={{ overflow: "hidden" }}>
+        <InfoTip id="col.hash" />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button"));
+    const tip = screen.getByRole("tooltip");
+    expect(screen.getByTestId("scroller")).not.toContainElement(tip);
+    expect(tip.style.position).toBe("fixed");
+    fireEvent.pointerDown(tip);
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+  });
+
   it("shows the caveat when there is one", () => {
     render(<InfoTip id="dau.any" />);
     fireEvent.click(screen.getByRole("button"));
