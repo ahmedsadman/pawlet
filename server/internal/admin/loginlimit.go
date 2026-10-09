@@ -5,9 +5,10 @@ import (
 	"time"
 )
 
-// Login limits. Per address stops a single guesser; the global cap (raised to
-// 100 so one IP at 5/15min = 20/h cannot fill it) stops a botnet spreading
-// guesses thin, and also bounds the limiter's memory.
+// Login limits. Per address stops a single guesser; the global cap stops a
+// botnet spreading guesses thin and bounds the limiter's memory. The global
+// limit is set high enough that a single IP at its per-IP cap (5/15min = 20/h)
+// cannot alone exhaust the global bucket and lock out the owner.
 const (
 	loginPerIPFailures  = 5
 	loginPerIPWindow    = 15 * time.Minute
@@ -74,7 +75,8 @@ func (l *loginLimiter) begin(ip string) (attempt, bool) {
 	return a, true
 }
 
-// succeed removes the attempt from both per-IP and global tracking.
+// succeed clears the address's entire per-IP history and removes one entry
+// from global tracking. Only called after a correct password.
 func (l *loginLimiter) succeed(a attempt) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

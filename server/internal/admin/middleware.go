@@ -27,7 +27,8 @@ func securityHeaders(next http.Handler) http.Handler {
 // sameOriginJSON guards every state-changing request. SameSite=Strict
 // already keeps the cookie off cross-site requests; requiring a JSON body and
 // an Origin matching the host closes what remains (plain form posts, older
-// browsers, sibling subdomains).
+// browsers, sibling subdomains). Requires https, or http only when the Origin
+// hostname is loopback (localhost, 127.0.0.1, ::1) for local development.
 func sameOriginJSON(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Parse and check Content-Type

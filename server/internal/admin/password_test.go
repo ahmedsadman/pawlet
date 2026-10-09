@@ -49,27 +49,63 @@ func TestHashPasswordSaltsEachHash(t *testing.T) {
 }
 
 func TestVerifyPasswordRejectsMalformedHashes(t *testing.T) {
+	const (
+		salt16 = "c3Nzc3Nzc3Nzc3Nzc3Nzcw"                          // 16 's' bytes
+		key32  = "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s" // 32 'k' bytes
+		key16  = "a2tra2tra2tra2tra2traw"                          // 16 'k' bytes
+		key1   = "YQ"                                              // 1 byte
+		salt1  = "YQ"                                              // 1 byte
+		salt4  = "c2FsdA"                                          // 4 bytes
+	)
 	for _, bad := range []string{
-		"", "plain", "$argon2i$v=19$m=65536,t=2,p=1$c2FsdA$a2V5",
-		"$argon2id$v=18$m=65536,t=2,p=1$c2FsdA$a2V5",
-		"$argon2id$v=19$m=0,t=2,p=1$c2FsdA$a2V5",
-		"$argon2id$v=19$m=65536,t=2,p=1$!!$a2V5",
-		"$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$",
-		// Strict parsing tests
-		"$argon2id$v=19junk$m=65536,t=2,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",
-		"$argon2id$v=19$m=65536,t=2,p=1xyz$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",
-		"$argon2id$v=19$m= 65536,t=2,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",
-		"$argon2id$v=19$m=2000000,t=2,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5", // huge memory
-		"$argon2id$v=19$m=1,t=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",           // missing p
-		"$argon2id$v=19$m=65536,t=2,p=1$YQ$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",       // 1-byte salt
-		"$argon2id$v=19$m=65536,t=2,p=1$c2FsdHNhbHQ$YQ",                            // 1-byte key
-		"$argon2id$v=19$m=100,t=2,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",     // memory too low
-		"$argon2id$v=19$m=65536,t=0,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",   // time=0
-		"$argon2id$v=19$m=65536,t=20,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",  // time too high
-		"$argon2id$v=19$m=65536,t=2,p=20$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",  // threads too high
+		"", "plain", "$argon2i$v=19$m=65536,t=2,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=18$m=65536,t=2,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=0,t=2,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=2,p=1$!!$" + key32,
+		"$argon2id$v=19$m=65536,t=2,p=1$" + salt16 + "$",
+		"$argon2id$v=19junk$m=65536,t=2,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=2,p=1xyz$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m= 65536,t=2,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=2000000,t=2,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=1,t=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=2,p=1$" + salt1 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=2,p=1$" + salt16 + "$" + key1,
+		"$argon2id$v=19$m=100,t=2,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=0,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=20,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=2,p=20$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=19455,t=2,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=1048577,t=2,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=11,p=1$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=2,p=17$" + salt16 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=2,p=1$" + salt4 + "$" + key32,
+		"$argon2id$v=19$m=65536,t=2,p=1$" + salt16 + "$YWFhYWFhYWFhYWFhYWFh",
+		"$argon2id$v=19$m=65536,t=2,p=1$" + salt16 + "$YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
 	} {
 		if _, err := VerifyPassword(bad, "x"); !errors.Is(err, ErrBadHash) {
 			t.Errorf("VerifyPassword(%q) err = %v, want ErrBadHash", bad, err)
+		}
+	}
+}
+
+func TestVerifyPasswordAcceptsEdgeCases(t *testing.T) {
+	const (
+		salt16 = "c3Nzc3Nzc3Nzc3Nzc3Nzcw"                                                                 // 16 's' bytes
+		key16  = "a2tra2tra2tra2tra2traw"                                                                 // 16 'k' bytes
+		key64  = "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2traw" // 64 'k' bytes
+	)
+	cases := []string{
+		"$argon2id$v=19$m=19456,t=2,p=1$" + salt16 + "$" + key16,
+		"$argon2id$v=19$m=1048576,t=2,p=1$" + salt16 + "$" + key16,
+		"$argon2id$v=19$m=65536,t=1,p=1$" + salt16 + "$" + key16,
+		"$argon2id$v=19$m=65536,t=10,p=1$" + salt16 + "$" + key16,
+		"$argon2id$v=19$m=65536,t=2,p=16$" + salt16 + "$" + key16,
+		"$argon2id$v=19$m=65536,t=2,p=1$" + salt16 + "$" + key16,
+		"$argon2id$v=19$m=65536,t=2,p=1$" + salt16 + "$" + key64,
+	}
+	for _, h := range cases {
+		if _, err := VerifyPassword(h, "x"); err != nil {
+			t.Errorf("VerifyPassword(%q) err = %v, want nil", h, err)
 		}
 	}
 }
