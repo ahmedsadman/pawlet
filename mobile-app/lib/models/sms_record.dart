@@ -114,6 +114,25 @@ enum ParseSource {
   }
 }
 
+/// What the on-device model made of a message the live pipeline ran it on.
+/// Recorded once per message in `sms_records.local_verdict` and tallied in
+/// `model_stats` for the local-model stats. DB stores the [value], which is
+/// also the name of the `model_stats` column it is counted in.
+enum LocalVerdict {
+  /// The model's output cleared the confidence gate (financial or not); the
+  /// LLM is never called for this message.
+  accepted('accepted'),
+
+  /// The model ran but did not clear the gate; the message goes to the LLM.
+  declined('declined'),
+
+  /// The model produced no prediction (failed to load, or the run failed).
+  unavailable('unavailable');
+
+  const LocalVerdict(this.value);
+  final String value;
+}
+
 /// A single captured SMS and its processing state. `sms_records` doubles as the
 /// message store — transactions/bills reference its [id].
 class SmsRecord {

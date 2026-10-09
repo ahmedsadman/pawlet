@@ -19,9 +19,13 @@ class AppDatabase {
   /// Key/value store for small operational metadata (e.g. the last prune time).
   static const String metaTable = 'app_meta';
 
+  /// Per UTC day and app version, how the on-device model judged live
+  /// messages (see `ModelStatsRepository`).
+  static const String modelStatsTable = 'model_stats';
+
   /// Schema version. Every bump needs a matching [onUpgrade] branch and a
   /// parity test — see the guard in `test/database_test.dart`.
-  static const int version = 6;
+  static const int version = 7;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), fileName);
@@ -52,7 +56,8 @@ class AppDatabase {
         ignore_reason TEXT,
         failure_reason TEXT,
         parse_source TEXT,
-        needs_llm INTEGER NOT NULL DEFAULT 0
+        needs_llm INTEGER NOT NULL DEFAULT 0,
+        local_verdict TEXT
       )
     ''');
     // Dedupe overlapping foreground / background / cold-start reads of one SMS.
@@ -68,6 +73,7 @@ class AppDatabase {
         value INTEGER NOT NULL
       )
     ''');
+    await _createModelStatsTable(db);
 
     await db.execute('''
       CREATE TABLE $banksTable (
@@ -155,6 +161,25 @@ class AppDatabase {
     ''');
   }
 
+  /// The local-model stats tally. Shared by [createSchema] and the v7 upgrade
+  /// so the two cannot drift. `day` is the UTC `YYYY-MM-DD` of the verdict;
+  /// `updated_at` is bumped on every increment and `reported_at` holds the
+  /// flush start time of the last send the server acknowledged.
+  static Future<void> _createModelStatsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE $modelStatsTable (
+        day TEXT NOT NULL,
+        app_version_code INTEGER NOT NULL,
+        accepted INTEGER NOT NULL DEFAULT 0,
+        declined INTEGER NOT NULL DEFAULT 0,
+        unavailable INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        reported_at INTEGER,
+        PRIMARY KEY (day, app_version_code)
+      )
+    ''');
+  }
+
   /// Upgrade policy: walk forward one step at a time, preserving data from
   /// every released version; rebuild destructively only from versions that
   /// predate release and so have no migration path.
@@ -184,6 +209,7 @@ class AppDatabase {
         transactionsTable,
         billsTable,
         metaTable,
+        modelStatsTable,
       ]) {
         // Dropping a table also drops its indexes.
         await db.execute('DROP TABLE IF EXISTS $table');
@@ -200,6 +226,12 @@ class AppDatabase {
         'ALTER TABLE $smsTable '
         'ADD COLUMN needs_llm INTEGER NOT NULL DEFAULT 0',
       );
+    }
+
+    if (oldVersion < 7) {
+      // Additive. Existing rows get no verdict and are never counted.
+      await db.execute('ALTER TABLE $smsTable ADD COLUMN local_verdict TEXT');
+      await _createModelStatsTable(db);
     }
   }
 }
