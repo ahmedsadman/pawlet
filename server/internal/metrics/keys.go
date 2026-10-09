@@ -52,3 +52,12 @@ const (
 	// CategoryNone is a message the LLM judged neither transaction nor bill.
 	CategoryNone = "none"
 )
+
+// ModelStatsOutcome counts every /v1/model-stats response, one key per
+// request: OK, Unauthorized, Banned, RateLimited, BadRequest or Internal.
+const ModelStatsOutcome = "model_stats_outcome"
+
+// RateLimited is model_stats_outcome's key for the per-install hourly limit.
+// classify_outcome splits its limits into RateLimitedDaily and
+// RateLimitedBurst instead.
+const RateLimited = "rate_limited"
