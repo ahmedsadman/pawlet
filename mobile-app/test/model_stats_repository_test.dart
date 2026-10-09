@@ -17,7 +17,7 @@ void main() {
 
   /// 2026-10-10 12:00 UTC.
   final now = DateTime.utc(2026, 10, 10, 12).millisecondsSinceEpoch;
-  const window = '2026-09-10'; // oldestKeptDay(now)
+  const window = '2026-09-11'; // oldestKeptDay(now)
 
   setUp(() async {
     db = await openTestDb();
@@ -79,7 +79,9 @@ void main() {
       );
     });
 
-    test('the window keeps today and the 30 days before it', () {
+    // One day inside the server's accepted window (UTC today − 30), so a
+    // phone clock slightly behind the server's near midnight still fits.
+    test('the window keeps today and the 29 days before it', () {
       expect(oldestKeptDay(now), window);
     });
   });
@@ -198,8 +200,8 @@ void main() {
       expect(await statsRows(), isEmpty);
     });
 
-    test('drops days that fell out of the 30-day window', () async {
-      await seed('2026-09-09');
+    test('drops days that fell out of the 29-day window', () async {
+      await seed('2026-09-10');
       await seed(window);
       final id = await message();
 
