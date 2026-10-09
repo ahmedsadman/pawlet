@@ -90,3 +90,16 @@ String dateTimeLabel(DateTime time, {DateTime? now}) {
   final (t, n) = _resolve(time, now);
   return '${_day(t, n)} · ${_clock(t)}';
 }
+
+/// "Updated …" label: relative while still today (`just now` under a minute,
+/// then `5m ago`, then `2h ago`, at most `23h ago`); from yesterday back it is
+/// identical to [dateTimeLabel].
+String updatedLabel(DateTime time, {DateTime? now}) {
+  final (t, n) = _resolve(time, now);
+  if (_calendarDaysBefore(t, n) > 0) return dateTimeLabel(t, now: n);
+  final elapsed = n.difference(t);
+  if (elapsed.inMinutes < 1) return 'just now';
+  if (elapsed.inHours < 1) return '${elapsed.inMinutes}m ago';
+  // A same-day gap is under 24 h except on a 25-hour daylight-saving day.
+  return '${elapsed.inHours.clamp(1, 23)}h ago';
+}

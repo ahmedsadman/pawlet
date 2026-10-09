@@ -125,4 +125,79 @@ void main() {
       );
     });
   });
+
+  group('updatedLabel', () {
+    test('under a minute ago is just now', () {
+      expect(updatedLabel(now, now: now), 'just now');
+      expect(
+        updatedLabel(now.subtract(const Duration(seconds: 59)), now: now),
+        'just now',
+      );
+    });
+
+    test('minutes ago from one minute up to the hour', () {
+      expect(
+        updatedLabel(now.subtract(const Duration(minutes: 1)), now: now),
+        '1m ago',
+      );
+      expect(
+        updatedLabel(now.subtract(const Duration(minutes: 5)), now: now),
+        '5m ago',
+      );
+      expect(
+        updatedLabel(
+          now.subtract(const Duration(minutes: 59, seconds: 59)),
+          now: now,
+        ),
+        '59m ago',
+      );
+    });
+
+    test('hours ago for the rest of today', () {
+      expect(
+        updatedLabel(now.subtract(const Duration(hours: 1)), now: now),
+        '1h ago',
+      );
+      expect(
+        updatedLabel(now.subtract(const Duration(hours: 2)), now: now),
+        '2h ago',
+      );
+    });
+
+    test('at most 23h ago (still today)', () {
+      final lastMinute = DateTime(2026, 10, 10, 23, 59);
+      expect(updatedLabel(DateTime(2026, 10, 10), now: lastMinute), '23h ago');
+    });
+
+    test('before local midnight switches to the calendar label', () {
+      // Only 40 minutes elapsed, but it was yesterday.
+      final justAfterMidnight = DateTime(2026, 10, 10, 0, 30);
+      expect(
+        updatedLabel(DateTime(2026, 10, 9, 23, 50), now: justAfterMidnight),
+        'Yesterday · 11:50 PM',
+      );
+    });
+
+    test('older days match dateTimeLabel', () {
+      expect(
+        updatedLabel(DateTime(2026, 10, 9, 9, 5), now: now),
+        'Yesterday · 9:05 AM',
+      );
+      expect(
+        updatedLabel(DateTime(2026, 10, 6, 15, 42), now: now),
+        '6 Oct · 3:42 PM',
+      );
+      expect(
+        updatedLabel(DateTime(2025, 12, 14, 15, 42), now: now),
+        '14 Dec 2025 · 3:42 PM',
+      );
+    });
+
+    test('a future timestamp is just now', () {
+      expect(
+        updatedLabel(now.add(const Duration(minutes: 3)), now: now),
+        'just now',
+      );
+    });
+  });
 }
