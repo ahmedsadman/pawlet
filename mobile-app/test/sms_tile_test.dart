@@ -405,4 +405,40 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Extraction error'), findsOneWidget);
   });
+
+  testWidgets('ignored history row shows the grey Ignored badge only', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.ignored, parseSource: ParseSource.llm),
+        showCategory: true,
+        onRetry: () {},
+      ),
+    );
+    expect(find.text('Ignored'), findsOneWidget);
+    expect(find.text('LLM'), findsNothing);
+    expect(find.byIcon(Icons.refresh), findsNothing);
+
+    // Expands like any other row: the message, no failure hint.
+    await tester.tap(find.text('BRAC'));
+    await tester.pumpAndSettle();
+    expect(find.text('debit 50 BDT'), findsOneWidget);
+    expect(find.text('Extraction error'), findsNothing);
+  });
+
+  testWidgets('ignored history row never shows a category label', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.ignored, category: 'transaction'),
+        showCategory: true,
+      ),
+    );
+    expect(find.text('Ignored'), findsOneWidget);
+    expect(find.text('Transaction'), findsNothing);
+  });
 }

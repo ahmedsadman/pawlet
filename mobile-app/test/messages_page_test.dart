@@ -187,6 +187,21 @@ void main() {
     expect(find.byIcon(Icons.refresh), findsOneWidget);
   });
 
+  testWidgets('an ignored history row shows Ignored and no retry icon', (
+    tester,
+  ) async {
+    final page = HistoryPage(
+      records: [_sms('EBL', SmsStatus.ignored)],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    );
+    await _pump(tester, _overrides(history: page));
+    expect(find.text('EBL'), findsOneWidget);
+    expect(find.text('Ignored'), findsOneWidget);
+    expect(find.byIcon(Icons.refresh), findsNothing);
+  });
+
   testWidgets('the History header no longer has a global retry button', (
     tester,
   ) async {

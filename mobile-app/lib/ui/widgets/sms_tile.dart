@@ -14,9 +14,10 @@ int _defaultNow() => DateTime.now().millisecondsSinceEpoch;
 /// status badge and retry progress — unchanged.
 ///
 /// History (showCategory == true): a compact card. Line 1 shows the sender, an
-/// optional muted `LLM` marker, the category/status trailing, a retry icon for
-/// failed rows, and a caret. Line 2 shows the timestamp. Tapping anywhere
-/// toggles a collapsible body (the failure hint, if any, plus the message text).
+/// optional muted `LLM` marker, the category trailing (or a status badge for
+/// failed and ignored rows), a retry icon for failed rows, and a caret. Line 2
+/// shows the timestamp. Tapping anywhere toggles a collapsible body (the
+/// failure hint, if any, plus the message text).
 class SmsTile extends StatefulWidget {
   const SmsTile(
     this.record, {
@@ -71,7 +72,10 @@ class _SmsTileState extends State<SmsTile> {
 
   Widget _trailing() {
     final category = record.category;
-    if (showCategory && category != null && category != 'ignored') {
+    if (showCategory &&
+        record.status != SmsStatus.ignored &&
+        category != null &&
+        category != 'ignored') {
       if (record.parseSource == ParseSource.llm) {
         return Row(
           mainAxisSize: MainAxisSize.min,

@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../../models/sms_record.dart';
 import '../../theme/catppuccin_theme.dart';
 
-/// Small colored pill showing an SMS processing status (used in the Queue).
+/// Small colored pill showing an SMS processing status (Queue rows, and
+/// failed or ignored History rows).
 class StatusBadge extends StatelessWidget {
   const StatusBadge(this.status, {super.key});
 
@@ -18,8 +19,7 @@ class StatusBadge extends StatelessWidget {
       SmsStatus.processing ||
       SmsStatus.sending => (AppTheme.flavor.blue, 'Processing'),
       SmsStatus.success => (AppTheme.flavor.green, 'Done'),
-      // Ignored rows are never rendered (not in Queue or History); this case
-      // only keeps the switch exhaustive.
+      // Ignored bank messages appear in History (gated ones never do).
       SmsStatus.ignored => (AppTheme.flavor.overlay0, 'Ignored'),
       SmsStatus.failure => (AppTheme.flavor.red, 'Failed'),
     };
