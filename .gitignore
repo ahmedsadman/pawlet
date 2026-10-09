@@ -58,3 +58,7 @@ docs/superpowers
 
 # Brainstorming companion mockups — local scratch
 .superpowers/
+
+# Dashboard build output, embedded into pawlet-admin at build time
+server/internal/admin/web/dist/*
+!server/internal/admin/web/dist/.gitkeep
