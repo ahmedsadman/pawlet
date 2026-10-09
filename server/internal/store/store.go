@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	// Pure-Go SQLite driver, registered under the name "sqlite". Chosen over
@@ -15,6 +16,10 @@ import (
 
 // ErrNotFound reports an absent install record.
 var ErrNotFound = errors.New("store: not found")
+
+// ErrSchemaTooOld reports a database that has not yet been migrated to the
+// version this binary reads. Only pawletd migrates; readers wait for it.
+var ErrSchemaTooOld = errors.New("store: database schema is older than this binary needs")
 
 // Install is one anonymous install, keyed by the SHA-256 of its install ID.
 type Install struct {
@@ -53,8 +58,44 @@ type Store struct {
 const dsnParams = "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)" +
 	"&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(on)"
 
-// Open prepares the database file and both pools.
+// Open prepares the database file and both pools, migrating the schema to
+// the newest version this binary knows. Only pawletd calls this.
 func Open(path string) (*Store, error) {
+	s, err := openPools(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := migrate(context.Background(), s.write); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+// OpenExisting opens a database that another process owns and migrates. It
+// never changes the schema, and refuses a missing file or one older than
+// SchemaVersion so a reader cannot query tables that do not exist yet.
+func OpenExisting(path string) (*Store, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("open existing database: %w", err)
+	}
+	s, err := openPools(path)
+	if err != nil {
+		return nil, err
+	}
+	var version int
+	if err := s.read.QueryRowContext(context.Background(), "PRAGMA user_version").Scan(&version); err != nil {
+		_ = s.Close()
+		return nil, fmt.Errorf("read schema version: %w", err)
+	}
+	if version < SchemaVersion() {
+		_ = s.Close()
+		return nil, fmt.Errorf("%w: have %d, need %d", ErrSchemaTooOld, version, SchemaVersion())
+	}
+	return s, nil
+}
+
+func openPools(path string) (*Store, error) {
 	// Write pool uses IMMEDIATE transactions so concurrent openers racing to
 	// apply the same migration (e.g., during an overlapping deploy) take the
 	// write lock before reading user_version, preventing both from trying a
@@ -68,18 +109,12 @@ func Open(path string) (*Store, error) {
 	}
 	write.SetMaxOpenConns(1)
 
-	if err := migrate(context.Background(), write); err != nil {
-		_ = write.Close()
-		return nil, err
-	}
-
 	read, err := sql.Open("sqlite", readDSN)
 	if err != nil {
 		_ = write.Close()
 		return nil, fmt.Errorf("open read pool: %w", err)
 	}
 	read.SetMaxOpenConns(8)
-
 	return &Store{write: write, read: read}, nil
 }
 
@@ -195,6 +230,15 @@ func (s *Store) Ban(ctx context.Context, idHash, reason string) error {
 	const q = `UPDATE installs SET banned = 1, ban_reason = ? WHERE id_hash = ?`
 	if _, err := s.write.ExecContext(ctx, q, reason, idHash); err != nil {
 		return fmt.Errorf("ban install: %w", err)
+	}
+	return nil
+}
+
+// Unban lifts a ban and clears its reason.
+func (s *Store) Unban(ctx context.Context, idHash string) error {
+	const q = `UPDATE installs SET banned = 0, ban_reason = '' WHERE id_hash = ?`
+	if _, err := s.write.ExecContext(ctx, q, idHash); err != nil {
+		return fmt.Errorf("unban install: %w", err)
 	}
 	return nil
 }
