@@ -56,14 +56,23 @@ export default function InstallDetailPage() {
                 )}
               </div>
               {r.banned ? (
-                <button
-                  type="button"
-                  disabled={unban.isPending}
-                  onClick={() => unban.mutate()}
-                  className="rounded-lg bg-ctp-surface1 px-4 py-2 text-sm hover:bg-ctp-surface2 disabled:opacity-50"
-                >
-                  {unban.isPending ? "Unbanning…" : "Unban"}
-                </button>
+                <div className="flex flex-col items-end gap-1">
+                  <button
+                    type="button"
+                    disabled={unban.isPending}
+                    onClick={() => unban.mutate()}
+                    className="rounded-lg bg-ctp-surface1 px-4 py-2 text-sm hover:bg-ctp-surface2 disabled:opacity-50"
+                  >
+                    {unban.isPending ? "Unbanning…" : "Unban"}
+                  </button>
+                  {unban.error && (
+                    <p className="text-sm text-ctp-red">
+                      {unban.error instanceof ApiError
+                        ? `Couldn't unban: ${unban.error.code}`
+                        : "Couldn't reach the server."}
+                    </p>
+                  )}
+                </div>
               ) : (
                 <button
                   type="button"

@@ -225,7 +225,7 @@ export const statCopy = {
     title: "Calls per active day",
     meaning: "How busy an active install's day is.",
     computation:
-      "Every install-day with at least one call in the range, bucketed by its call count. The last bucket is days at the daily limit.",
+      "Every install-day with at least one call in the range, bucketed by its call count. The last bucket is days at or over the daily limit.",
   },
   dormant: {
     title: "Dormant installs",
