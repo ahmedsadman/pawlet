@@ -72,17 +72,6 @@ export const statCopy = {
       "ok ÷ (ok + upstream 429 + upstream retryable + upstream rejected + internal). Client errors, quota denials and cancellations are left out.",
     caveat: COUNTERS_SINCE,
   },
-  callsPerActiveInstallDay: {
-    title: "Calls per active install-day",
-    meaning: "How many messages an active install sends to the LLM on a typical day.",
-    computation: "Calls in the range ÷ install-days with at least one call.",
-    caveat: "Mixes SMS volume with how often the on-device model escalates; read it as a trend.",
-  },
-  "chart.callsPerDay": {
-    title: "Calls per day",
-    meaning: "Classify calls admitted each day.",
-    computation: "Sum of per-install daily call counters.",
-  },
   "chart.activeInstallsPerDay": {
     title: "Active installs per day",
     meaning: "Installs that classified or minted a session each day.",
