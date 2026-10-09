@@ -33,7 +33,7 @@ Message content is never written to disk and never logged. The logging middlewar
 - Latency
 - Token counts (for `/v1/classify`)
 
-The SQLite database holds only anonymous install hashes and usage counters. No message content, device identifiers, or personally identifiable information is persisted.
+The SQLite database holds anonymous install hashes, usage counters, a summary of each install's latest Play Integrity verdict (app version, device tier, licensing, Android SDK level), the days each install attested, and daily aggregate outcome counters. No message content, device identifiers, or personally identifiable information is persisted. See [docs/metrics.md](docs/metrics.md).
 
 ## Development
 
@@ -141,8 +141,10 @@ One-time setup:
 
 The database is bind-mounted at `server/data/pawlet.db`, owned by your host
 user, so no `sudo` or `docker cp` is needed to reach it. It holds only:
-- Anonymous install hashes (SHA-256 of the random per-install ID)
-- Daily and burst usage counters, plus ban flags
+- Anonymous install hashes (SHA-256 of the random per-install ID), ban flags, and each
+  install's latest verdict summary
+- Daily usage counters, session days, and daily aggregate outcome counters
+- The effective limits pawletd published at startup
 
 Challenge nonces are **not** in the database — they live in memory with a
 2-minute TTL and are deliberately lost on restart.
@@ -165,6 +167,7 @@ Verify before trusting it:
 sqlite3 /backup/pawlet-$(date +%F).db "select count(*) from installs"
 ```
 
-Retention: a week is plenty. Quota counters roll daily and the install table
-refills as clients re-attest, so the only thing a restore really preserves is
-ban state and the current day's usage.
+Retention: keep at least a week. The install table refills as clients
+re-attest, but the history behind the stats — daily usage, session days and
+outcome counters — exists nowhere else, so a backup is the only way to get it
+back.

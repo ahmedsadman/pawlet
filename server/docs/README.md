@@ -8,3 +8,6 @@ the code disagree, trust the code.
 - [Auth flow](auth-flow.md) — how an install proves it is the genuine app on a genuine
   device, gets a session token, and uses it to classify messages; what each piece is for
   and what happens when a step fails.
+- [Stored metrics](metrics.md) — what pawletd records for the admin dashboard (install
+  metadata, session days, daily outcome and latency counters, server info) and what each value
+  means.
