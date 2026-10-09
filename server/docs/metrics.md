@@ -24,6 +24,8 @@ image tag stays safe.
 | `usage` | install per UTC day | admitted classify calls (tokens on success), written by the quota flusher |
 | `install_days` | install per UTC day with a successful session | each successful `/v1/session` |
 | `counters_daily` | day, metric, key | metrics flusher (`internal/metrics/recorder.go`) |
+| `model_stats_daily` | install per UTC day per app version | each accepted `/v1/model-stats` (replaces on resend) |
+| `model_stats_rollup` | UTC day per app version | rollup job (`cmd/pawletd/rollup.go`) folds rows older than 90 days |
 | `server_info` | configuration key | pawletd at startup |
 
 ## Install metadata
@@ -38,6 +40,7 @@ carry the field, or the install has not attested since the column was added.
 | `device_tier` | `deviceIntegrity.deviceRecognitionVerdict` | `STRONG` or `DEVICE` — see below. |
 | `licensing` | `accountDetails.appLicensingVerdict` | `LICENSED`, `UNLICENSED` or `UNEVALUATED` — see below. |
 | `sdk_version` | `deviceIntegrity.deviceAttributes.sdkVersion` | Android API level. Only present when "device attributes" is enabled for the app in Play Console's Integrity API settings; NULL otherwise. |
+| `messages_archived` | (not from verdict) | Total messages (accepted + declined + unavailable) folded into `model_stats_rollup`; updated by the rollup job (`internal/store/model_stats.go`). |
 
 `install_days` also keeps the version seen on each session day, which is what version
 adoption over time is built from.
@@ -80,6 +83,7 @@ defined in `internal/metrics/keys.go`.
 |---|---|---|
 | `classify_outcome` | `ok`, `unauthorized`, `banned`, `bad_request`, `rate_limited_daily`, `rate_limited_burst`, `capacity`, `upstream_429`, `upstream_retryable`, `upstream_rejected`, `client_cancelled`, `internal` | every `/v1/classify` response, one key per request |
 | `session_outcome` | `ok`, `bad_request`, `challenge_invalid`, `challenge_rate_limited`, `attest_unavailable`, `banned`, `internal`, `package_mismatch`, `request_hash_mismatch`, `stale_token`, `app_not_recognized`, `cert_mismatch`, `device_integrity`, `attest_failed` | every `/v1/session` response, plus `/v1/challenge` refusals for rate limiting |
+| `model_stats_outcome` | `ok`, `unauthorized`, `banned`, `rate_limited`, `bad_request`, `internal` | every `/v1/model-stats` response, one key per request (`internal/metrics/keys.go`) |
 | `classify_latency_ms` | bucket upper bounds (see snapshot) | successful classify calls |
 | `model` | the model id OpenRouter reports serving, or `unknown` | successful classify calls |
 | `category` | `transaction`, `bill`, `none` | successful classify calls |
@@ -114,6 +118,32 @@ walk the buckets in order until the running total crosses the target rank (half 
 p50, 95% for p95), then interpolate linearly inside that bucket. The result is an estimate within
 one bucket's range — enough to spot a slow model or a trend, not a precise timing.
 
+## Model stats and rollup
+
+Proxy-mode installs (those that passed Play Integrity attestation) report daily counts of how the
+on-device model handled messages via `/v1/model-stats` (`internal/httpapi/model_stats.go`). A
+resend replaces the row's counts for that install-day-version, so the client can correct under- or
+over-counting without creating duplicates.
+
+`model_stats_daily` holds per-install-day counts for the last 90 days. Each row records:
+- `accepted` — model prediction cleared the confidence gate, message handled locally
+- `declined` — model ran but did not clear the gate; went to the LLM
+- `unavailable` — model produced no prediction
+
+The **rollup job** (`cmd/pawletd/rollup.go`) runs at startup and every 24 hours. In one
+transaction it sums rows with `day` older than UTC today − 90 into `model_stats_rollup` (one row
+per day per app version), adds each install's folded message total to `installs.messages_archived`,
+then deletes the folded rows. The endpoint accepts days no older than 30, so a folded day can never
+come back. Rollup failures are logged and retried next tick. `model_stats_rollup` rows are kept
+forever.
+
+Only proxy-mode installs report; bulk inbox import on first launch is not counted (it never goes
+through the model).
+
+**Definitions:**
+- **On-device rate** = `accepted` ÷ (`accepted` + `declined`); `unavailable` is excluded.
+- **Messages** = `accepted` + `declined` + `unavailable`.
+
 ## Server info
 
 pawletd upserts its effective configuration into `server_info` at startup
@@ -137,6 +167,13 @@ Snapshot as of this writing — verify against the named source files.
 | Counter flush interval | 10 s | `cmd/pawletd/main.go` |
 | Latency bucket bounds (ms) | 250, 500, 1000, 2000, 4000, 8000, 16000, 32000, then `inf` | `internal/metrics/latency.go` |
 | Day boundary | UTC | `internal/metrics/recorder.go`, `internal/store/store.go` |
+| Per-install model stats retention | 90 days | `internal/store/model_stats.go` (`ModelStatsRetentionDays`) |
+| Rollup interval | startup, then every 24 h | `cmd/pawletd/rollup.go` |
+| `/v1/model-stats` body limit | 4 KB | `internal/httpapi/model_stats.go` |
+| `/v1/model-stats` entries per request | 1–31 | `internal/httpapi/model_stats.go` |
+| Accepted day window | UTC today − 30 … today + 1 | `internal/httpapi/model_stats.go` |
+| Max count per field | 100,000 | `internal/httpapi/model_stats.go` |
+| Per-install request limit | 12 per rolling hour | `internal/httpapi/installrate.go` |
 
 ## Dashboard definitions
 

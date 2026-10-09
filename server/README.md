@@ -10,6 +10,7 @@ Attestation-gated proxy for bank SMS classification. Holds an OpenRouter API key
 | GET    | `/v1/challenge`      | None      | Issue a single-use challenge for integrity verification    |
 | POST   | `/v1/session`        | Challenge | Consume challenge + integrity token, return session JWT    |
 | POST   | `/v1/classify`       | JWT       | Classify bank SMS via OpenRouter (attested installs only)  |
+| POST   | `/v1/model-stats`    | JWT       | Store daily counts of how the on-device model handled messages (proxy-mode installs) |
 | GET    | `/v1/prompt-bundle`  | None      | Fetch prompt templates for client-side classification      |
 
 ## Admin dashboard
