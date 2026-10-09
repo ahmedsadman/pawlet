@@ -10,7 +10,7 @@ import {
   Smartphone,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router";
 import { api } from "../api/client";
 
@@ -76,6 +76,16 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
 export function Layout() {
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[14rem_1fr]">
       <aside className="sticky top-0 hidden h-dvh md:block">
