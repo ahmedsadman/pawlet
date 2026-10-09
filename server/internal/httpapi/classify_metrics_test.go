@@ -144,6 +144,20 @@ func TestClassifyCountsOutcomes(t *testing.T) {
 			},
 			want: metrics.UpstreamRetryable,
 		},
+		{
+			name: "client cancelled",
+			setup: func(_ *testing.T, h *testHarness) *http.Request {
+				h.touchInstall(metricsHash)
+				// Simulate a retryable upstream error, but the context is already cancelled.
+				h.classifier.err = &llm.CallError{Status: 502, Retryable: true}
+				req := h.authed("content")
+				// Replace the request context with a cancelled one.
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return req.WithContext(ctx)
+			},
+			want: metrics.ClientCancelled,
+		},
 	}
 
 	for _, c := range cases {

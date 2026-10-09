@@ -25,6 +25,9 @@ const (
 	Upstream429       = "upstream_429"
 	UpstreamRetryable = "upstream_retryable"
 	UpstreamRejected  = "upstream_rejected"
+	// ClientCancelled counts calls where the request context was cancelled
+	// (client disconnect or server shutdown) before the upstream call finished.
+	ClientCancelled = "client_cancelled"
 
 	ChallengeInvalid     = "challenge_invalid"
 	ChallengeRateLimited = "challenge_rate_limited"

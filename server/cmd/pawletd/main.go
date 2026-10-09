@@ -82,18 +82,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	// 8. Start the quota flusher under a WaitGroup that the metrics flusher (8b)
-	// joins too, so shutdown can wait for both before running the final flushes.
-	// Without the wait, a flusher could still be writing when main's final flush
-	// runs (or worse, when defer db.Close() fires).
-	var flushers sync.WaitGroup
-	flushers.Add(1)
-	go func() {
-		defer flushers.Done()
-		limiter.RunFlusher(ctx, 10*time.Second, logger)
-	}()
-
-	// 8a. Publish the effective limits so the admin dashboard can show them
+	// 8. Publish the effective limits so the admin dashboard can show them
 	// without its own copy of this configuration.
 	if err := db.PutServerInfo(ctx, map[string]string{
 		store.InfoDailyPerInstall: strconv.Itoa(cfg.DailyPerInstall),
@@ -106,8 +95,17 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	// 8b. Start the metrics recorder. Like the quota limiter it flushes on an
-	// interval, so handlers only ever touch memory.
+	// 9. Start the quota and metrics flushers under a WaitGroup so shutdown can
+	// wait for both before running the final flushes. Without the wait, a flusher
+	// could still be writing when main's final flush runs (or worse, when defer
+	// db.Close() fires).
+	var flushers sync.WaitGroup
+	flushers.Add(1)
+	go func() {
+		defer flushers.Done()
+		limiter.RunFlusher(ctx, 10*time.Second, logger)
+	}()
+
 	recorder := metrics.New(&counterSink{store: db}, time.Now)
 	flushers.Add(1)
 	go func() {
@@ -115,7 +113,7 @@ func run(logger *slog.Logger) error {
 		recorder.RunFlusher(ctx, 10*time.Second, logger)
 	}()
 
-	// 9. Build the challenge store and its per-IP rate limiter. Start a janitor
+	// 10. Build the challenge store and its per-IP rate limiter. Start a janitor
 	// that cleans both.
 	challenges := attest.NewChallenges(2*time.Minute, time.Now)
 	challengeLimiter := httpapi.NewChallengeLimiter(cfg.ChallengePerIPHour)
@@ -133,10 +131,10 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
-	// 10. Build the session token issuer.
+	// 11. Build the session token issuer.
 	issuer := token.New(cfg.JWTSecret, 24*time.Hour)
 
-	// 11. Build the LLM client.
+	// 12. Build the LLM client.
 	llmClient := &llm.Client{
 		// Belt-and-braces: Classify already derives a 2-minute context, but a
 		// transport ceiling means a leaked context cannot hang a connection.
@@ -147,7 +145,7 @@ func run(logger *slog.Logger) error {
 		Timeout:  2 * time.Minute,
 	}
 
-	// 12. Assemble the handlers.
+	// 13. Assemble the handlers.
 	handlers := httpapi.Handlers{
 		Session: &httpapi.SessionHandler{
 			Challenges: challenges,
@@ -179,7 +177,7 @@ func run(logger *slog.Logger) error {
 		Logger: logger,
 	}
 
-	// 13. Build the handler chain: Recovery wraps everything so it catches panics
+	// 14. Build the handler chain: Recovery wraps everything so it catches panics
 	// from the logger middleware too.
 	handler := httpapi.Chain(
 		httpapi.NewRouter(handlers),
@@ -187,7 +185,7 @@ func run(logger *slog.Logger) error {
 		httpapi.RequestLogger(logger),
 	)
 
-	// 14. Build the HTTP server. WriteTimeout is deliberately absent: classify
+	// 15. Build the HTTP server. WriteTimeout is deliberately absent: classify
 	// calls inherit a 2-minute ceiling from the LLM client, and an http.Server
 	// WriteTimeout below that would cut off legitimate slow calls mid-stream.
 	srv := &http.Server{
@@ -199,7 +197,7 @@ func run(logger *slog.Logger) error {
 		},
 	}
 
-	// 15. Start the server in a background goroutine.
+	// 16. Start the server in a background goroutine.
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("listening", "addr", srv.Addr)
@@ -208,7 +206,7 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
-	// 16. Wait for a shutdown signal or server failure. On server failure, cancel
+	// 17. Wait for a shutdown signal or server failure. On server failure, cancel
 	// ctx so both flushers exit cleanly, then continue through the same shutdown
 	// sequence (graceful shutdown, wait for flushers, final flushes) as the
 	// signal path. The server error is returned at the end.
@@ -221,7 +219,7 @@ func run(logger *slog.Logger) error {
 		logger.Info("shutdown signal received")
 	}
 
-	// 17. Graceful shutdown with a 30-second timeout. Use WithoutCancel so the
+	// 18. Graceful shutdown with a 30-second timeout. Use WithoutCancel so the
 	// shutdown context is not already cancelled.
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
@@ -229,7 +227,7 @@ func run(logger *slog.Logger) error {
 		logger.Error("shutdown failed", "error", err)
 	}
 
-	// 18. Wait for both flushers to exit so they are not writing when the final
+	// 19. Wait for both flushers to exit so they are not writing when the final
 	// flushes run (or worse, when defer db.Close() fires). Then do the final
 	// flushes so the last counters are persisted. Use WithoutCancel again so
 	// the flush context is valid even though ctx is already cancelled. Metrics
@@ -244,7 +242,7 @@ func run(logger *slog.Logger) error {
 		logger.Error("final metrics flush failed", "error", err)
 	}
 
-	// 19. Return the server error if one happened, otherwise a quota flush error.
+	// 20. Return the server error if one happened, otherwise a quota flush error.
 	if serverErr != nil {
 		return serverErr
 	}
