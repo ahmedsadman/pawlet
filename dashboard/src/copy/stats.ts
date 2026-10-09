@@ -333,7 +333,7 @@ export const statCopy = {
       "Share of messages the on-device model handled without the LLM, and how that changes over time.",
     computation:
       "On-device rate = accepted ÷ (accepted + declined). The change is in percentage points against the previous period of the same length. The line is a 7-day weighted average (each day and the 6 before it, pooled); dots are single days; a dashed line marks a day a new app version handled over half of at least 20 messages.",
-    caveat: `Model errors (no prediction) are counted but left out of the rate. ${MESSAGES_REPORTED}`,
+    caveat: `Model errors (no prediction) are counted but left out of the rate. The ring's LLM count is messages the model declined; the footer's "via LLM" also includes model errors, since those go on to the LLM too. ${MESSAGES_REPORTED}`,
   },
   "col.messagesToday": {
     title: "Today",
