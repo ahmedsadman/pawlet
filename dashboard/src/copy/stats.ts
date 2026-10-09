@@ -213,12 +213,6 @@ export const statCopy = {
       "Cohort = UTC week (Monday start) of first attestation. Cell = share with a classify call in that week. Last 12 cohorts.",
     caveat: SMS_DRIVEN,
   },
-  "chart.callsDistribution": {
-    title: "Calls per active day",
-    meaning: "How busy an active install's day is.",
-    computation:
-      "Every install-day with at least one call in the range, bucketed by its call count. The last bucket is days at or over the daily limit.",
-  },
   dormant: {
     title: "Dormant installs",
     meaning: "Installs with no session or classify call for more than 14 days.",

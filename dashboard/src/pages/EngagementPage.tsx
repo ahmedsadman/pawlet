@@ -83,8 +83,11 @@ export default function EngagementPage() {
               <CohortHeatmap cohorts={d.cohorts} />
             </Card>
             <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-              <Card title="Calls per active day" statId="chart.callsDistribution">
-                <Histogram data={d.callsDistribution} />
+              <Card title="Messages per active day" statId="chart.messagesDistribution">
+                {range === "all" && (
+                  <p className="mb-2 text-xs text-ctp-subtext0">Covers the last 90 days only.</p>
+                )}
+                <Histogram data={d.messagesDistribution} unit="messages" />
               </Card>
               <div className="space-y-4">
                 <StatTile label="Dormant installs" statId="dormant" value={fmtCount(d.dormant)} />

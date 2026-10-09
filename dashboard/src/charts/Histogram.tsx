@@ -1,13 +1,17 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type { Bucket } from "../api/types";
 import { fmtCount } from "../lib/format";
 import { AXIS, SERIES, ctp } from "../theme/tokens";
 import { ChartTooltip } from "./ChartTooltip";
 
+/** Install-days per bucket; unit names what the buckets count, for the tooltip. */
 export function Histogram({
   data,
+  unit,
   height = 220,
 }: {
-  data: { label: string; count: number }[];
+  data: Bucket[];
+  unit: string;
   height?: number;
 }) {
   return (
@@ -37,7 +41,7 @@ export function Histogram({
                 payload={p.payload as never}
                 label={p.label as string}
                 format={fmtCount}
-                labelFormat={(l) => `${l} calls`}
+                labelFormat={(l) => `${l} ${unit}`}
               />
             )}
           />
