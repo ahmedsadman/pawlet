@@ -96,7 +96,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// 9. Start the quota and metrics flushers under a WaitGroup so shutdown can
-	// wait for both before running the final flushes. Without the wait, a flusher
+	// wait for them before running the final flushes. Without the wait, a flusher
 	// could still be writing when main's final flush runs (or worse, when defer
 	// db.Close() fires).
 	var flushers sync.WaitGroup
@@ -225,9 +225,10 @@ func run(logger *slog.Logger) error {
 	}()
 
 	// 17. Wait for a shutdown signal or server failure. On server failure, cancel
-	// ctx so both flushers exit cleanly, then continue through the same shutdown
-	// sequence (graceful shutdown, wait for flushers, final flushes) as the
-	// signal path. The server error is returned at the end.
+	// ctx so the flushers and the rollup exit cleanly, then continue through the
+	// same shutdown sequence (graceful shutdown, wait for the flushers and the
+	// rollup, final flushes) as the signal path. The server error is returned at
+	// the end.
 	var serverErr error
 	select {
 	case serverErr = <-errCh:
@@ -245,12 +246,12 @@ func run(logger *slog.Logger) error {
 		logger.Error("shutdown failed", "error", err)
 	}
 
-	// 19. Wait for both flushers to exit so they are not writing when the final
-	// flushes run (or worse, when defer db.Close() fires). Then do the final
-	// flushes so the last counters are persisted. Use WithoutCancel again so
-	// the flush context is valid even though ctx is already cancelled. Metrics
-	// are flushed even if quota fails; losing them is not worth a non-zero
-	// exit, losing quota is.
+	// 19. Wait for the flushers and the rollup to exit so they are not writing
+	// when the final flushes run (or worse, when defer db.Close() fires). Then
+	// do the final flushes so the last counters are persisted. Use WithoutCancel
+	// again so the flush context is valid even though ctx is already cancelled.
+	// Metrics are flushed even if quota fails; losing them is not worth a
+	// non-zero exit, losing quota is.
 	flushers.Wait()
 	quotaErr := limiter.Flush(context.WithoutCancel(ctx))
 	if quotaErr != nil {

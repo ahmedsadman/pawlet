@@ -28,6 +28,8 @@ func runModelStatsRollup(ctx context.Context, roller modelStatsRoller, every tim
 	for {
 		res, err := roller.RollupModelStats(ctx, now())
 		switch {
+		case err != nil && ctx.Err() != nil:
+			// Shutting down: the fold was cut short, not broken.
 		case err != nil:
 			logger.Error("model stats rollup failed", "error", err)
 		case res.Rows > 0:

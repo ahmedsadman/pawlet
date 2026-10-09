@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -85,4 +87,18 @@ func TestRollupRetriesOnTheNextTickAfterAFailure(t *testing.T) {
 	waitFor(t, roller.calls, "the retry on the next tick")
 	cancel()
 	waitFor(t, done, "the loop to stop after cancel")
+}
+
+func TestRollupFailureFromCancellationIsNotLoggedAsAnError(t *testing.T) {
+	roller := newFakeRoller(context.Canceled)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	runModelStatsRollup(ctx, roller, time.Hour, time.Now, logger)
+
+	if strings.Contains(buf.String(), "rollup failed") {
+		t.Fatalf("logged %q on shutdown, want no failure", buf.String())
+	}
 }
