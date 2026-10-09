@@ -51,6 +51,27 @@ func TestBuildInstallRows(t *testing.T) {
 	}
 }
 
+func TestDormancyBoundary(t *testing.T) {
+	day := func(s string) time.Time { t, _ := time.Parse(DayLayout, s); return t }
+	today := "2026-10-09"
+
+	// Exactly 14 days ago: not dormant
+	installs := []store.Install{{IDHash: "a", FirstSeen: day("2026-09-01"), LastSeen: day("2026-09-25")}}
+	usage := []store.UsageRow{{IDHash: "a", Day: "2026-09-25", Calls: 1}}
+	rows := BuildInstallRows(installs, usage, today, 0)
+	if rows[0].Dormant {
+		t.Fatalf("14 days ago should not be dormant: %+v", rows[0])
+	}
+
+	// 15 days ago: dormant
+	installs = []store.Install{{IDHash: "b", FirstSeen: day("2026-09-01"), LastSeen: day("2026-09-24")}}
+	usage = []store.UsageRow{{IDHash: "b", Day: "2026-09-24", Calls: 1}}
+	rows = BuildInstallRows(installs, usage, today, 0)
+	if !rows[0].Dormant {
+		t.Fatalf("15 days ago should be dormant: %+v", rows[0])
+	}
+}
+
 func TestQueryInstalls(t *testing.T) {
 	installs, usage := fixtureInstalls()
 	rows := BuildInstallRows(installs, usage, "2026-10-09", 200)
@@ -84,6 +105,14 @@ func TestQueryInstalls(t *testing.T) {
 	page, _ = QueryInstalls(rows, InstallQuery{PageSize: 2, Page: 9})
 	if len(page.Rows) != 0 {
 		t.Fatalf("past last page = %+v", page)
+	}
+
+	// Overflow regression: huge page numbers should not panic
+	for _, hugePage := range []int{1<<62 + 1, 9223372036854775807} {
+		page, _ = QueryInstalls(rows, InstallQuery{PageSize: 2, Page: hugePage})
+		if len(page.Rows) != 0 || page.Total != 3 {
+			t.Fatalf("huge page %d = %+v", hugePage, page)
+		}
 	}
 
 	for _, bad := range []InstallQuery{{Sort: "nope"}, {Order: "up"}, {Status: "gone"}} {

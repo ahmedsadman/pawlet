@@ -58,8 +58,16 @@ func numericDesc(m map[string]int64) []KeyCount {
 			return -1
 		case x < y:
 			return 1
+		default:
+			// Tie-break on Key
+			if a.Key < b.Key {
+				return -1
+			}
+			if a.Key > b.Key {
+				return 1
+			}
+			return 0
 		}
-		return 0
 	})
 	return out
 }

@@ -72,7 +72,8 @@ type Overview struct {
 }
 
 // OverviewInput is what BuildOverview needs. Activity must be ModeAny and
-// reach 29 days before Range.From.
+// reach 29 days before Range.From. CountersToday holds today's classify_outcome
+// counts only.
 type OverviewInput struct {
 	Range         Range
 	Today         string
