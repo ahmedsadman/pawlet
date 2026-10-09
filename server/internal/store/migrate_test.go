@@ -3,8 +3,10 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -83,6 +85,9 @@ func TestOpenUpgradesLegacyDatabaseKeepingData(t *testing.T) {
 	if rec.FirstSeen.Unix() != 100 || rec.LastSeen.Unix() != 200 {
 		t.Errorf("rec = %+v, want first_seen 100, last_seen 200", rec)
 	}
+	if rec.Meta != (InstallMeta{}) {
+		t.Errorf("legacy Meta = %+v, want zero (NULL columns)", rec.Meta)
+	}
 	calls, tokens, err := s.Usage(ctx, "legacy", "2026-10-01")
 	if err != nil {
 		t.Fatalf("Usage() error = %v", err)
@@ -159,7 +164,7 @@ func TestOpenConcurrentAppliesMigrationOnce(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "concurrent.db")
 
-	// Create a database at v1 first.
+	// Create a database at the current schema version first.
 	s1, err := Open(path)
 	if err != nil {
 		t.Fatalf("first Open() error = %v", err)
@@ -208,7 +213,8 @@ func TestOpenConcurrentAppliesMigrationOnce(t *testing.T) {
 		}
 	}
 
-	// Verify the column exists (migration ran exactly once).
+	// Verify the probe column exists. The migration ran exactly once because all
+	// four Opens succeeded — a second ADD COLUMN would have errored.
 	raw, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
 		t.Fatalf("open raw: %v", err)
@@ -217,7 +223,7 @@ func TestOpenConcurrentAppliesMigrationOnce(t *testing.T) {
 	var probe sql.NullString
 	err = raw.QueryRowContext(ctx, "SELECT probe FROM installs LIMIT 1").Scan(&probe)
 	// Empty table is fine; we just want to verify the column exists.
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("probe column missing or query failed: %v", err)
 	}
 }
@@ -227,7 +233,7 @@ func TestOpenRollsBackFailedMigration(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "rollback.db")
 
-	// Create a database at v1 first.
+	// Create a database at the current schema version first.
 	s1, err := Open(path)
 	if err != nil {
 		t.Fatalf("first Open() error = %v", err)
@@ -249,8 +255,11 @@ func TestOpenRollsBackFailedMigration(t *testing.T) {
 		_ = s2.Close()
 		t.Fatal("Open() succeeded, want error from duplicate column")
 	}
-	if err != nil {
-		t.Logf("Open() error (expected): %v", err)
+	// The injected migration brings SchemaVersion() to N, and Open() tries to
+	// apply it, reporting "apply migration N" on failure.
+	wantMsg := "apply migration " + strconv.Itoa(SchemaVersion())
+	if !strings.Contains(err.Error(), wantMsg) {
+		t.Errorf("error = %v, want it to contain %q", err, wantMsg)
 	}
 
 	// Verify user_version stayed at 1 and table `half` does not exist.
@@ -260,8 +269,11 @@ func TestOpenRollsBackFailedMigration(t *testing.T) {
 	}
 	defer func() { _ = raw.Close() }()
 
-	if got := userVersion(t, raw); got != 1 {
-		t.Errorf("user_version = %d after rollback, want 1", got)
+	// After rollback, user_version should be at the last successfully applied
+	// migration (SchemaVersion()-1, since we injected one failing migration).
+	want := SchemaVersion() - 1
+	if got := userVersion(t, raw); got != want {
+		t.Errorf("user_version = %d after rollback, want %d", got, want)
 	}
 
 	var count int
