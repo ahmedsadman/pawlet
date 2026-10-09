@@ -56,10 +56,10 @@
 <main>
 
 <h1>Pawlet Privacy Policy</h1>
-<p class="meta">Last updated: 5 October 2026 &middot; Applies to the Pawlet Android app (<code>com.pastabyte.pawlet</code>)</p>
+<p class="meta">Last updated: 10 October 2026 &middot; Applies to the Pawlet Android app (<code>com.pastabyte.pawlet</code>)</p>
 
 <div class="callout">
-<p><strong>In short:</strong> Pawlet has no user accounts and no analytics. It reads your bank SMS messages on your device to build a personal finance ledger, and that ledger is stored only on your phone. The one time message content leaves your device is when an unrecognised message has to be classified by an AI model. That text is handled in transit and is never written to a database or a log file by us. We keep no copy of your messages, transactions, or balances &mdash; only an anonymous installation identifier and a count of how many classification requests it made, which is what prevents the service being abused.</p>
+<p><strong>In short:</strong> Pawlet has no user accounts and no third-party analytics. It reads your bank SMS messages on your device to build a personal finance ledger, and that ledger is stored only on your phone. The one time message content leaves your device is when an unrecognised message has to be classified by an AI model. That text is handled in transit and is never written to a database or a log file by us. We keep no copy of your messages, transactions, or balances &mdash; only an anonymous installation identifier and a few counts about it: when it was seen and active, its app version and device integrity verdict, how many classification requests it made, and how many messages the on-device model handled by itself versus sent to the cloud model. Those counts are what prevent the service being abused and tell us how well the on-device model works.</p>
 </div>
 
 <h2>1. Who we are and what this covers</h2>
@@ -75,8 +75,15 @@
 <p>From the messages, Pawlet extracts and stores transaction amounts, dates, merchant or description text, bank and card names, and bill due dates. You may also enter this information manually. This data is used only to display your balances, spending, and bills inside the app.</p>
 
 <h3>Installation identifier and usage counts</h3>
-<p>When Pawlet uses our classification service (see section 4), the app generates a random installation identifier. It is not your name, your phone number, your Google account, or any hardware identifier, and it is created by the app itself. Before it is stored, it is irreversibly hashed. Against that hash we record only the date the installation was first and last seen, the number of classification requests it has made each day, and the number of AI tokens those requests used.</p>
-<p>This exists for one reason: to enforce fair-use quotas and to block abuse of a service we pay for. It is never linked to your messages or your financial data, because we do not retain those. A fresh identifier is generated if you reinstall the app, and we have no way to connect a new one to an old one.</p>
+<p>When Pawlet uses our classification service (see section 4), the app generates a random installation identifier. It is not your name, your phone number, your Google account, or any hardware identifier, and it is created by the app itself. Before it is stored, it is irreversibly hashed. Against that hash we record only:</p>
+<ul>
+  <li>the dates the installation was first and last seen, and the days on which it was active;</li>
+  <li>the number of classification requests it made each day, and the number of AI tokens those requests used;</li>
+  <li>its app version, the device integrity tier and Play licensing verdict reported by Google Play Integrity, and the Android SDK level;</li>
+  <li>for each day, how many messages the on-device model classified by itself, how many it passed on to the cloud model, and how many it could not process.</li>
+</ul>
+<p>None of this includes message content, senders, categories, amounts, balances, or anything else about your finances.</p>
+<p>This exists for two reasons: to enforce fair-use quotas and block abuse of a service we pay for, and to measure how well the on-device model works, so that fewer messages need to leave your phone. It is never linked to your messages or your financial data, because we do not retain those. A fresh identifier is generated if you reinstall the app, and we have no way to connect a new one to an old one.</p>
 
 <h3>What Pawlet does <em>not</em> collect</h3>
 <ul>
@@ -84,7 +91,7 @@
   <li>No user account &mdash; there is nothing to sign up for or log in to.</li>
   <li>No advertising identifier, and no hardware or operating system device identifier such as IMEI, IMSI, SIM serial number, MAC address, or Android ID.</li>
   <li>No location data.</li>
-  <li>No analytics, usage tracking, crash reporting, or advertising SDKs of any kind.</li>
+  <li>No third-party analytics, crash-reporting, or advertising SDKs of any kind. The only usage data Pawlet sends is the anonymous, aggregate counts described above.</li>
   <li>No contacts, photos, files, camera, or microphone access.</li>
 </ul>
 
@@ -95,7 +102,7 @@
   <li>If you supply your own AI provider API key, it is stored in the Android Keystore, which is hardware-backed encrypted storage.</li>
   <li>Your app lock PIN is stored locally and is never transmitted.</li>
 </ul>
-<p>We do not operate any cloud sync, cloud backup, or remote copy of your ledger. The only data held on our servers is the installation hash and usage counts described in section 2.</p>
+<p>We do not operate any cloud sync, cloud backup, or remote copy of your ledger. The only data held on our servers is the installation hash and the counts described in section 2.</p>
 
 <h2>4. When data leaves your device</h2>
 
@@ -119,6 +126,9 @@
 <p>Before the classification service will accept requests, the app proves it is a genuine, unmodified copy of Pawlet using <a href="https://developer.android.com/google/play/integrity" rel="noopener">Google Play Integrity</a>. The app obtains a token from Google Play services and sends it to our server, which asks Google to decode it. Google returns only verdicts &mdash; whether the app binary is genuine, whether the device passes basic integrity checks, and whether the install came from Play. <strong>Google does not disclose your Google account, email, or device identity to us through this process, and we never see it.</strong></p>
 <p>On success the server issues a session token valid for 24 hours. It contains only the installation hash and a random value, and is not stored by us.</p>
 <p>Your IP address is visible to our server when your device connects, as it is to any internet service. We use it transiently to rate-limit requests and discard it within the hour. IP addresses are never written to disk and are never associated with your installation identifier or with any message content.</p>
+
+<h3>Daily message counts</h3>
+<p>If you use Pawlet's classification service, the app also sends our server, at most a few times a day, a short summary covering today and the previous 30 days: for each day and app version, how many messages the on-device model classified by itself, how many it passed on to the cloud model, and how many it could not process. The summary travels over HTTPS with the same session token as classification requests, so it is stored against the installation hash described in section 2. It contains no message text, sender, category, amount, or balance. Messages imported from your existing inbox are not counted. If you use your own API key, or no AI service at all, the app never sends it.</p>
 
 <h3>Currency exchange rates</h3>
 <p>Pawlet fetches public currency exchange rates from <code>open.er-api.com</code>. This is an anonymous request for public rate data. No personal, financial, or message data is included.</p>
@@ -167,7 +177,7 @@
   </tbody>
 </table>
 <p>All transfers use encrypted HTTPS connections. No third party receives your ledger, your balances, or any copy of your local database.</p>
-<p>We may disclose information if legally required to do so. The only data we hold that could be the subject of such a request is an anonymous installation hash and its request counts.</p>
+<p>We may disclose information if legally required to do so. The only data we hold that could be the subject of such a request is an anonymous installation hash and the counts described in section 2.</p>
 
 <h2>8. Retention and deletion</h2>
 
@@ -182,12 +192,13 @@
 <h3>On our servers</h3>
 <ul>
   <li><strong>Message text and classification results: not retained at all.</strong> They exist only in memory for the duration of the request.</li>
-  <li><strong>Installation hash and daily usage counts: retained indefinitely</strong>, because historical request volume is what lets us detect and block abuse. This data cannot be used to identify you or to reconstruct anything about your finances.</li>
+  <li><strong>Installation hash, request counts, active days, and app and device details: retained indefinitely</strong>, because historical request volume is what lets us detect and block abuse. This data cannot be used to identify you or to reconstruct anything about your finances.</li>
+  <li><strong>Daily on-device message counts: kept against the installation hash for 90 days.</strong> After that they are added into daily totals that carry no installation hash, and the installation keeps only a single running total of the messages counted.</li>
   <li>Session tokens expire 24 hours after issue and are not stored.</li>
   <li>Attestation challenges are held in memory for 2 minutes and then discarded.</li>
   <li>IP addresses used for rate limiting are held in memory and discarded within the hour. They are never written to disk.</li>
 </ul>
-<p>Because the installation hash is anonymous by design, neither you nor we can trace a stored record back to a particular person or device, so we are unable to locate and delete an individual record on request. Uninstalling the app permanently severs any connection between you and that record: the identifier is generated fresh on reinstall, and we have no means of linking a new identifier to an old one. The record that remains holds nothing but a hash and a count of requests.</p>
+<p>Because the installation hash is anonymous by design, neither you nor we can trace a stored record back to a particular person or device, so we are unable to locate and delete an individual record on request. Uninstalling the app permanently severs any connection between you and that record: the identifier is generated fresh on reinstall, and we have no means of linking a new identifier to an old one. The record that remains holds nothing but a hash and the counts described in section 2.</p>
 
 <h3>Data sent for AI classification</h3>
 <p>Message text sent to OpenRouter is retained and deleted according to <a href="https://openrouter.ai/privacy" rel="noopener">OpenRouter's own privacy policy</a> and that of the model provider handling the request. We have no control over, and no access to, that data once the request is made.</p>
