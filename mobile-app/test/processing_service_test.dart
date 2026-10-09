@@ -1878,6 +1878,61 @@ void main() {
       await db.close();
     });
   });
+
+  group('the pass-end hook', () {
+    ProcessingService hooked(Future<void> Function() hook) => ProcessingService(
+      smsRepository: sms,
+      banksRepository: banks,
+      classifier: Classifier(_FakeLlm(result: _expense())),
+      financeWriter: FinanceWriter(db, nowMs: () => now),
+      isOnline: () async => true,
+      currency: () => 'BDT',
+      clock: () => now,
+      onPassEnd: hook,
+    );
+
+    test('runs after the pass, with the overlap guard released', () async {
+      final id = await queue('CHK');
+      late ProcessingService svc;
+      bool? runningInHook;
+      Object? statusInHook;
+      svc = hooked(() async {
+        runningInHook = svc.isRunning;
+        statusInHook = (await row(id))['status'];
+      });
+
+      await svc.process();
+
+      expect(runningInHook, isFalse);
+      expect(statusInHook, 'success');
+      await db.close();
+    });
+
+    test('runs even when nothing was due', () async {
+      var calls = 0;
+      await hooked(() async => calls++).process();
+
+      expect(calls, 1);
+      await db.close();
+    });
+
+    test('a failing hook does not escape process()', () async {
+      final svc = hooked(() async => throw StateError('flush failed'));
+
+      await expectLater(svc.process(), completes);
+      await db.close();
+    });
+
+    test('a paused service skips the hook along with the pass', () async {
+      var calls = 0;
+      final svc = hooked(() async => calls++)..pause();
+
+      await svc.process();
+
+      expect(calls, 0);
+      await db.close();
+    });
+  });
 }
 
 /// A finance writer whose first write fails the way a locked database does,
