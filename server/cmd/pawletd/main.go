@@ -113,10 +113,19 @@ func run(logger *slog.Logger) error {
 		recorder.RunFlusher(ctx, 10*time.Second, logger)
 	}()
 
-	// 10. Build the challenge store and its per-IP rate limiter. Start a janitor
-	// that cleans both.
+	// The model stats rollup writes to the database too, so it joins the same
+	// WaitGroup and is finished before db.Close runs.
+	flushers.Add(1)
+	go func() {
+		defer flushers.Done()
+		runModelStatsRollup(ctx, db, rollupInterval, time.Now, logger)
+	}()
+
+	// 10. Build the challenge store, its per-IP rate limiter and the
+	// per-install model stats limiter. Start a janitor that cleans all three.
 	challenges := attest.NewChallenges(2*time.Minute, time.Now)
 	challengeLimiter := httpapi.NewChallengeLimiter(cfg.ChallengePerIPHour)
+	modelStatsLimiter := httpapi.NewModelStatsLimiter(time.Now)
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
@@ -125,6 +134,7 @@ func run(logger *slog.Logger) error {
 			case <-ticker.C:
 				challenges.Prune()
 				challengeLimiter.Prune()
+				modelStatsLimiter.Prune()
 			case <-ctx.Done():
 				return
 			}
@@ -171,6 +181,14 @@ func run(logger *slog.Logger) error {
 			Now:        time.Now,
 			Logger:     logger,
 			Metrics:    recorder,
+		},
+		ModelStats: &httpapi.ModelStatsHandler{
+			Issuer:  issuer,
+			Store:   db,
+			Limiter: modelStatsLimiter,
+			Now:     time.Now,
+			Logger:  logger,
+			Metrics: recorder,
 		},
 		Bundle: httpapi.NewBundleHandler(cfg.Models),
 		Health: db,
