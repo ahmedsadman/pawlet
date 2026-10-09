@@ -118,3 +118,65 @@ func TestEarliestDays(t *testing.T) {
 		t.Fatalf("Any() = %q", got.Any())
 	}
 }
+
+// seedModelRows writes model stats straight to the tables: pawletd's writer
+// is not part of this package's read API.
+func seedModelRows(t *testing.T, s *Store) {
+	t.Helper()
+	ctx := context.Background()
+	for _, q := range []string{
+		`INSERT INTO model_stats_daily (id_hash, day, app_version_code, accepted, declined, unavailable) VALUES
+		   ('a', '2026-10-01', 20, 8, 2, 0),
+		   ('a', '2026-10-02', 20, 5, 1, 1),
+		   ('a', '2026-10-02', 21, 3, 0, 0),
+		   ('b', '2026-10-03', 21, 7, 3, 0)`,
+		`INSERT INTO model_stats_rollup (day, app_version_code, accepted, declined, unavailable, install_count) VALUES
+		   ('2026-06-01', 19, 40, 10, 2, 3),
+		   ('2026-06-02', 19, 30, 10, 0, 2)`,
+		`INSERT INTO installs (id_hash, first_seen, last_seen, messages_archived) VALUES
+		   ('a', 1, 1, 120),
+		   ('b', 1, 1, 0)`,
+	} {
+		if _, err := s.write.ExecContext(ctx, q); err != nil {
+			t.Fatalf("seed model rows: %v", err)
+		}
+	}
+}
+
+func TestModelStatsLoaders(t *testing.T) {
+	s := newTestStore(t)
+	seedModelRows(t, s)
+	ctx := context.Background()
+
+	all, err := s.AllModelStats(ctx)
+	if err != nil || len(all) != 4 || all[0] != (ModelRow{IDHash: "a", Day: "2026-10-01", AppVersionCode: 20, Accepted: 8, Declined: 2}) {
+		t.Fatalf("AllModelStats() = %+v, %v", all, err)
+	}
+	between, err := s.ModelStatsBetween(ctx, "2026-10-02", "2026-10-03")
+	if err != nil || len(between) != 3 || between[0].AppVersionCode != 20 || between[1].AppVersionCode != 21 || between[2].IDHash != "b" {
+		t.Fatalf("ModelStatsBetween() = %+v, %v", between, err)
+	}
+	rollup, err := s.ModelRollupBetween(ctx, "2026-06-01", "2026-06-01")
+	want := ModelRollupRow{Day: "2026-06-01", AppVersionCode: 19, Accepted: 40, Declined: 10, Unavailable: 2, InstallCount: 3}
+	if err != nil || len(rollup) != 1 || rollup[0] != want {
+		t.Fatalf("ModelRollupBetween() = %+v, %v", rollup, err)
+	}
+	archived, err := s.MessagesArchived(ctx)
+	if err != nil || len(archived) != 1 || archived["a"] != 120 {
+		t.Fatalf("MessagesArchived() = %v, %v (installs with 0 are left out)", archived, err)
+	}
+}
+
+func TestModelStatsLoadersEmpty(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if rows, err := s.AllModelStats(ctx); err != nil || len(rows) != 0 {
+		t.Fatalf("AllModelStats() = %+v, %v", rows, err)
+	}
+	if rows, err := s.ModelRollupBetween(ctx, "2026-01-01", "2026-12-31"); err != nil || len(rows) != 0 {
+		t.Fatalf("ModelRollupBetween() = %+v, %v", rows, err)
+	}
+	if m, err := s.MessagesArchived(ctx); err != nil || len(m) != 0 {
+		t.Fatalf("MessagesArchived() = %v, %v", m, err)
+	}
+}

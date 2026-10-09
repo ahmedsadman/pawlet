@@ -181,3 +181,114 @@ func (s *Store) EarliestDays(ctx context.Context) (EarliestDays, error) {
 	}
 	return e, nil
 }
+
+// ModelRow is one install's local-model verdicts for one UTC day and app
+// version, as the phone last reported them.
+type ModelRow struct {
+	IDHash         string
+	Day            string
+	AppVersionCode int64
+	Accepted       int64
+	Declined       int64
+	Unavailable    int64
+}
+
+// ModelRollupRow is every per-install row for one day and app version,
+// folded together once it aged out of model_stats_daily. InstallCount is how
+// many per-install rows went in.
+type ModelRollupRow struct {
+	Day            string
+	AppVersionCode int64
+	Accepted       int64
+	Declined       int64
+	Unavailable    int64
+	InstallCount   int64
+}
+
+// AllModelStats reads every per-install model stats row, oldest day first.
+func (s *Store) AllModelStats(ctx context.Context) ([]ModelRow, error) {
+	return s.queryModel(ctx,
+		`SELECT id_hash, day, app_version_code, accepted, declined, unavailable FROM model_stats_daily
+		 ORDER BY day, id_hash, app_version_code`)
+}
+
+// ModelStatsBetween reads per-install model stats rows for days from..to
+// inclusive.
+func (s *Store) ModelStatsBetween(ctx context.Context, from, to string) ([]ModelRow, error) {
+	return s.queryModel(ctx,
+		`SELECT id_hash, day, app_version_code, accepted, declined, unavailable FROM model_stats_daily
+		 WHERE day BETWEEN ? AND ? ORDER BY day, id_hash, app_version_code`,
+		from, to)
+}
+
+func (s *Store) queryModel(ctx context.Context, q string, args ...any) ([]ModelRow, error) {
+	rows, err := s.read.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query model stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []ModelRow
+	for rows.Next() {
+		var m ModelRow
+		if err := rows.Scan(&m.IDHash, &m.Day, &m.AppVersionCode, &m.Accepted, &m.Declined, &m.Unavailable); err != nil {
+			return nil, fmt.Errorf("scan model stats: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate model stats: %w", err)
+	}
+	return out, nil
+}
+
+// ModelRollupBetween reads folded model stats for days from..to inclusive.
+func (s *Store) ModelRollupBetween(ctx context.Context, from, to string) ([]ModelRollupRow, error) {
+	const q = `SELECT day, app_version_code, accepted, declined, unavailable, install_count
+	           FROM model_stats_rollup WHERE day BETWEEN ? AND ? ORDER BY day, app_version_code`
+	rows, err := s.read.QueryContext(ctx, q, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("query model rollup: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []ModelRollupRow
+	for rows.Next() {
+		var r ModelRollupRow
+		if err := rows.Scan(&r.Day, &r.AppVersionCode, &r.Accepted, &r.Declined, &r.Unavailable, &r.InstallCount); err != nil {
+			return nil, fmt.Errorf("scan model rollup: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate model rollup: %w", err)
+	}
+	return out, nil
+}
+
+// MessagesArchived maps each install whose old model stats were folded into
+// the rollup to the message total folded. Installs with none are absent.
+func (s *Store) MessagesArchived(ctx context.Context) (map[string]int64, error) {
+	const q = `SELECT id_hash, messages_archived FROM installs WHERE messages_archived > 0`
+	rows, err := s.read.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("query archived messages: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := map[string]int64{}
+	for rows.Next() {
+		var (
+			hash string
+			n    int64
+		)
+		if err := rows.Scan(&hash, &n); err != nil {
+			return nil, fmt.Errorf("scan archived messages: %w", err)
+		}
+		out[hash] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate archived messages: %w", err)
+	}
+	return out, nil
+}
