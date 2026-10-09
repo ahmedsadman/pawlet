@@ -30,3 +30,29 @@ services:
       - ./data:/data
       # Google service account JSON, read-only.
       - ./service-account.json:/run/secrets/sa.json:ro
+
+  pawlet-admin:
+    # The owner-only dashboard. Its own image so a dashboard change never
+    # restarts the classify API.
+    image: ghcr.io/ahmedsadman/pawlet-admin:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: server/admin.Dockerfile
+    restart: unless-stopped
+    # Not required, so a host without admin.env still deploys pawletd; the
+    # admin container then exits on missing config and keeps retrying.
+    env_file:
+      - path: admin.env
+        required: false
+    # pawletd migrates the schema; the admin only reads it and refuses an
+    # older schema, so it restarts until pawletd has finished.
+    depends_on:
+      - pawlet
+    # Loopback only, like pawletd: Caddy terminates TLS for the admin host.
+    ports:
+      - "127.0.0.1:8092:8080"
+    user: "${PAWLET_UID:-1000}:${PAWLET_GID:-1000}"
+    volumes:
+      # Read-write: SQLite readers in WAL mode need the -shm file, and ban /
+      # unban write.
+      - ./data:/data

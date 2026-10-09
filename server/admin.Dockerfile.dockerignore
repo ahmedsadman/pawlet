@@ -1,0 +1,12 @@
+*
+!dashboard/
+!server/
+dashboard/node_modules
+dashboard/dist
+server/data
+server/.env
+server/admin.env
+server/service-account.json
+server/pawletd
+server/internal/admin/web/dist/*
+!server/internal/admin/web/dist/.gitkeep

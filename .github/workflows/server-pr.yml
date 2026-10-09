@@ -6,6 +6,8 @@ on:
       - "server/**"
       - ".github/workflows/server-pr.yml"
       - ".github/workflows/server-checks.yml"
+      - "dashboard/**"
+      - ".github/workflows/dashboard-checks.yml"
 
 permissions:
   contents: read
@@ -13,3 +15,6 @@ permissions:
 jobs:
   checks:
     uses: ./.github/workflows/server-checks.yml
+
+  dashboard:
+    uses: ./.github/workflows/dashboard-checks.yml
