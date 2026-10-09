@@ -4,6 +4,7 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/data/banks_repository.dart';
 import 'package:pawlet/data/sms_repository.dart';
+import 'package:pawlet/models/finance/bank.dart';
 import 'package:pawlet/models/sms_record.dart';
 import 'package:pawlet/services/classification/classifier.dart';
 import 'package:pawlet/services/classification/local_classifier.dart';
@@ -1561,4 +1562,92 @@ void main() {
       await db.close();
     });
   });
+
+  // `return future;` inside an async try does not route the future's error
+  // to the catch handlers, so every such return must be awaited.
+  group('a write error after classification', () {
+    ProcessingService withWriter(LlmProvider llm, {LocalClassifier? local}) =>
+        ProcessingService(
+          smsRepository: sms,
+          banksRepository: banks,
+          classifier: Classifier(llm, local: local),
+          financeWriter: _ThrowOnceWriter(db, nowMs: () => now),
+          isOnline: () async => true,
+          currency: () => 'BDT',
+          clock: () => now,
+        );
+
+    test(
+      'after an LLM answer backs the row off and the pass goes on',
+      () async {
+        final first = await queue(
+          'CHK',
+          content: 'debit 50',
+          timestamp: now - 1,
+        );
+        final second = await queue('CHK', content: 'debit 50 again');
+
+        await withWriter(_FakeLlm(result: _expense())).process();
+
+        final r = await row(first);
+        expect(r['status'], 'queued');
+        expect(r['attempts'], 1);
+        expect(r['last_error'], contains('database is locked'));
+        expect(
+          r['next_attempt_at'],
+          now + ProcessingService.baseBackoff.inMilliseconds,
+        );
+        expect((await row(second))['status'], 'success');
+        await db.close();
+      },
+    );
+
+    test(
+      'after an on-device answer backs the row off and the pass goes on',
+      () async {
+        const content = 'debit 50 BDT';
+        final first = await queue('CHK', content: content, timestamp: now - 1);
+        final second = await queue(
+          'CHK',
+          content: 'debit 50 BDT again',
+          timestamp: now,
+        );
+
+        await withWriter(_FakeLlm(), local: _FnLocal(_localExpense)).process();
+
+        final r = await row(first);
+        expect(r['status'], 'queued');
+        expect(r['attempts'], 1);
+        expect((await row(second))['status'], 'success');
+        await db.close();
+      },
+    );
+  });
+}
+
+/// A finance writer whose first write fails the way a locked database does,
+/// after the message has already been classified.
+class _ThrowOnceWriter extends FinanceWriter {
+  _ThrowOnceWriter(super.db, {super.nowMs});
+
+  var thrown = false;
+
+  @override
+  Future<String> apply({
+    required SmsRecord record,
+    required ClassificationOutcome outcome,
+    required List<Bank> banks,
+    required String currency,
+  }) async {
+    if (!thrown) {
+      thrown = true;
+      throw StateError('database is locked');
+    }
+    return super.apply(
+      record: record,
+      outcome: outcome,
+      banks: banks,
+      currency: currency,
+    );
+  }
 }
