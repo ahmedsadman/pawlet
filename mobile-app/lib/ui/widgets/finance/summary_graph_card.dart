@@ -281,10 +281,10 @@ class _Chart extends StatelessWidget {
                     meta: meta,
                     space: 6,
                     // Nudge the first/last labels inward so they stay within the
-                    // chart instead of overflowing the edge (e.g. "Sep 26").
+                    // chart instead of overflowing the edge (e.g. "Sep '26").
                     fitInside: SideTitleFitInsideData.fromTitleMeta(meta),
                     child: Text(
-                      monthYearLabel(buckets[i].monthStart),
+                      monthYearShort(buckets[i].monthStart),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: theme.colorScheme.outline,
                       ),

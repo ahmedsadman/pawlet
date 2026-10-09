@@ -200,4 +200,16 @@ void main() {
       );
     });
   });
+
+  group('month labels', () {
+    test('monthYearLabel uses the full year', () {
+      expect(monthYearLabel(DateTime(2026, 10, 1)), 'Oct 2026');
+      expect(monthYearLabel(DateTime(2025, 1, 15)), 'Jan 2025');
+    });
+
+    test('monthYearShort uses an apostrophe two-digit year', () {
+      expect(monthYearShort(DateTime(2026, 10, 1)), "Oct '26");
+      expect(monthYearShort(DateTime(2005, 3, 1)), "Mar '05");
+    });
+  });
 }
