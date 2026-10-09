@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ahmedsadman/pawlet/server/internal/llm"
 	"github.com/ahmedsadman/pawlet/server/internal/metrics"
@@ -263,9 +264,14 @@ func modelKey(model string) string {
 	if model == "" {
 		return metrics.UnknownModel
 	}
-	// Bound cardinality: every distinct key becomes a permanent counters_daily row.
+	// Bound key size: every distinct key becomes a permanent counters_daily row.
 	if len(model) > 128 {
-		return model[:128]
+		n := 128
+		// Step back to a rune boundary so we don't split a multibyte character.
+		for n > 0 && !utf8.RuneStart(model[n]) {
+			n--
+		}
+		return model[:n]
 	}
 	return model
 }
