@@ -7,13 +7,13 @@ cannot affect the classify API.
 
 ## Pieces
 
-| Path | Role |
-|---|---|
-| `cmd/pawlet-admin/main.go` | Binary: `serve` (default), `hash-password`, `dev-seed` |
-| `internal/admin/` | Config, password check, login limiter, sessions, request guards, JSON handlers, embedded UI |
-| `internal/stats/` | Pure functions that turn database rows into every dashboard number |
-| `internal/store/rows.go` | Row loaders the admin reads |
-| `internal/devseed/` | Fake history for local work |
+| Path                       | Role                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| `cmd/pawlet-admin/main.go` | Binary: `serve` (default), `hash-password`, `dev-seed`                                      |
+| `internal/admin/`          | Config, password check, login limiter, sessions, request guards, JSON handlers, embedded UI |
+| `internal/stats/`          | Pure functions that turn database rows into every dashboard number                          |
+| `internal/store/rows.go`   | Row loaders the admin reads                                                                 |
+| `internal/devseed/`        | Fake history for local work                                                                 |
 
 The admin never migrates the database: it opens it with `store.OpenExisting`, which refuses a
 schema older than the binary needs. Start pawletd first after a schema change.
@@ -24,7 +24,8 @@ schema older than the binary needs. Start pawletd first after a schema change.
    fake one: `go run ./cmd/pawlet-admin dev-seed --db data/dev.db` (refuses a database that
    already has installs before touching it).
 2. Generate a password hash: `go run ./cmd/pawlet-admin hash-password`, type the password,
-   press Enter.
+   press Enter. The password is visible as you type (or pipe it in with
+   `printf '%s\n' "$PW" | go run ./cmd/pawlet-admin hash-password`).
 3. Run it:
 
    ```bash
@@ -33,24 +34,25 @@ schema older than the binary needs. Start pawletd first after a schema change.
    ```
 
    Single-quote the hash: it contains `$`.
-4. The API answers on `http://localhost:8092/api/...`. The UI is served once built — `npm run
-   build:embed` in `dashboard/` locally, automatically in the image.
 
-Browsers accept the session cookie's `Secure` flag on `http://localhost`, so login works
-locally without TLS.
+4. The API answers on `http://localhost:8092/api/...`. The UI is served once built — `npm run
+build:embed` in `dashboard/` locally, automatically in the image.
+
+Chrome and Firefox accept the session cookie's `Secure` flag on `http://localhost`, so login
+works locally without TLS; other browsers may differ.
 
 ## Configuration
 
 Read from the environment by `internal/admin/config.go`; template in `admin.env.example`.
 The admin deliberately receives none of pawletd's secrets.
 
-| Variable | Required | Meaning |
-|---|---|---|
-| `ADMIN_PASSWORD_HASH` | yes | argon2id PHC string from `hash-password`; must be a canonical hash within bounds (memory 19456–1048576 KiB, time 1–10, threads 1–16, salt ≥ 8 bytes, key 16–64 bytes); `hash-password` always produces a valid one |
-| `ADMIN_SESSION_SECRET` | yes | at least 32 bytes; signs the session cookie; rotating it signs everyone out |
-| `ADMIN_ADDR` | no | listen address |
-| `DATABASE_PATH` | no | pawletd's SQLite file |
-| `TRUSTED_PROXY_CIDR` | no | proxy network whose `X-Forwarded-For` is trusted |
+| Variable               | Required | Meaning                                                                                                                                                                                                            |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ADMIN_PASSWORD_HASH`  | yes      | argon2id PHC string from `hash-password`; must be a canonical hash within bounds (memory 19456–1048576 KiB, time 1–10, threads 1–16, salt ≥ 8 bytes, key 16–64 bytes); `hash-password` always produces a valid one |
+| `ADMIN_SESSION_SECRET` | yes      | at least 32 bytes; signs the session cookie; rotating it signs everyone out                                                                                                                                        |
+| `ADMIN_ADDR`           | no       | listen address                                                                                                                                                                                                     |
+| `DATABASE_PATH`        | no       | pawletd's SQLite file                                                                                                                                                                                              |
+| `TRUSTED_PROXY_CIDR`   | no       | proxy network whose `X-Forwarded-For` is trusted                                                                                                                                                                   |
 
 ## Deploying
 
@@ -61,12 +63,15 @@ pull fails with a warning.
 
 Compose service `pawlet-admin` in `server/docker-compose.yml`: loopback port `127.0.0.1:8092`, same
 `./data` mount read-write, `env_file: admin.env` with `required: false` so pawletd still deploys
-without it, `depends_on: pawlet`, `restart: unless-stopped`.
+without it, `depends_on: pawlet`, `restart: unless-stopped`. The compose file's `env_file` long
+syntax (`required: false`) needs Docker Compose 2.24 or newer — check `docker compose version`
+before the first deploy; an older Compose fails to parse the file and the deploy stops before
+pawletd is updated.
 
 **Before the first deploy**, on the host:
 
 1. Create `server/admin.env` from `admin.env.example`; get the hash from
-   `docker run --rm ghcr.io/ahmedsadman/pawlet-admin hash-password` or `go run`.
+   `docker run --rm -i ghcr.io/ahmedsadman/pawlet-admin hash-password` or `go run`.
 2. Add a DNS record for `admin.pawlet.muhib.me`.
 3. Add a Caddy site block reverse-proxying to `localhost:8092`:
 
@@ -109,20 +114,20 @@ container restart.
 
 ## API
 
-All routes return JSON except `/healthz`. Days are UTC `YYYY-MM-DD`, timestamps unix seconds.
-`range` is `7d`, `30d` (default), `90d` or `all`.
+All `/api/*` routes return JSON; `/healthz` returns plain text. Days are UTC `YYYY-MM-DD`,
+timestamps unix seconds. `range` is `7d`, `30d` (default), `90d` or `all`.
 
-| Route | Purpose |
-|---|---|
-| `GET /healthz` | 200 when the database answers |
-| `POST /api/login`, `POST /api/logout`, `GET /api/me` | session |
-| `GET /api/overview?range=` | headline numbers, daily calls/active/new installs, server info |
-| `GET /api/installs?sort=&order=&q=&status=&page=` | installs table (50 per page; `q` is a hash prefix; `status` is `all`, `active`, `dormant` or `banned`); an invalid `page` returns 400 |
-| `GET /api/installs/{hash}` | one install with its daily history |
-| `POST /api/installs/{hash}/ban` `{"reason"}`, `POST /api/installs/{hash}/unban` | ban control; pawletd checks the flag on every request, so a ban applies to the install's next call |
-| `GET /api/engagement?range=&active=any\|classify` | active installs, stickiness, cohorts, calls distribution, dormant count |
-| `GET /api/reliability?range=` | outcomes, success rate, latency percentiles, models, categories, tokens per call |
-| `GET /api/fleet` | app version, device tier, licensing and SDK of recently active installs; version adoption |
+| Route                                                                           | Purpose                                                                                                                               |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /healthz`                                                                  | 200 when the database answers                                                                                                         |
+| `POST /api/login`, `POST /api/logout`, `GET /api/me`                            | session                                                                                                                               |
+| `GET /api/overview?range=`                                                      | headline numbers, daily calls/active/new installs, server info                                                                        |
+| `GET /api/installs?sort=&order=&q=&status=&page=`                               | installs table (50 per page; `q` is a hash prefix; `status` is `all`, `active`, `dormant` or `banned`); an invalid `page` returns 400 |
+| `GET /api/installs/{hash}`                                                      | one install with its daily history                                                                                                    |
+| `POST /api/installs/{hash}/ban` `{"reason"}`, `POST /api/installs/{hash}/unban` | ban control; pawletd checks the flag on every request, so a ban applies to the install's next call                                    |
+| `GET /api/engagement?range=&active=any\|classify`                               | active installs, stickiness, cohorts, calls distribution, dormant count                                                               |
+| `GET /api/reliability?range=`                                                   | outcomes, success rate, latency percentiles, models, categories, tokens per call                                                      |
+| `GET /api/fleet`                                                                | app version, device tier, licensing and SDK of recently active installs; version adoption                                             |
 
 Unknown asset paths under `/assets/` return 404.
 
@@ -134,15 +139,15 @@ How each number is defined — active days, cohorts, dormancy, success rate, per
 
 Snapshot as of this writing — verify against the named source files.
 
-| Constant | Value | Source |
-|---|---|---|
-| Session lifetime | 7 days | `internal/admin/sessions.go` |
-| Failed logins per address | 5 per 15 minutes | `internal/admin/loginlimit.go` |
-| Failed logins overall | 100 per hour | `internal/admin/loginlimit.go` |
-| Concurrent password checks | 2 | `internal/admin/server.go` |
-| argon2id parameters | 64 MiB, 2 passes, 1 thread | `internal/admin/password.go` |
-| Installs page size | 50 | `internal/stats/installs.go` |
-| Dormant after | 14 days without activity | `internal/stats/installs.go` |
-| Weekly cohorts shown | 12, each tracked to week 12 | `internal/admin/handlers_stats.go`, `internal/stats/cohorts.go` |
-| Fleet window | last 30 days; adoption over 90 days | `internal/stats/fleet.go`, `internal/admin/handlers_stats.go` |
-| Ban reason limit | 200 characters | `internal/admin/handlers_stats.go` |
+| Constant                   | Value                               | Source                                                          |
+| -------------------------- | ----------------------------------- | --------------------------------------------------------------- |
+| Session lifetime           | 7 days                              | `internal/admin/sessions.go`                                    |
+| Failed logins per address  | 5 per 15 minutes                    | `internal/admin/loginlimit.go`                                  |
+| Failed logins overall      | 100 per hour                        | `internal/admin/loginlimit.go`                                  |
+| Concurrent password checks | 2                                   | `internal/admin/server.go`                                      |
+| argon2id parameters        | 64 MiB, 2 passes, 1 thread          | `internal/admin/password.go`                                    |
+| Installs page size         | 50                                  | `internal/stats/installs.go`                                    |
+| Dormant after              | 14 days without activity            | `internal/stats/installs.go`                                    |
+| Weekly cohorts shown       | 12, each tracked to week 12         | `internal/admin/handlers_stats.go`, `internal/stats/cohorts.go` |
+| Fleet window               | last 30 days; adoption over 90 days | `internal/stats/fleet.go`, `internal/admin/handlers_stats.go`   |
+| Ban reason limit           | 200 characters                      | `internal/admin/handlers_stats.go`                              |
