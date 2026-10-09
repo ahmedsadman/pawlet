@@ -1,7 +1,7 @@
 package stats
 
 import (
-	"fmt"
+	"math"
 
 	"github.com/ahmedsadman/pawlet/server/internal/store"
 )
@@ -12,47 +12,50 @@ type Bucket struct {
 	Count int    `json:"count"`
 }
 
-// distributionEdges are the upper bounds of the fixed buckets below the
-// daily limit.
-var distributionEdges = []int64{1, 5, 10, 25, 50, 100}
+// messageBuckets are the messages-per-day histogram's bars, each with its
+// inclusive upper bound.
+var messageBuckets = []struct {
+	label string
+	upper int64
+}{
+	{"1", 1}, {"2-3", 3}, {"4-6", 6}, {"7-10", 10}, {"11-20", 20}, {"21-50", 50}, {"51+", math.MaxInt64},
+}
 
-// CallsDistribution buckets every install-day with calls in from..to by its
-// call count. The last bucket holds days at or over the daily limit.
-func CallsDistribution(usage []store.UsageRow, from, to string, limit int64) []Bucket {
-	var uppers []int64
-	for _, e := range distributionEdges {
-		if e < limit-1 {
-			uppers = append(uppers, e)
-		}
-	}
-	if limit-1 >= 1 {
-		uppers = append(uppers, limit-1)
-	}
+// installDay keys one install on one UTC day.
+type installDay struct{ hash, day string }
 
-	buckets := make([]Bucket, 0, len(uppers)+1)
-	lower := int64(1)
-	for _, u := range uppers {
-		label := fmt.Sprintf("%d-%d", lower, u)
-		if lower == u {
-			label = fmt.Sprintf("%d", u)
-		}
-		buckets = append(buckets, Bucket{Label: label})
-		lower = u + 1
-	}
-	buckets = append(buckets, Bucket{Label: fmt.Sprintf("%d+", limit)})
-
-	for _, row := range usage {
-		if row.Calls <= 0 || row.Day < from || row.Day > to {
+// installDayMessages sums each install-day's messages over from..to across
+// app versions.
+func installDayMessages(rows []store.ModelRow, from, to string) map[installDay]int64 {
+	out := map[installDay]int64{}
+	for _, m := range rows {
+		if m.Day < from || m.Day > to {
 			continue
 		}
-		idx := len(uppers) // at or over the limit
-		for i, u := range uppers {
-			if row.Calls <= u {
-				idx = i
+		out[installDay{m.IDHash, m.Day}] += modelCounts(m.Accepted, m.Declined, m.Unavailable).Messages()
+	}
+	return out
+}
+
+// MessagesDistribution buckets every install-day in from..to with at least
+// one message by its message count. Callers cap from at the per-install
+// retention (store.ModelStatsRetentionDays): the rollup has no install
+// identity to bucket.
+func MessagesDistribution(rows []store.ModelRow, from, to string) []Bucket {
+	out := make([]Bucket, len(messageBuckets))
+	for i, b := range messageBuckets {
+		out[i] = Bucket{Label: b.label}
+	}
+	for _, n := range installDayMessages(rows, from, to) {
+		if n <= 0 {
+			continue
+		}
+		for i, b := range messageBuckets {
+			if n <= b.upper {
+				out[i].Count++
 				break
 			}
 		}
-		buckets[idx].Count++
 	}
-	return buckets
+	return out
 }

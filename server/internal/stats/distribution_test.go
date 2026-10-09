@@ -6,50 +6,30 @@ import (
 	"github.com/ahmedsadman/pawlet/server/internal/store"
 )
 
-func TestCallsDistribution(t *testing.T) {
-	usage := []store.UsageRow{
-		{IDHash: "a", Day: "2026-10-01", Calls: 1},
-		{IDHash: "a", Day: "2026-10-02", Calls: 5},
-		{IDHash: "b", Day: "2026-10-02", Calls: 6},
-		{IDHash: "b", Day: "2026-10-03", Calls: 150},
-		{IDHash: "c", Day: "2026-10-03", Calls: 200},
-		{IDHash: "c", Day: "2026-10-04", Calls: 0}, // not an active day
-		{IDHash: "d", Day: "2026-09-01", Calls: 3}, // outside range
+func TestMessagesDistribution(t *testing.T) {
+	model := []store.ModelRow{
+		{IDHash: "a", Day: "2026-10-01", AppVersionCode: 20, Accepted: 1},                               // 1
+		{IDHash: "a", Day: "2026-10-02", AppVersionCode: 20, Accepted: 1, Declined: 1},                  // 3 once both
+		{IDHash: "a", Day: "2026-10-02", AppVersionCode: 21, Accepted: 1},                               // versions are summed
+		{IDHash: "b", Day: "2026-10-02", AppVersionCode: 21, Accepted: 4, Declined: 2},                  // 6
+		{IDHash: "b", Day: "2026-10-03", AppVersionCode: 21},                                            // 0: not an active day
+		{IDHash: "c", Day: "2026-10-03", AppVersionCode: 21, Accepted: 60},                              // 60
+		{IDHash: "c", Day: "2026-10-04", AppVersionCode: 21, Accepted: 15, Declined: 4, Unavailable: 1}, // 20
+		{IDHash: "d", Day: "2026-09-01", AppVersionCode: 20, Accepted: 5},                               // outside the range
 	}
-	got := CallsDistribution(usage, "2026-10-01", "2026-10-04", 200)
+	got := MessagesDistribution(model, "2026-10-01", "2026-10-04")
 	want := []Bucket{
-		{"1", 1},
-		{"2-5", 1},
-		{"6-10", 1},
-		{"11-25", 0},
-		{"26-50", 0},
-		{"51-100", 0},
-		{"101-199", 1},
-		{"200+", 1},
+		{"1", 1}, {"2-3", 1}, {"4-6", 1}, {"7-10", 0}, {"11-20", 1}, {"21-50", 0}, {"51+", 1},
 	}
 	if len(got) != len(want) {
-		t.Fatalf("CallsDistribution() = %+v, want %+v", got, want)
+		t.Fatalf("MessagesDistribution() = %+v, want %+v", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Fatalf("CallsDistribution() = %+v, want %+v", got, want)
+			t.Fatalf("MessagesDistribution() = %+v, want %+v", got, want)
 		}
 	}
-}
-
-func TestCallsDistributionSmallLimit(t *testing.T) {
-	got := CallsDistribution(nil, "2026-10-01", "2026-10-01", 20)
-	labels := []string{}
-	for _, b := range got {
-		labels = append(labels, b.Label)
-	}
-	want := []string{"1", "2-5", "6-10", "11-19", "20+"}
-	if len(labels) != len(want) {
-		t.Fatalf("labels = %v, want %v", labels, want)
-	}
-	for i := range want {
-		if labels[i] != want[i] {
-			t.Fatalf("labels = %v, want %v", labels, want)
-		}
+	if empty := MessagesDistribution(nil, "2026-10-01", "2026-10-04"); len(empty) != 7 || empty[0].Count != 0 {
+		t.Fatalf("empty = %+v, want 7 zero buckets", empty)
 	}
 }

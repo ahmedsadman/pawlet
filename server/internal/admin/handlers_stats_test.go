@@ -233,8 +233,7 @@ func TestEngagementReliabilityFleetHandlers(t *testing.T) {
 		Cohorts []struct {
 			Retention []*float64 `json:"retention"`
 		} `json:"cohorts"`
-		CallsDistribution []struct{ Label string } `json:"callsDistribution"`
-		Dormant           int                      `json:"dormant"`
+		Dormant int `json:"dormant"`
 	}
 	if code := getJSON(t, e, "/api/engagement?range=7d&active=classify", cookie, &eng); code != http.StatusOK {
 		t.Fatalf("engagement = %d", code)
@@ -468,6 +467,33 @@ func TestInstallsMessages(t *testing.T) {
 	for _, d := range other.Daily {
 		if d.Messages != nil {
 			t.Fatalf("install without model stats: %+v, want null messages", d)
+		}
+	}
+}
+
+func TestEngagementMessagesDistribution(t *testing.T) {
+	e := newTestEnv(t)
+	seedStats(t, e.store)
+	seedModelStats(t, e)
+	cookie := e.login(t)
+
+	var eng struct {
+		MessagesDistribution []struct {
+			Label string `json:"label"`
+			Count int    `json:"count"`
+		} `json:"messagesDistribution"`
+	}
+	if code := getJSON(t, e, "/api/engagement?range=7d", cookie, &eng); code != http.StatusOK {
+		t.Fatalf("engagement = %d", code)
+	}
+	// hashA: 11 messages on 10-09, 5 on 10-07. The rollup has no install-days to bucket.
+	want := map[string]int{"1": 0, "2-3": 0, "4-6": 1, "7-10": 0, "11-20": 1, "21-50": 0, "51+": 0}
+	if len(eng.MessagesDistribution) != len(want) {
+		t.Fatalf("messagesDistribution = %+v", eng.MessagesDistribution)
+	}
+	for _, b := range eng.MessagesDistribution {
+		if n, ok := want[b.Label]; !ok || n != b.Count {
+			t.Fatalf("messagesDistribution = %+v", eng.MessagesDistribution)
 		}
 	}
 }
