@@ -238,13 +238,7 @@ void main() {
     test('shows every non-gated ignore reason', () async {
       final db = await openTestDb();
       final repo = SmsRepository(db);
-      const shown = [
-        IgnoreReason.localNone,
-        IgnoreReason.llmNone,
-        IgnoreReason.noRecord,
-        IgnoreReason.localLowConfidence,
-        IgnoreReason.localUnavailable,
-      ];
+      final shown = IgnoreReason.values.where((r) => r != IgnoreReason.gated);
       var ts = 1;
       for (final reason in [...shown, IgnoreReason.gated]) {
         final id = (await repo.insertIfNew(_sms(reason.value, ts: ts)))!;
