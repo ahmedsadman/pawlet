@@ -93,3 +93,50 @@ func rollingRates(idx modelIndex, days []string) []RateDay {
 	}
 	return out
 }
+
+// VersionMarker is a day on which a different app version took over most
+// messages.
+type VersionMarker struct {
+	Day            string `json:"day"`
+	AppVersionCode int64  `json:"appVersionCode"`
+}
+
+// majorityVersion is the version with more than half of a day's messages,
+// when the day has at least MarkerMinMessages. At most one version can
+// qualify, so map order does not matter.
+func majorityVersion(byVersion map[int64]ModelCounts) (int64, bool) {
+	var total int64
+	for _, c := range byVersion {
+		total += c.Messages()
+	}
+	if total < MarkerMinMessages {
+		return 0, false
+	}
+	for v, c := range byVersion {
+		if 2*c.Messages() > total {
+			return v, true
+		}
+	}
+	return 0, false
+}
+
+// versionMarkers walks days in order. The first day with a majority version
+// sets the baseline without a marker; after that, a day whose majority
+// version differs from the last one emits a marker and becomes the new
+// baseline.
+func versionMarkers(idx modelIndex, days []string) []VersionMarker {
+	out := []VersionMarker{}
+	var current int64
+	haveBaseline := false
+	for _, d := range days {
+		v, ok := majorityVersion(idx[d])
+		if !ok {
+			continue
+		}
+		if haveBaseline && v != current {
+			out = append(out, VersionMarker{Day: d, AppVersionCode: v})
+		}
+		current, haveBaseline = v, true
+	}
+	return out
+}
