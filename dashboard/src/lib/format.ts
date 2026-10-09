@@ -49,3 +49,10 @@ export function fmtDelta(current: number, previous: number): { text: string; up:
 export function shortHash(hash: string): string {
   return hash.slice(0, 8);
 }
+
+/** "12.4 (2.1 LLM)": messages per active install-day with calls in brackets. */
+export function fmtPerInstallDay(messages: number | null, calls: number | null): string {
+  if (messages == null && calls == null) return "—";
+  const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
+  return `${one(messages)} (${one(calls)} LLM)`;
+}

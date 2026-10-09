@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { fmtAgo, fmtCount, fmtDay, fmtDelta, fmtMs, fmtPercent, shortHash } from "./format";
+import {
+  fmtAgo,
+  fmtCount,
+  fmtDay,
+  fmtDelta,
+  fmtMs,
+  fmtPercent,
+  fmtPerInstallDay,
+  shortHash,
+} from "./format";
 
 describe("format", () => {
   it("formats counts compactly above 10k", () => {
@@ -36,5 +45,12 @@ describe("format", () => {
   });
   it("shortens hashes", () => {
     expect(shortHash("abcdef0123456789")).toBe("abcdef01");
+  });
+
+  it("shows messages per install-day with calls in brackets", () => {
+    expect(fmtPerInstallDay(12.44, 2.06)).toBe("12.4 (2.1 LLM)");
+    expect(fmtPerInstallDay(null, 2.06)).toBe("— (2.1 LLM)");
+    expect(fmtPerInstallDay(3, null)).toBe("3.0 (— LLM)");
+    expect(fmtPerInstallDay(null, null)).toBe("—");
   });
 });

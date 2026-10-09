@@ -8,7 +8,7 @@ import { StatTile } from "../components/StatTile";
 import { TimeSeriesChart } from "../charts/TimeSeriesChart";
 import { InfoTip } from "../components/InfoTip";
 import { useOverview } from "../api/queries";
-import { fmtAgo, fmtCount, fmtDelta, fmtPercent } from "../lib/format";
+import { fmtAgo, fmtCount, fmtDelta, fmtPerInstallDay, fmtPercent } from "../lib/format";
 import { useRange } from "../lib/range";
 import { SERIES } from "../theme/tokens";
 
@@ -77,11 +77,13 @@ export default function OverviewPage() {
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <Card title="Calls per day" statId="chart.callsPerDay">
+                <Card title="Messages per day" statId="chart.messagesPerDay">
                   <TimeSeriesChart
                     data={d.daily}
-                    kind="bar"
-                    series={[{ key: "calls", label: "Calls", color: SERIES[0] }]}
+                    series={[
+                      { key: "messages", label: "Messages", color: SERIES[0] },
+                      { key: "calls", label: "LLM calls", color: SERIES[1] },
+                    ]}
                   />
                 </Card>
                 <Card title="Active installs per day" statId="chart.activeInstallsPerDay">
@@ -107,13 +109,12 @@ export default function OverviewPage() {
                     <Fact label="Burst per minute" value={fmtCount(d.server.burstPerMin)} />
                     <Fact label="Global daily cap" value={fmtCount(d.server.globalDailyCap)} />
                     <Fact
-                      label="Calls per active install-day"
-                      value={
-                        k.callsPerActiveInstallDay === null
-                          ? "—"
-                          : k.callsPerActiveInstallDay.toFixed(1)
-                      }
-                      statId="callsPerActiveInstallDay"
+                      label="Messages per active install-day"
+                      value={fmtPerInstallDay(
+                        k.messagesPerActiveInstallDay,
+                        k.callsPerActiveInstallDay,
+                      )}
+                      statId="messagesPerActiveInstallDay"
                     />
                     <Fact
                       label="Started"
@@ -161,7 +162,7 @@ function Fact({
   label: string;
   value: string;
   mono?: boolean;
-  statId?: "callsPerActiveInstallDay";
+  statId?: "messagesPerActiveInstallDay";
 }) {
   return (
     <div>
