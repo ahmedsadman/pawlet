@@ -35,6 +35,10 @@ describe("InstallsPage", () => {
                 callsToday: 5,
                 calls7d: 35,
                 callsTotal: 100,
+                messagesToday: 12,
+                messages7d: 80,
+                messagesTotal: 400,
+                hasModelStats: true,
                 tokensTotal: 5000,
                 quotaHitDays: 0,
                 isBanned: false,
@@ -69,6 +73,40 @@ describe("InstallsPage", () => {
     await screen.findByText(/No installs match/i);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/installs\?.*sort=lastSeen/),
+      expect.any(Object),
+    );
+  });
+
+  it("falls back to lastSeen for a sort key that no longer exists", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ rows: [], total: 0, page: 1, pageSize: 50 }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderInstallsPage("/installs?sort=callsToday");
+
+    await screen.findByText(/No installs match/i);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/installs\?.*sort=lastSeen/),
+      expect.any(Object),
+    );
+  });
+
+  it("sorts by total messages when asked", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ rows: [], total: 0, page: 1, pageSize: 50 }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderInstallsPage("/installs?sort=messagesTotal");
+
+    await screen.findByText(/No installs match/i);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/installs\?.*sort=messagesTotal/),
       expect.any(Object),
     );
   });
