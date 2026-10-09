@@ -96,19 +96,39 @@ jobs:
             cd server
 
             export IMAGE_TAG="${{ github.sha }}"
-            docker compose pull
-            docker compose up -d --no-build
+            # Deploy pawletd first and hard: a missing/private admin image or
+            # config must not block the classify API.
+            docker compose pull pawlet
+            docker compose up -d --no-build pawlet
+            if docker compose pull pawlet-admin && docker compose up -d --no-build pawlet-admin; then echo "admin deployed"; else echo "::warning::admin deploy failed; pawletd is unaffected"; fi
             docker image prune -f
 
-      - name: Health check
+      - name: Health check (pawletd)
         run: |
-          for url in https://pawlet.muhib.me/healthz https://admin.pawlet.muhib.me/healthz; do
-            ok=""
-            for attempt in 1 2 3 4 5; do
-              sleep 5
-              status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" || true)
-              echo "$url attempt $attempt/5: $status"
-              if [ "$status" = "200" ]; then ok=1; break; fi
-            done
-            if [ -z "$ok" ]; then echo "Health check failed for $url"; exit 1; fi
+          for attempt in 1 2 3 4 5; do
+            sleep 5
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 https://pawlet.muhib.me/healthz || true)
+            echo "Attempt $attempt/5: $status"
+            if [ "$status" = "200" ]; then
+              echo "Health check passed"
+              exit 0
+            fi
           done
+          echo "Health check failed after 5 attempts"
+          exit 1
+
+      # Soft until the admin host is provisioned (DNS, Caddy, admin.env).
+      - name: Health check (admin)
+        continue-on-error: true
+        run: |
+          for attempt in 1 2 3 4 5; do
+            sleep 5
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 https://admin.pawlet.muhib.me/healthz || true)
+            echo "Attempt $attempt/5: $status"
+            if [ "$status" = "200" ]; then
+              echo "Health check passed"
+              exit 0
+            fi
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
