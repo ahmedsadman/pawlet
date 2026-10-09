@@ -303,8 +303,8 @@ class SmsRepository {
     final placeholders = kHistoryCategories.map((_) => '?').join(', ');
     // Financial (success + transaction/bill) rows and failures are shown, and
     // so are ignored rows unless the sender gate dropped them (`gated`: not a
-    // bank/card message). `IS NOT` is NULL-safe, so a legacy ignored row with
-    // no reason is shown.
+    // bank/card message). `IS NOT` is NULL-safe, so an ignored row with no
+    // reason yet (a bulk-import row awaiting its verdict) is shown too.
     final where = StringBuffer(
       '((status = ? AND category IN ($placeholders)) OR status = ? '
       'OR (status = ? AND ignore_reason IS NOT ?))',
