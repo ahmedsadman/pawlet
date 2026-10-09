@@ -76,7 +76,7 @@ class TransactionRow extends StatelessWidget {
                               color: theme.colorScheme.outline,
                             ),
                           Text(
-                            relativeTime(tx.date.toLocal()),
+                            dateTimeLabel(tx.date),
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.outline,
                             ),

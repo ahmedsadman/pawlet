@@ -126,6 +126,15 @@ void main() {
     expect(find.text('−50.00 BDT'), findsOneWidget); // expense sign
   });
 
+  testWidgets('row shows the date and time, with the year for a past year', (
+    tester,
+  ) async {
+    await _pump(tester);
+    // _tx(1, ...) is dated 2 Jan 2025 00:00 local: a past year, so the year
+    // is shown.
+    expect(find.text('2 Jan 2025 · 12:00 AM'), findsOneWidget);
+  });
+
   testWidgets('tapping a row reveals the backing message', (tester) async {
     await _pump(tester);
 
