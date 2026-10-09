@@ -82,10 +82,10 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	// 8. Start both background flushers via a WaitGroup so the shutdown sequence
-	// can wait for them before running the final flushes. Without the wait, a
-	// flusher could still be writing when main's final flush runs (or worse,
-	// when defer db.Close() fires).
+	// 8. Start the quota flusher via a WaitGroup so the shutdown sequence can
+	// wait for it before running the final flushes. Without the wait, a flusher
+	// could still be writing when main's final flush runs (or worse, when defer
+	// db.Close() fires).
 	var flushers sync.WaitGroup
 	flushers.Add(1)
 	go func() {
@@ -208,10 +208,15 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
-	// 16. Wait for a shutdown signal or server failure.
+	// 16. Wait for a shutdown signal or server failure. On server failure, cancel
+	// ctx so both flushers exit cleanly, then continue through the same shutdown
+	// sequence (graceful shutdown, wait for flushers, final flushes) as the
+	// signal path. The server error is returned at the end.
+	var serverErr error
 	select {
-	case err := <-errCh:
-		return err
+	case serverErr = <-errCh:
+		logger.Error("server failed", "error", serverErr)
+		stop()
 	case <-ctx.Done():
 		logger.Info("shutdown signal received")
 	}
@@ -237,6 +242,11 @@ func run(logger *slog.Logger) error {
 	}
 	if err := recorder.Flush(context.WithoutCancel(ctx)); err != nil {
 		logger.Error("final metrics flush failed", "error", err)
+	}
+
+	// 19. Return the server error if one happened, otherwise a quota flush error.
+	if serverErr != nil {
+		return serverErr
 	}
 	if quotaErr != nil {
 		return quotaErr
