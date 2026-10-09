@@ -40,6 +40,32 @@ Every stat's ⓘ text lives in `src/copy/stats.ts`, typed so a stat without copy
 Wording must agree with `server/docs/metrics.md` ("Dashboard definitions"). A unit test checks
 every entry is filled.
 
+## Message counts
+
+Installs on recent app versions report how many messages the on-device model handled; the UI shows
+them next to LLM calls:
+
+- **Reliability** opens with a full-width **Local model** card (`src/charts/LocalModelCard.tsx`): a
+  ring with the on-device rate, its change in points against the previous period, the counts
+  behind it and any model errors; beside it, the 7-day average as a line over faint daily dots, with
+  a dashed line on each day a new app version took over. A footer at the bottom of the page totals messages
+  (on device and via LLM) and successful LLM calls. The ring's track is `surface1` because the
+  card itself is `surface0`.
+- **Installs**: the Today, 7 days and Total columns show messages with LLM calls muted underneath
+  (`src/components/MessagesCell.tsx`; `—` for installs without model stats) and sort by messages.
+- **Install detail**: "Messages and calls per day" line chart.
+- **Engagement**: "Messages per active day" histogram, noted as covering the last 90 days only on
+  the "All" range.
+- **Overview**: "Messages per day" line chart (messages and LLM calls), and "Messages per active
+  install-day" with calls in brackets on the Server card.
+
+Messages and calls share line charts rather than stacked bars, because stacking would add calls on
+top of the messages they belong to.
+
+Every messages stat's tooltip names the first app release that reports message counts through
+`MESSAGE_COUNTS_RELEASE` in `src/copy/stats.ts`. Whoever cuts that release must set it to
+`"app version <versionCode>"`.
+
 ## Snapshot of color values
 
 From `src/theme/tokens.ts` as of this writing; verify against the source.

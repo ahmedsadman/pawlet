@@ -16,7 +16,8 @@ cannot affect the classify API.
 | `internal/devseed/`        | Fake history for local work                                                                 |
 
 The admin never migrates the database: it opens it with `store.OpenExisting`, which refuses a
-schema older than the binary needs. Start pawletd first after a schema change.
+schema older than the binary needs (see the snapshot below). Start pawletd first after a schema
+change.
 
 ## Running locally
 
@@ -123,15 +124,35 @@ timestamps unix seconds. `range` is `7d`, `30d` (default), `90d` or `all`.
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /healthz`                                                                  | 200 when the database answers                                                                                                         |
 | `POST /api/login`, `POST /api/logout`, `GET /api/me`                            | session                                                                                                                               |
-| `GET /api/overview?range=`                                                      | headline numbers, daily calls/active/new installs, server info                                                                        |
+| `GET /api/overview?range=`                                                      | headline numbers, daily messages/calls/active/new installs, messages and calls per active install-day, server info                    |
 | `GET /api/installs?sort=&order=&q=&status=&page=`                               | installs table (50 per page; `q` is a hash prefix; `status` is `all`, `active`, `dormant` or `banned`); an invalid `page` returns 400 |
-| `GET /api/installs/{hash}`                                                      | one install with its daily history                                                                                                    |
+| `GET /api/installs/{hash}`                                                      | one install with its daily history, including messages and on-device counts                                                           |
 | `POST /api/installs/{hash}/ban` `{"reason"}`, `POST /api/installs/{hash}/unban` | ban control; pawletd checks the flag on every request, so a ban applies to the install's next call                                    |
-| `GET /api/engagement?range=&active=any\|classify`                               | active installs, stickiness, cohorts, calls distribution, dormant count                                                               |
-| `GET /api/reliability?range=`                                                   | outcomes, success rate, latency percentiles, models, categories, tokens per call                                                      |
+| `GET /api/engagement?range=&active=any\|classify`                               | active installs, stickiness, cohorts, messages per active day distribution, dormant count                                             |
+| `GET /api/reliability?range=`                                                   | outcomes, success rate, latency percentiles, models, categories, tokens per call, local-model card                                    |
 | `GET /api/fleet`                                                                | app version, device tier, licensing and SDK of recently active installs; version adoption                                             |
 
 Unknown asset paths under `/assets/` return 404.
+
+### Local-model fields
+
+Loaded by `internal/store/rows.go` from `model_stats_daily`, `model_stats_rollup` and
+`installs.messages_archived`; the math is in `internal/stats/localmodel.go`,
+`internal/stats/installs.go`, `internal/stats/distribution.go` and `internal/stats/overview.go`.
+
+- **Reliability** returns `localModel`: `accepted`, `declined`, `unavailable`, `rate` and
+  `prevRate` (null when undefined), `daily` (per-day counts and rate), `rolling7` (7-day rate per
+  day) and `versionMarkers` (`day`, `appVersionCode`).
+- **Installs** rows carry `messagesToday`, `messages7d`, `messagesTotal` and `hasModelStats`.
+  `sort` accepts `firstSeen`, `lastSeen`, `appVersionCode`, `messagesToday`, `messages7d`,
+  `messagesTotal`, `tokensTotal` and `quotaHitDays`; any other key (including the former
+  `callsToday`, `calls7d` and `callsTotal`) returns 400.
+- **Install detail** days carry `messages` and `onDevice`, null outside the last 90 days and for
+  installs that never reported model stats.
+- **Engagement** returns `messagesDistribution` (install-days by message count, at most the last 90
+  days).
+- **Overview** daily rows carry `messages`; `kpis` carries `messagesPerActiveInstallDay` next to
+  `callsPerActiveInstallDay`.
 
 How each number is defined — active days, cohorts, dormancy, success rate, percentiles — is in
 [Stored metrics](metrics.md#dashboard-definitions); the code that computes them is
@@ -141,15 +162,16 @@ How each number is defined — active days, cohorts, dormancy, success rate, per
 
 Snapshot as of this writing — verify against the named source files.
 
-| Constant                   | Value                               | Source                                                          |
-| -------------------------- | ----------------------------------- | --------------------------------------------------------------- |
-| Session lifetime           | 7 days                              | `internal/admin/sessions.go`                                    |
-| Failed logins per address  | 5 per 15 minutes                    | `internal/admin/loginlimit.go`                                  |
-| Failed logins overall      | 100 per hour                        | `internal/admin/loginlimit.go`                                  |
-| Concurrent password checks | 2                                   | `internal/admin/server.go`                                      |
-| argon2id parameters        | 64 MiB, 2 passes, 1 thread          | `internal/admin/password.go`                                    |
-| Installs page size         | 50                                  | `internal/stats/installs.go`                                    |
-| Dormant after              | 14 days without activity            | `internal/stats/installs.go`                                    |
-| Weekly cohorts shown       | 12, each tracked to week 12         | `internal/admin/handlers_stats.go`, `internal/stats/cohorts.go` |
-| Fleet window               | last 30 days; adoption over 90 days | `internal/stats/fleet.go`, `internal/admin/handlers_stats.go`   |
-| Ban reason limit           | 200 characters                      | `internal/admin/handlers_stats.go`                              |
+| Constant                   | Value                                | Source                                                          |
+| -------------------------- | ------------------------------------ | --------------------------------------------------------------- |
+| Minimum database schema    | version 3 (local-model stats tables) | `internal/store/migrate.go` (`SchemaVersion`)                   |
+| Session lifetime           | 7 days                               | `internal/admin/sessions.go`                                    |
+| Failed logins per address  | 5 per 15 minutes                     | `internal/admin/loginlimit.go`                                  |
+| Failed logins overall      | 100 per hour                         | `internal/admin/loginlimit.go`                                  |
+| Concurrent password checks | 2                                    | `internal/admin/server.go`                                      |
+| argon2id parameters        | 64 MiB, 2 passes, 1 thread           | `internal/admin/password.go`                                    |
+| Installs page size         | 50                                   | `internal/stats/installs.go`                                    |
+| Dormant after              | 14 days without activity             | `internal/stats/installs.go`                                    |
+| Weekly cohorts shown       | 12, each tracked to week 12          | `internal/admin/handlers_stats.go`, `internal/stats/cohorts.go` |
+| Fleet window               | last 30 days; adoption over 90 days  | `internal/stats/fleet.go`, `internal/admin/handlers_stats.go`   |
+| Ban reason limit           | 200 characters                       | `internal/admin/handlers_stats.go`                              |
