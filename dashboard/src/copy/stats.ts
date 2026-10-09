@@ -167,11 +167,6 @@ export const statCopy = {
     computation: "Classified = at least one call; opened only = a session day without calls.",
     caveat: SESSION_UNDERCOUNT,
   },
-  "chart.installCalls": {
-    title: "Calls per day",
-    meaning: "This install's admitted classify calls each day.",
-    computation: "Its daily call counter.",
-  },
   "chart.installTokens": {
     title: "Tokens per day",
     meaning: "Tokens this install's successful calls used each day.",

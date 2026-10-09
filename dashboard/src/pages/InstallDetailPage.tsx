@@ -111,11 +111,15 @@ export default function InstallDetailPage() {
               <ActivityStrip daily={daily} />
             </Card>
             <div className="grid gap-4 lg:grid-cols-2">
-              <Card title="Calls per day" statId="chart.installCalls">
+              <Card title="Messages and calls per day" statId="chart.installMessages">
                 <TimeSeriesChart
-                  data={daily.slice(-90).map(({ day, calls, tokens }) => ({ day, calls, tokens }))}
-                  kind="bar"
-                  series={[{ key: "calls", label: "Calls", color: SERIES[0] }]}
+                  data={daily
+                    .slice(-90)
+                    .map(({ day, messages, calls }) => ({ day, messages, calls }))}
+                  series={[
+                    { key: "messages", label: "Messages", color: SERIES[0] },
+                    { key: "calls", label: "LLM calls", color: SERIES[1] },
+                  ]}
                 />
               </Card>
               <Card title="Tokens per day" statId="chart.installTokens">
