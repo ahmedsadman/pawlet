@@ -65,3 +65,34 @@ func TestRollingRatesAreWeighted(t *testing.T) {
 		t.Fatalf("10-08 = %v, want nil", *got[7].Rate)
 	}
 }
+
+func TestVersionMarkers(t *testing.T) {
+	row := func(day string, version, accepted, declined, unavailable int64) store.ModelRow {
+		return store.ModelRow{IDHash: "a", Day: day, AppVersionCode: version, Accepted: accepted, Declined: declined, Unavailable: unavailable}
+	}
+	idx := indexModel([]store.ModelRow{
+		row("2026-10-01", 20, 15, 4, 0), // 19 messages: too few to count
+		row("2026-10-02", 20, 17, 2, 1), // 20 (errors count as messages): baseline 20, no marker
+		row("2026-10-03", 20, 10, 0, 0), // 50/50 split: no majority
+		row("2026-10-03", 21, 10, 0, 0), //
+		row("2026-10-04", 20, 5, 0, 0),  // v21 has 25 of 30: marker
+		row("2026-10-04", 21, 20, 5, 0), //
+		row("2026-10-05", 21, 30, 0, 0), // same version: no marker
+		row("2026-10-06", 20, 40, 0, 0), // back to v20 (a rollback): marker
+	}, nil)
+	got := versionMarkers(idx, Days("2026-10-01", "2026-10-06"))
+	want := []VersionMarker{{Day: "2026-10-04", AppVersionCode: 21}, {Day: "2026-10-06", AppVersionCode: 20}}
+	if len(got) != len(want) {
+		t.Fatalf("versionMarkers() = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("versionMarkers() = %+v, want %+v", got, want)
+		}
+	}
+
+	empty := versionMarkers(modelIndex{}, Days("2026-10-01", "2026-10-06"))
+	if empty == nil || len(empty) != 0 {
+		t.Fatalf("no data = %#v, want an empty, non-nil slice", empty)
+	}
+}
