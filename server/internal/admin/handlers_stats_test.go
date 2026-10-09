@@ -497,3 +497,32 @@ func TestEngagementMessagesDistribution(t *testing.T) {
 		}
 	}
 }
+
+func TestOverviewMessages(t *testing.T) {
+	e := newTestEnv(t)
+	seedStats(t, e.store)
+	seedModelStats(t, e)
+	cookie := e.login(t)
+
+	var ov struct {
+		KPIs struct {
+			MessagesPerActiveInstallDay *float64 `json:"messagesPerActiveInstallDay"`
+		} `json:"kpis"`
+		Daily []struct {
+			Day      string `json:"day"`
+			Calls    int64  `json:"calls"`
+			Messages int64  `json:"messages"`
+		} `json:"daily"`
+	}
+	if code := getJSON(t, e, "/api/overview?range=7d", cookie, &ov); code != http.StatusOK {
+		t.Fatalf("overview = %d", code)
+	}
+	if len(ov.Daily) != 7 || ov.Daily[0].Messages != 10 || ov.Daily[4].Messages != 5 || ov.Daily[4].Calls != 2 ||
+		ov.Daily[6].Messages != 11 || ov.Daily[6].Calls != 5 {
+		t.Fatalf("daily = %+v", ov.Daily)
+	}
+	// (10 rollup + 5 + 11) ÷ (2 rollup install-days + 2).
+	if got := ov.KPIs.MessagesPerActiveInstallDay; got == nil || *got != 6.5 {
+		t.Fatalf("messagesPerActiveInstallDay = %v, want 6.5", got)
+	}
+}

@@ -43,23 +43,25 @@ func ParseServerInfo(m map[string]string) ServerInfo {
 
 // OverviewKPIs are the overview page's tiles.
 type OverviewKPIs struct {
-	AttestedInstalls         int      `json:"attestedInstalls"`
-	Banned                   int      `json:"banned"`
-	NewInstalls              int      `json:"newInstalls"`
-	NewInstallsPrev          int      `json:"newInstallsPrev"`
-	DAU                      int      `json:"dau"`
-	WAU                      int      `json:"wau"`
-	MAU                      int      `json:"mau"`
-	CallsToday               int64    `json:"callsToday"`
-	TokensToday              int64    `json:"tokensToday"`
-	SuccessRateToday         *float64 `json:"successRateToday"`
-	CallsPerActiveInstallDay *float64 `json:"callsPerActiveInstallDay"`
+	AttestedInstalls            int      `json:"attestedInstalls"`
+	Banned                      int      `json:"banned"`
+	NewInstalls                 int      `json:"newInstalls"`
+	NewInstallsPrev             int      `json:"newInstallsPrev"`
+	DAU                         int      `json:"dau"`
+	WAU                         int      `json:"wau"`
+	MAU                         int      `json:"mau"`
+	CallsToday                  int64    `json:"callsToday"`
+	TokensToday                 int64    `json:"tokensToday"`
+	SuccessRateToday            *float64 `json:"successRateToday"`
+	CallsPerActiveInstallDay    *float64 `json:"callsPerActiveInstallDay"`
+	MessagesPerActiveInstallDay *float64 `json:"messagesPerActiveInstallDay"`
 }
 
 // OverviewDay is one day of the overview charts.
 type OverviewDay struct {
 	Day            string `json:"day"`
 	Calls          int64  `json:"calls"`
+	Messages       int64  `json:"messages"`
 	Tokens         int64  `json:"tokens"`
 	ActiveInstalls int    `json:"activeInstalls"`
 	NewInstalls    int    `json:"newInstalls"`
@@ -73,7 +75,7 @@ type Overview struct {
 
 // OverviewInput is what BuildOverview needs. Activity must be ModeAny and
 // reach 29 days before Range.From. CountersToday holds today's classify_outcome
-// counts only.
+// counts only. Model and ModelRollup cover Range.
 type OverviewInput struct {
 	Range         Range
 	Today         string
@@ -81,6 +83,8 @@ type OverviewInput struct {
 	Usage         []store.UsageRow
 	Activity      Activity
 	CountersToday map[string]int64
+	Model         []store.ModelRow
+	ModelRollup   []store.ModelRollupRow
 }
 
 // BuildOverview computes the overview tiles and daily series. "New installs
@@ -127,6 +131,8 @@ func BuildOverview(in OverviewInput) Overview {
 		k.CallsPerActiveInstallDay = &v
 	}
 	k.SuccessRateToday = SuccessRate(in.CountersToday)
+	messages, perInstallDay := rangeMessages(in)
+	k.MessagesPerActiveInstallDay = perInstallDay
 
 	now := ActiveSeries(in.Activity, []string{in.Today})[0]
 	k.DAU, k.WAU, k.MAU = now.DAU, now.WAU, now.MAU
@@ -135,9 +141,38 @@ func BuildOverview(in OverviewInput) Overview {
 	daily := make([]OverviewDay, len(days))
 	for i, d := range days {
 		daily[i] = OverviewDay{
-			Day: d, Calls: calls[d], Tokens: tokens[d],
+			Day: d, Calls: calls[d], Messages: messages[d], Tokens: tokens[d],
 			ActiveInstalls: series[i].DAU, NewInstalls: newByDay[d],
 		}
 	}
 	return Overview{KPIs: k, Daily: daily}
+}
+
+// rangeMessages sums messages per day over in.Range and averages them over
+// install-days with at least one message. A rollup row brings the
+// install-days folded into it, since its per-install rows are gone.
+func rangeMessages(in OverviewInput) (map[string]int64, *float64) {
+	perDay := map[string]int64{}
+	var total, installDays int64
+	for k, n := range installDayMessages(in.Model, in.Range.From, in.Range.To) {
+		perDay[k.day] += n
+		total += n
+		if n > 0 {
+			installDays++
+		}
+	}
+	for _, r := range in.ModelRollup {
+		if r.Day < in.Range.From || r.Day > in.Range.To {
+			continue
+		}
+		n := modelCounts(r.Accepted, r.Declined, r.Unavailable).Messages()
+		perDay[r.Day] += n
+		total += n
+		installDays += r.InstallCount
+	}
+	if installDays == 0 {
+		return perDay, nil
+	}
+	v := float64(total) / float64(installDays)
+	return perDay, &v
 }

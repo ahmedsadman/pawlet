@@ -67,3 +67,36 @@ func TestBuildOverview(t *testing.T) {
 		t.Fatalf("today row = %+v", last)
 	}
 }
+
+func TestBuildOverviewMessages(t *testing.T) {
+	rng := Range{From: "2026-10-03", To: "2026-10-09"}
+	model := []store.ModelRow{
+		{IDHash: "a", Day: "2026-10-08", AppVersionCode: 20, Accepted: 3, Declined: 1},
+		{IDHash: "a", Day: "2026-10-09", AppVersionCode: 20, Accepted: 2},
+		{IDHash: "a", Day: "2026-10-09", AppVersionCode: 21, Accepted: 1, Unavailable: 1}, // same install-day
+		{IDHash: "b", Day: "2026-10-09", AppVersionCode: 21},                              // no messages: not an active install-day
+		{IDHash: "c", Day: "2026-10-01", AppVersionCode: 20, Accepted: 9},                 // outside the range
+	}
+	rollup := []store.ModelRollupRow{{Day: "2026-10-03", AppVersionCode: 19, Accepted: 6, Declined: 2, InstallCount: 2}}
+
+	ov := BuildOverview(OverviewInput{
+		Range: rng, Today: "2026-10-09", Model: model, ModelRollup: rollup,
+		Activity: BuildActivity(nil, nil, ModeAny),
+	})
+	byDay := map[string]int64{}
+	for _, d := range ov.Daily {
+		byDay[d.Day] = d.Messages
+	}
+	if byDay["2026-10-03"] != 8 || byDay["2026-10-08"] != 4 || byDay["2026-10-09"] != 4 || byDay["2026-10-05"] != 0 {
+		t.Fatalf("daily messages = %v", byDay)
+	}
+	// 16 messages over 4 install-days: a on 10-08 and 10-09, plus 2 folded into the rollup.
+	if got := ov.KPIs.MessagesPerActiveInstallDay; got == nil || *got != 4 {
+		t.Fatalf("messages per active install-day = %v, want 4", got)
+	}
+
+	empty := BuildOverview(OverviewInput{Range: rng, Today: "2026-10-09", Activity: BuildActivity(nil, nil, ModeAny)})
+	if empty.KPIs.MessagesPerActiveInstallDay != nil {
+		t.Fatalf("no model stats = %v, want nil", *empty.KPIs.MessagesPerActiveInstallDay)
+	}
+}
