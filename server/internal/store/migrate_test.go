@@ -173,9 +173,9 @@ func TestOpenConcurrentAppliesMigrationOnce(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 
-	// Inject a non-idempotent migration 2 (ALTER TABLE ADD COLUMN would fail
-	// if applied twice). Without the re-check fix, concurrent openers would
-	// both try to apply it and one would fail.
+	// Inject a non-idempotent migration at the next version (ALTER TABLE ADD
+	// COLUMN would fail if applied twice). Without the re-check fix, concurrent
+	// openers would both try to apply it and one would fail.
 	old := migrations
 	migrations = append(append([]string(nil), migrations...), "ALTER TABLE installs ADD COLUMN probe TEXT;")
 	t.Cleanup(func() { migrations = old })
@@ -244,7 +244,7 @@ func TestOpenRollsBackFailedMigration(t *testing.T) {
 
 	// Inject a failing migration: first statement succeeds, second fails
 	// (duplicate column). The transaction should roll back, leaving user_version
-	// at 1 and no table `half`.
+	// at the previous version and no table `half`.
 	old := migrations
 	migrations = append(append([]string(nil), migrations...),
 		"CREATE TABLE half (x INTEGER); ALTER TABLE installs ADD COLUMN banned INTEGER;")
@@ -262,7 +262,7 @@ func TestOpenRollsBackFailedMigration(t *testing.T) {
 		t.Errorf("error = %v, want it to contain %q", err, wantMsg)
 	}
 
-	// Verify user_version stayed at 1 and table `half` does not exist.
+	// Verify user_version stayed at the previous version and table `half` does not exist.
 	raw, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
 		t.Fatalf("open raw: %v", err)
