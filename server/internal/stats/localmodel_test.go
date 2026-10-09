@@ -96,3 +96,43 @@ func TestVersionMarkers(t *testing.T) {
 		t.Fatalf("no data = %#v, want an empty, non-nil slice", empty)
 	}
 }
+
+func TestBuildLocalModel(t *testing.T) {
+	days := Days("2026-10-08", "2026-10-09")
+	prevDays := Days("2026-10-06", "2026-10-07")
+	daily := []store.ModelRow{
+		{IDHash: "a", Day: "2026-10-09", AppVersionCode: 21, Accepted: 8, Declined: 2, Unavailable: 1},
+		{IDHash: "b", Day: "2026-10-09", AppVersionCode: 21, Accepted: 4},
+		{IDHash: "a", Day: "2026-10-06", AppVersionCode: 20, Accepted: 5, Declined: 5}, // previous period
+	}
+	rollup := []store.ModelRollupRow{{Day: "2026-10-08", AppVersionCode: 21, Accepted: 3, Declined: 1, InstallCount: 1}}
+
+	lm := BuildLocalModel(days, prevDays, daily, rollup)
+	if lm.Accepted != 15 || lm.Declined != 3 || lm.Unavailable != 1 || !near(lm.Rate, 15.0/18.0) {
+		t.Fatalf("totals = %+v rate %v", lm, lm.Rate)
+	}
+	if !near(lm.PrevRate, 0.5) {
+		t.Fatalf("prevRate = %v, want 0.5", lm.PrevRate)
+	}
+	if len(lm.Daily) != 2 || lm.Daily[0].Day != "2026-10-08" || lm.Daily[0].Accepted != 3 || !near(lm.Daily[0].Rate, 0.75) {
+		t.Fatalf("daily[0] = %+v", lm.Daily)
+	}
+	if d := lm.Daily[1]; d.Accepted != 12 || d.Declined != 2 || d.Unavailable != 1 || !near(d.Rate, 12.0/14.0) {
+		t.Fatalf("daily[1] = %+v", d)
+	}
+	// 10-09's window (10-03..10-09) includes the previous period's 10-06.
+	if len(lm.Rolling7) != 2 || !near(lm.Rolling7[1].Rate, 20.0/28.0) {
+		t.Fatalf("rolling7 = %+v", lm.Rolling7)
+	}
+	if lm.VersionMarkers == nil || len(lm.VersionMarkers) != 0 {
+		t.Fatalf("versionMarkers = %#v, want empty", lm.VersionMarkers)
+	}
+
+	if all := BuildLocalModel(days, nil, daily, rollup); all.PrevRate != nil {
+		t.Fatalf("no previous period: prevRate = %v, want nil", *all.PrevRate)
+	}
+	empty := BuildLocalModel(days, prevDays, nil, nil)
+	if empty.Rate != nil || empty.PrevRate != nil || len(empty.Daily) != 2 || empty.Daily[0].Rate != nil {
+		t.Fatalf("empty = %+v", empty)
+	}
+}
