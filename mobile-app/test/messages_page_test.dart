@@ -294,17 +294,32 @@ void main() {
 
   testWidgets('shows the one-time History banner, dismissible', (tester) async {
     await _pump(tester, _overrides());
-    expect(find.textContaining('failed to process'), findsOneWidget);
+    expect(
+      find.text(
+        "History shows your bank messages. Ones that weren't a transaction "
+        'or bill are marked Ignored and deleted after 7 days. Other texts '
+        "aren't kept.",
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byIcon(Icons.close));
     await tester.pump();
-    expect(find.textContaining('failed to process'), findsNothing);
+    expect(find.textContaining('marked Ignored'), findsNothing);
   });
 
   testWidgets('History banner stays hidden once seen', (tester) async {
     await _pump(tester, _overrides(), prefs: {'history_hint_seen_v2': true});
-    expect(find.textContaining('failed to process'), findsNothing);
+    expect(find.textContaining('marked Ignored'), findsNothing);
   });
+
+  testWidgets(
+    'History banner shows again for users who dismissed the old one',
+    (tester) async {
+      await _pump(tester, _overrides(), prefs: {'history_hint_seen': true});
+      expect(find.textContaining('marked Ignored'), findsOneWidget);
+    },
+  );
 
   testWidgets('prev is disabled on the first page, next enabled', (
     tester,

@@ -96,7 +96,8 @@ class HistoryQuery {
   int get hashCode => Object.hash(page, search);
 }
 
-/// A page of processed (Transaction/Bill) History rows.
+/// A page of History rows (transactions, bills, failures, ignored bank
+/// messages).
 class HistoryPage {
   const HistoryPage({
     required this.records,
