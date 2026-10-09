@@ -289,6 +289,11 @@ class _RootShellState extends ConsumerState<RootShell>
         // pass commits, which the poller then picks up.
         ref.read(dataRevisionSyncProvider).resume();
         ref.read(dataRevisionProvider.notifier).bump();
+        // The pass below flushes model stats when it ends, but a skipped pass
+        // (one already running, or paused for the inbox import) would not.
+        // The reporter's single-flight guard and throttle absorb the repeat.
+        final reporter = ref.read(appServicesProvider).modelStatsReporter;
+        if (reporter != null) unawaited(reporter.maybeFlush());
         // Fire-and-forget: process() swallows its own pass-level errors. The
         // refresh runs after the pass so its ineligible sync isn't skipped.
         unawaited(() async {
