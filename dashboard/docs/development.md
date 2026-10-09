@@ -37,13 +37,13 @@ UI. Only `.gitkeep` is committed in that directory.
 
 ## Where things live
 
-| Path | What |
-|---|---|
-| `src/api/` | Contract types; mirror `server/docs/admin.md` API; the server is authoritative |
-| `src/pages/` | Page components |
-| `src/charts/` | Chart components |
-| `src/components/` | UI components |
-| `src/copy/stats.ts` | Stat tooltip copy |
+| Path                | What                                                                           |
+| ------------------- | ------------------------------------------------------------------------------ |
+| `src/api/`          | Contract types; mirror `server/docs/admin.md` API; the server is authoritative |
+| `src/pages/`        | Page components                                                                |
+| `src/charts/`       | Chart components                                                               |
+| `src/components/`   | UI components                                                                  |
+| `src/copy/stats.ts` | Stat tooltip copy                                                              |
 
 All statistics are computed by the server (`server/internal/stats/`); the UI only formats and
 plots.
