@@ -197,9 +197,10 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		// Map a *llm.CallError via errors.As: status 429 → rate_limited;
 		// otherwise retryable → 503 upstream; otherwise → 400 upstream_rejected.
 		// A non-*llm.CallError is 503 upstream.
-		// If the request context was cancelled (client disconnect or server
-		// shutdown), count client_cancelled instead of an upstream key, but keep
-		// the HTTP response unchanged so a disconnect surfaces as a retryable error.
+		// A client disconnect or server shutdown cancels the request context, and
+		// the LLM client reports that as a retryable CallError. Count it as
+		// client_cancelled so it does not inflate upstream failures; the response
+		// itself is unchanged.
 		var callErr *llm.CallError
 		if errors.As(err, &callErr) {
 			if callErr.Status == 429 {
