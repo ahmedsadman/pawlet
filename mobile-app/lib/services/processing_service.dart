@@ -52,6 +52,7 @@ class ProcessingService {
     this.reschedule,
     this.modelStats,
     this.appVersionCode = readAppVersionCode,
+    this.onPassEnd,
   }) : _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final SmsRepository smsRepository;
@@ -91,6 +92,10 @@ class ProcessingService {
   /// This build's versionCode, which the counts are filed under. A null
   /// answer skips counting that message rather than filing it wrongly.
   final Future<int?> Function() appVersionCode;
+
+  /// Optional hook run at the end of every pass that started, once the
+  /// overlap guard is released (used to flush the model-stats reporter).
+  final Future<void> Function()? onPassEnd;
 
   /// Max attempts before a record is marked failed.
   static const int maxAttempts = 10;
@@ -217,6 +222,22 @@ class ProcessingService {
       // fire-and-forget callers (app resume / bootstrap) never see it throw.
     } finally {
       _running = false;
+    }
+    await _runPassEnd();
+  }
+
+  /// Runs [onPassEnd] once the pass is over. Deliberately outside the
+  /// `_running` guard: the hook can be a network round trip, and a pass
+  /// requested meanwhile (an incoming SMS) must run rather than be dropped as
+  /// an overlap. Still awaited, so a background isolate does not dispose its
+  /// services under it. Never throws.
+  Future<void> _runPassEnd() async {
+    final hook = onPassEnd;
+    if (hook == null) return;
+    try {
+      await hook();
+    } catch (_) {
+      // Best effort, like the rest of the pass tail.
     }
   }
 
