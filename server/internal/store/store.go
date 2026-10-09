@@ -38,9 +38,14 @@ const dsnParams = "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)" +
 
 // Open prepares the database file and both pools.
 func Open(path string) (*Store, error) {
-	dsn := "file:" + path + dsnParams
+	// Write pool uses IMMEDIATE transactions so concurrent openers racing to
+	// apply the same migration (e.g., during an overlapping deploy) take the
+	// write lock before reading user_version, preventing both from trying a
+	// non-idempotent migration like ALTER TABLE ADD COLUMN.
+	writeDSN := "file:" + path + dsnParams + "&_txlock=immediate"
+	readDSN := "file:" + path + dsnParams
 
-	write, err := sql.Open("sqlite", dsn)
+	write, err := sql.Open("sqlite", writeDSN)
 	if err != nil {
 		return nil, fmt.Errorf("open write pool: %w", err)
 	}
@@ -51,7 +56,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 
-	read, err := sql.Open("sqlite", dsn)
+	read, err := sql.Open("sqlite", readDSN)
 	if err != nil {
 		_ = write.Close()
 		return nil, fmt.Errorf("open read pool: %w", err)

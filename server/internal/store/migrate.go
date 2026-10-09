@@ -13,6 +13,10 @@ var migration001 string
 // migrations moves the schema forward one version per entry: entry i takes a
 // database from user_version i to i+1. Append only — never edit an entry that
 // has shipped, because databases that already ran it will not run it again.
+// Each migration runs inside a transaction, so PRAGMAs like journal_mode or
+// foreign_keys have no effect there. New columns must be nullable or have a
+// DEFAULT so an older binary's INSERTs keep working (that's what makes rollback
+// by image tag safe).
 var migrations = []string{
 	migration001,
 }
@@ -45,6 +49,16 @@ func applyMigration(ctx context.Context, db *sql.DB, from int) error {
 		return fmt.Errorf("begin migration %d: %w", to, err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// A second process (e.g., an overlapping deploy) may have already applied
+	// this migration while we waited on the write lock. Re-check inside the tx.
+	var current int
+	if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
+		return fmt.Errorf("re-check schema version: %w", err)
+	}
+	if current >= to {
+		return nil // Already applied; rollback is a no-op.
+	}
 
 	if _, err := tx.ExecContext(ctx, migrations[from]); err != nil {
 		return fmt.Errorf("apply migration %d: %w", to, err)

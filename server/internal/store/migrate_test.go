@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 )
 
@@ -150,5 +151,126 @@ func TestOpenAcceptsNewerSchema(t *testing.T) {
 
 	if got := userVersion(t, s2.read); got != newer {
 		t.Fatalf("user_version = %d, want untouched %d", got, newer)
+	}
+}
+
+func TestOpenConcurrentAppliesMigrationOnce(t *testing.T) {
+	// Mutates package-level migrations; must not run in parallel.
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "concurrent.db")
+
+	// Create a database at v1 first.
+	s1, err := Open(path)
+	if err != nil {
+		t.Fatalf("first Open() error = %v", err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	// Inject a non-idempotent migration 2 (ALTER TABLE ADD COLUMN would fail
+	// if applied twice). Without the re-check fix, concurrent openers would
+	// both try to apply it and one would fail.
+	old := migrations
+	migrations = append(append([]string(nil), migrations...), "ALTER TABLE installs ADD COLUMN probe TEXT;")
+	t.Cleanup(func() { migrations = old })
+
+	// Open from 4 goroutines concurrently; all must succeed.
+	const n = 4
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	stores := make([]*Store, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			s, err := Open(path)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			stores[i] = s
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d Open() error = %v", i, err)
+		}
+	}
+	for i, s := range stores {
+		if s != nil {
+			if got := userVersion(t, s.read); got != SchemaVersion() {
+				t.Errorf("goroutine %d user_version = %d, want %d", i, got, SchemaVersion())
+			}
+			_ = s.Close()
+		}
+	}
+
+	// Verify the column exists (migration ran exactly once).
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	defer func() { _ = raw.Close() }()
+	var probe sql.NullString
+	err = raw.QueryRowContext(ctx, "SELECT probe FROM installs LIMIT 1").Scan(&probe)
+	// Empty table is fine; we just want to verify the column exists.
+	if err != nil && err != sql.ErrNoRows {
+		t.Errorf("probe column missing or query failed: %v", err)
+	}
+}
+
+func TestOpenRollsBackFailedMigration(t *testing.T) {
+	// Mutates package-level migrations; must not run in parallel.
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "rollback.db")
+
+	// Create a database at v1 first.
+	s1, err := Open(path)
+	if err != nil {
+		t.Fatalf("first Open() error = %v", err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	// Inject a failing migration: first statement succeeds, second fails
+	// (duplicate column). The transaction should roll back, leaving user_version
+	// at 1 and no table `half`.
+	old := migrations
+	migrations = append(append([]string(nil), migrations...),
+		"CREATE TABLE half (x INTEGER); ALTER TABLE installs ADD COLUMN banned INTEGER;")
+	t.Cleanup(func() { migrations = old })
+
+	s2, err := Open(path)
+	if err == nil {
+		_ = s2.Close()
+		t.Fatal("Open() succeeded, want error from duplicate column")
+	}
+	if err != nil {
+		t.Logf("Open() error (expected): %v", err)
+	}
+
+	// Verify user_version stayed at 1 and table `half` does not exist.
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	defer func() { _ = raw.Close() }()
+
+	if got := userVersion(t, raw); got != 1 {
+		t.Errorf("user_version = %d after rollback, want 1", got)
+	}
+
+	var count int
+	err = raw.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='half'").Scan(&count)
+	if err != nil {
+		t.Fatalf("check for half table: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("table half exists after rollback, want it rolled back")
 	}
 }
