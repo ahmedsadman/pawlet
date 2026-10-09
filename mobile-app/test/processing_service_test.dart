@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:decimal/decimal.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/data/banks_repository.dart';
+import 'package:pawlet/data/model_stats_repository.dart';
 import 'package:pawlet/data/sms_repository.dart';
 import 'package:pawlet/models/finance/bank.dart';
 import 'package:pawlet/models/sms_record.dart';
@@ -1622,6 +1623,260 @@ void main() {
         await db.close();
       },
     );
+  });
+
+  group('local verdict counting', () {
+    late ModelStatsRepository stats;
+    const content = 'debit 50 BDT';
+
+    setUp(() => stats = ModelStatsRepository(db));
+
+    ProcessingService statsService({
+      LlmProvider? llm,
+      LocalClassifier? local,
+      bool online = true,
+      FinanceWriter? writer,
+      Future<int?> Function()? version,
+    }) => ProcessingService(
+      smsRepository: sms,
+      banksRepository: banks,
+      classifier: Classifier(llm, local: local),
+      financeWriter: writer ?? FinanceWriter(db, nowMs: () => now),
+      isOnline: () async => online,
+      currency: () => 'BDT',
+      clock: () => now,
+      modelStats: stats,
+      appVersionCode: version ?? (() async => 21),
+    );
+
+    /// `[accepted, declined, unavailable]` of the single tally row, or `[]`.
+    Future<List<Object?>> tally() async {
+      final rows = await db.query('model_stats');
+      if (rows.isEmpty) return const [];
+      final r = rows.single;
+      return [r['accepted'], r['declined'], r['unavailable']];
+    }
+
+    test('an accepted message is counted once, as accepted', () async {
+      final id = await queue('CHK', content: content);
+      await statsService(
+        llm: _FakeLlm(),
+        local: _FnLocal(_localExpense),
+      ).process();
+
+      final r = await row(id);
+      expect(r['status'], 'success');
+      expect(r['local_verdict'], 'accepted');
+      final s = (await db.query('model_stats')).single;
+      expect(s['day'], '1970-01-01'); // the test clock's UTC day
+      expect(s['app_version_code'], 21);
+      expect(await tally(), [1, 0, 0]);
+      await db.close();
+    });
+
+    test(
+      'a declined message is counted as declined, whatever the LLM says',
+      () async {
+        final id = await queue('CHK', content: content);
+        await statsService(
+          llm: _FakeLlm(result: _expense()),
+          local: _FnLocal((_) => _localUnsure),
+        ).process();
+
+        final r = await row(id);
+        expect(r['parse_source'], ParseSource.llm.value);
+        expect(r['local_verdict'], 'declined');
+        expect(await tally(), [0, 1, 0]);
+        await db.close();
+      },
+    );
+
+    test('a model with no prediction is counted as unavailable', () async {
+      final id = await queue('CHK', content: content);
+      await statsService(
+        llm: _FakeLlm(result: _expense()),
+        local: _FnLocal((_) => null),
+      ).process();
+
+      expect((await row(id))['local_verdict'], 'unavailable');
+      expect(await tally(), [0, 0, 1]);
+      await db.close();
+    });
+
+    test('a needs_llm row skips inference and is not counted again', () async {
+      final id = await queue('CHK', content: content);
+      final local = _FnLocal((_) => _localUnsure);
+      final llm = _FakeLlm(result: _expense());
+      // Offline: the model declines and the row waits for the LLM.
+      await statsService(llm: llm, local: local, online: false).process();
+      expect((await row(id))['needs_llm'], 1);
+
+      await statsService(llm: llm, local: local).process();
+
+      expect((await row(id))['status'], 'success');
+      expect(local.calls, 1);
+      expect(llm.calls, 1);
+      expect(await tally(), [0, 1, 0]);
+      await db.close();
+    });
+
+    test('a row reclaimed after a crash is not counted again', () async {
+      final id = await queue('CHK', content: content);
+      // What a killed holder leaves behind: the verdict counted, the row
+      // stuck mid-claim.
+      await stats.recordVerdict(
+        id,
+        LocalVerdict.accepted,
+        nowMs: now,
+        appVersionCode: 21,
+      );
+      await sms.claimLocal(id, now);
+      now += ProcessingService.staleAfter.inMilliseconds + 1;
+
+      await statsService(
+        llm: _FakeLlm(),
+        local: _FnLocal(_localExpense),
+      ).process();
+
+      expect((await row(id))['status'], 'success');
+      expect(await tally(), [1, 0, 0]);
+      await db.close();
+    });
+
+    test(
+      'a database error after acceptance does not recount the retry',
+      () async {
+        final id = await queue('CHK', content: content);
+        final local = _FnLocal(_localExpense);
+        final writer = _ThrowOnceWriter(db, nowMs: () => now);
+
+        await statsService(
+          llm: _FakeLlm(),
+          local: local,
+          writer: writer,
+        ).process();
+        // Task 2's fix: the failed write is caught and backed off, not stranded.
+        final backedOff = await row(id);
+        expect(backedOff['status'], 'queued');
+        expect(backedOff['attempts'], 1);
+        expect(
+          backedOff['local_verdict'],
+          'accepted',
+        ); // counted before the write
+        now += ProcessingService.baseBackoff.inMilliseconds + 1000;
+        await statsService(
+          llm: _FakeLlm(),
+          local: local,
+          writer: writer,
+        ).process();
+
+        expect((await row(id))['status'], 'success');
+        expect(local.calls, 2);
+        expect(await tally(), [1, 0, 0]);
+        await db.close();
+      },
+    );
+
+    test('a Retry tap re-runs the model without recounting', () async {
+      final id = await queue('CHK', content: content);
+      final local = _FnLocal((_) => _localUnsure);
+      // A fatal LLM error fails the row without setting needs_llm, so the
+      // retry runs the model again.
+      final llm = _FakeLlm(
+        error: const LlmException('bad key', retryable: false),
+      );
+      await statsService(llm: llm, local: local).process();
+      expect((await row(id))['status'], 'failure');
+
+      await sms.requeueOne(
+        id,
+        now,
+        attempts: ProcessingService.maxAttempts - 1,
+      );
+      llm
+        ..error = null
+        ..result = _expense();
+      await statsService(llm: llm, local: local).process();
+
+      expect((await row(id))['status'], 'success');
+      expect(local.calls, 2);
+      expect(await tally(), [0, 1, 0]);
+      await db.close();
+    });
+
+    test('no-LLM mode counts nothing: its model runs ungated', () async {
+      const unbuildable = 'balance 500 BDT';
+      final local = _FnLocal(
+        (c) => c == content
+            ? _localExpense(c)
+            : LocalPrediction(
+                classLabel: 'expense',
+                classConfidence: 0.95,
+                spans: [
+                  LocalSpan(
+                    entity: 'BALANCE',
+                    text: '500',
+                    confidence: 0.96,
+                    start: c.indexOf('500'),
+                    end: c.indexOf('500') + 3,
+                  ),
+                ],
+              ),
+      );
+      final accepted = await queue('CHK', content: content);
+      final rejected = await queue('CHK', content: unbuildable);
+
+      await statsService(local: local).process(); // no llm: hasLlm is false
+
+      expect((await row(accepted))['status'], 'success');
+      expect((await row(rejected))['status'], 'failure');
+      expect(local.calls, 2);
+      expect((await row(accepted))['local_verdict'], isNull);
+      expect((await row(rejected))['local_verdict'], isNull);
+      expect(await tally(), isEmpty);
+      await db.close();
+    });
+
+    test('a gated message is never counted', () async {
+      final id = await queue('DARAZ', content: 'win a prize');
+      final local = _FnLocal(_localExpense);
+      await statsService(llm: _FakeLlm(), local: local).process();
+
+      expect((await row(id))['ignore_reason'], IgnoreReason.gated.value);
+      expect((await row(id))['local_verdict'], isNull);
+      expect(local.calls, 0);
+      expect(await tally(), isEmpty);
+      await db.close();
+    });
+
+    test('a counting failure leaves the message untouched', () async {
+      final id = await queue('CHK', content: content);
+      await statsService(
+        llm: _FakeLlm(),
+        local: _FnLocal(_localExpense),
+        version: () async => throw StateError('plugin missing'),
+      ).process();
+
+      final r = await row(id);
+      expect(r['status'], 'success');
+      expect(r['local_verdict'], isNull);
+      expect(await tally(), isEmpty);
+      await db.close();
+    });
+
+    test('an unknown app version skips counting', () async {
+      final id = await queue('CHK', content: content);
+      await statsService(
+        llm: _FakeLlm(),
+        local: _FnLocal(_localExpense),
+        version: () async => null,
+      ).process();
+
+      expect((await row(id))['status'], 'success');
+      expect((await row(id))['local_verdict'], isNull);
+      expect(await tally(), isEmpty);
+      await db.close();
+    });
   });
 }
 
