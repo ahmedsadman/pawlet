@@ -321,13 +321,13 @@ func (s *Server) unban(w http.ResponseWriter, r *http.Request) {
 }
 
 type engagementResponse struct {
-	Range             stats.Range         `json:"range"`
-	Mode              stats.Mode          `json:"mode"`
-	Daily             []stats.ActiveCount `json:"daily"`
-	Cohorts           []stats.Cohort      `json:"cohorts"`
-	CallsDistribution []stats.Bucket      `json:"callsDistribution"`
-	Dormant           int                 `json:"dormant"`
-	CollectingSince   collectingSince     `json:"collectingSince"`
+	Range                stats.Range         `json:"range"`
+	Mode                 stats.Mode          `json:"mode"`
+	Daily                []stats.ActiveCount `json:"daily"`
+	Cohorts              []stats.Cohort      `json:"cohorts"`
+	MessagesDistribution []stats.Bucket      `json:"messagesDistribution"`
+	Dormant              int                 `json:"dormant"`
+	CollectingSince      collectingSince     `json:"collectingSince"`
 }
 
 func (s *Server) engagement(w http.ResponseWriter, r *http.Request) {
@@ -364,6 +364,12 @@ func (s *Server) engagement(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "load server info", err)
 		return
 	}
+	modelFrom := max(rng.From, stats.AddDays(today, -(store.ModelStatsRetentionDays-1)))
+	model, err := s.store.ModelStatsBetween(ctx, modelFrom, rng.To)
+	if err != nil {
+		s.fail(w, "load model stats", err)
+		return
+	}
 
 	activity := stats.BuildActivity(usage, sessions, mode)
 	dormant := 0
@@ -373,13 +379,13 @@ func (s *Server) engagement(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, engagementResponse{
-		Range:             rng,
-		Mode:              mode,
-		Daily:             stats.ActiveSeries(activity, stats.Days(rng.From, rng.To)),
-		Cohorts:           stats.Cohorts(installs, activity, today, cohortCount),
-		CallsDistribution: stats.CallsDistribution(usage, rng.From, rng.To, limit),
-		Dormant:           dormant,
-		CollectingSince:   newCollectingSince(earliest),
+		Range:                rng,
+		Mode:                 mode,
+		Daily:                stats.ActiveSeries(activity, stats.Days(rng.From, rng.To)),
+		Cohorts:              stats.Cohorts(installs, activity, today, cohortCount),
+		MessagesDistribution: stats.MessagesDistribution(model, modelFrom, rng.To),
+		Dormant:              dormant,
+		CollectingSince:      newCollectingSince(earliest),
 	})
 }
 
