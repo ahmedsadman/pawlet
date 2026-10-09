@@ -22,6 +22,17 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Decode and validate the body before taking an argon2 slot, so a client
+	// trickling its body can't hold a verification slot.
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+	var req loginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Password == "" {
+		// Every refused request (bad body, busy, wrong password) keeps its
+		// limiter attempt on purpose — only a correct password releases it.
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+
 	// Cap concurrent argon2id verifications to bound peak memory (64 MiB each).
 	select {
 	case s.verifySlots <- struct{}{}:
@@ -31,20 +42,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
-	var req loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "bad_request")
-		return
-	}
-
 	ok, err := VerifyPassword(s.passwordHash, req.Password)
 	if err != nil {
 		s.fail(w, "verify password", err)
 		return
 	}
 	if !ok {
-		// Slot already counted as a failure; do nothing extra.
 		s.logger.Warn("admin login failed", "ip", ip)
 		writeError(w, http.StatusUnauthorized, "invalid_password")
 		return

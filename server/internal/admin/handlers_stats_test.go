@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -133,6 +134,16 @@ func TestInstallsHandlers(t *testing.T) {
 	if rec := e.do(http.MethodGet, "/api/installs?sort=bogus", "", cookie); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad sort = %d", rec.Code)
 	}
+	// Bad page parameter
+	if rec := e.do(http.MethodGet, "/api/installs?page=abc", "", cookie); rec.Code != http.StatusBadRequest {
+		t.Fatalf("page=abc = %d, want 400", rec.Code)
+	}
+	if rec := e.do(http.MethodGet, "/api/installs?page=0", "", cookie); rec.Code != http.StatusBadRequest {
+		t.Fatalf("page=0 = %d, want 400", rec.Code)
+	}
+	if rec := e.do(http.MethodGet, "/api/installs?page=999999999999999999999", "", cookie); rec.Code != http.StatusBadRequest {
+		t.Fatalf("page overflow = %d, want 400", rec.Code)
+	}
 
 	var detail struct {
 		Install struct {
@@ -190,6 +201,24 @@ func TestBanAndUnban(t *testing.T) {
 	if rec := e.do(http.MethodPost, "/api/installs/"+hashA+"/ban", `{"reason":"x"}`, nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("ban without session = %d", rec.Code)
 	}
+	// Unban unknown hash
+	if rec := e.do(http.MethodPost, "/api/installs/"+strings.Repeat("d", 64)+"/unban", `{}`, cookie); rec.Code != http.StatusNotFound {
+		t.Fatalf("unban unknown = %d, want 404", rec.Code)
+	}
+	// Ban with malformed JSON
+	if rec := e.do(http.MethodPost, "/api/installs/"+hashA+"/ban", `{bad`, cookie); rec.Code != http.StatusBadRequest {
+		t.Fatalf("ban malformed JSON = %d, want 400", rec.Code)
+	}
+	// Ban with cross-origin
+	req := httptest.NewRequest(http.MethodPost, "/api/installs/"+hashA+"/ban", strings.NewReader(`{"reason":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://evil.test")
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("ban cross-origin = %d, want 403", rec.Code)
+	}
 }
 
 func TestEngagementReliabilityFleetHandlers(t *testing.T) {
@@ -227,6 +256,10 @@ func TestEngagementReliabilityFleetHandlers(t *testing.T) {
 	}
 	if len(rel.Latency) != 7 || rel.Latency[6].P50 == nil || *rel.Latency[6].P50 != 1500 || rel.Models[0].Key != "m1" {
 		t.Fatalf("reliability = %+v", rel)
+	}
+	// Bad range
+	if rec := e.do(http.MethodGet, "/api/reliability?range=1y", "", cookie); rec.Code != http.StatusBadRequest {
+		t.Fatalf("reliability bad range = %d, want 400", rec.Code)
 	}
 
 	var fleet struct {

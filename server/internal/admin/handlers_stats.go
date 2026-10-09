@@ -161,7 +161,15 @@ func (s *Server) installRows(r *http.Request) ([]stats.InstallRow, error) {
 
 func (s *Server) installs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	page, _ := strconv.Atoi(q.Get("page"))
+	page := 1
+	if pageStr := q.Get("page"); pageStr != "" {
+		p, err := strconv.Atoi(pageStr)
+		if err != nil || p < 1 {
+			writeError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		page = p
+	}
 	rows, err := s.installRows(r)
 	if err != nil {
 		s.fail(w, "build install rows", err)
