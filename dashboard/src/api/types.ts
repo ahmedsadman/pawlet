@@ -17,6 +17,10 @@ export interface ServerInfo {
   startedAt: number;
   imageTag: string;
 }
+export interface Bucket {
+  label: string;
+  count: number;
+}
 
 export interface OverviewResponse {
   range: Range;
@@ -32,10 +36,12 @@ export interface OverviewResponse {
     tokensToday: number;
     successRateToday: number | null;
     callsPerActiveInstallDay: number | null;
+    messagesPerActiveInstallDay: number | null;
   };
   daily: {
     day: string;
     calls: number;
+    messages: number;
     tokens: number;
     activeInstalls: number;
     newInstalls: number;
@@ -56,6 +62,10 @@ export interface InstallRow {
   callsToday: number;
   calls7d: number;
   callsTotal: number;
+  messagesToday: number;
+  messages7d: number;
+  messagesTotal: number;
+  hasModelStats: boolean;
   tokensTotal: number;
   quotaHitDays: number;
   banned: boolean;
@@ -77,7 +87,15 @@ export interface InstallsQuery {
 }
 export interface InstallDetailResponse {
   install: InstallRow;
-  daily: { day: string; calls: number; tokens: number; session: boolean }[];
+  daily: {
+    day: string;
+    calls: number;
+    tokens: number;
+    session: boolean;
+    /** null outside the last 90 days and for installs that never reported model stats. */
+    messages: number | null;
+    onDevice: number | null;
+  }[];
 }
 
 export interface ActiveCount {
@@ -97,7 +115,8 @@ export interface EngagementResponse {
   mode: ActiveMode;
   daily: ActiveCount[];
   cohorts: Cohort[];
-  callsDistribution: { label: string; count: number }[];
+  callsDistribution: Bucket[];
+  messagesDistribution: Bucket[];
   dormant: number;
   collectingSince: CollectingSince;
 }
@@ -114,6 +133,23 @@ export interface KeyCount {
   key: string;
   count: number;
 }
+export interface ModelDay {
+  day: string;
+  accepted: number;
+  declined: number;
+  unavailable: number;
+  rate: number | null;
+}
+export interface LocalModel {
+  accepted: number;
+  declined: number;
+  unavailable: number;
+  rate: number | null;
+  prevRate: number | null;
+  daily: ModelDay[];
+  rolling7: { day: string; rate: number | null }[];
+  versionMarkers: { day: string; appVersionCode: number }[];
+}
 export interface ReliabilityResponse {
   range: Range;
   classifyOutcomes: DayCounts[];
@@ -123,6 +159,7 @@ export interface ReliabilityResponse {
   models: KeyCount[];
   categories: DayCounts[];
   tokensPerCall: DayValue[];
+  localModel: LocalModel;
   collectingSince: CollectingSince;
 }
 
