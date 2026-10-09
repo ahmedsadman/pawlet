@@ -50,6 +50,7 @@ type testHarness struct {
 	classifier *fakeClassifier
 	now        time.Time
 	logger     *slog.Logger
+	counter    *fakeCounter
 }
 
 func newTestHarness(t *testing.T) *testHarness {
@@ -88,6 +89,8 @@ func newTestHarness(t *testing.T) *testHarness {
 
 	logger := discardLogger()
 
+	counter := newFakeCounter()
+
 	h := &ClassifyHandler{
 		Classifier: classifier,
 		Issuer:     issuer,
@@ -95,6 +98,7 @@ func newTestHarness(t *testing.T) *testHarness {
 		Limiter:    limiter,
 		Now:        func() time.Time { return now },
 		Logger:     logger,
+		Metrics:    counter,
 	}
 
 	return &testHarness{
@@ -105,6 +109,7 @@ func newTestHarness(t *testing.T) *testHarness {
 		classifier: classifier,
 		now:        now,
 		logger:     logger,
+		counter:    counter,
 	}
 }
 

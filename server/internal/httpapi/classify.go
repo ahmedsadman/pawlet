@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ahmedsadman/pawlet/server/internal/llm"
+	"github.com/ahmedsadman/pawlet/server/internal/metrics"
 	"github.com/ahmedsadman/pawlet/server/internal/quota"
 	"github.com/ahmedsadman/pawlet/server/internal/store"
 	"github.com/ahmedsadman/pawlet/server/internal/token"
@@ -30,6 +31,7 @@ type ClassifyHandler struct {
 	Limiter    *quota.Limiter
 	Now        func() time.Time
 	Logger     *slog.Logger
+	Metrics    Counter // nil-safe: tests may construct without one
 }
 
 type classifyRequest struct {
@@ -51,6 +53,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		h.Logger.Warn("missing authorization header")
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.Unauthorized)
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -60,6 +63,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 	rawToken := strings.TrimPrefix(authHeader, "Bearer ")
 	if rawToken == authHeader {
 		h.Logger.Warn("malformed authorization header")
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.Unauthorized)
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -67,6 +71,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 	installHash, err := h.Issuer.Verify(rawToken, h.Now())
 	if err != nil {
 		h.Logger.Warn("token verification failed", "error", err)
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.Unauthorized)
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -75,6 +80,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 	// the hash-prefix logging below slice out of range.
 	if len(installHash) < 8 {
 		h.Logger.Warn("token subject is not an install hash")
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.Unauthorized)
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -85,6 +91,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, store.ErrNotFound) {
 		h.Logger.Warn("token for unknown install",
 			"installHash", installHash[:8])
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.Unauthorized)
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -92,6 +99,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to read install",
 			"installHash", installHash[:8],
 			"error", err)
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.Internal)
 		writeError(w, http.StatusInternalServerError, "internal")
 		return
 	}
@@ -99,6 +107,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Warn("banned install attempted classify",
 			"installHash", installHash[:8],
 			"banReason", install.BanReason)
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.Banned)
 		writeError(w, http.StatusForbidden, "banned")
 		return
 	}
@@ -111,6 +120,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Warn("malformed classify request",
 			"installHash", installHash[:8],
 			"error", err)
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.BadRequest)
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
@@ -118,6 +128,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 	if req.Content == "" {
 		h.Logger.Warn("empty content",
 			"installHash", installHash[:8])
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.BadRequest)
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
@@ -125,12 +136,14 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Warn("content too long",
 			"installHash", installHash[:8],
 			"length", len(req.Content))
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.BadRequest)
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
 	if req.Sender == "" {
 		h.Logger.Warn("empty sender",
 			"installHash", installHash[:8])
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.BadRequest)
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
@@ -138,12 +151,14 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Warn("sender too long",
 			"installHash", installHash[:8],
 			"length", len(req.Sender))
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.BadRequest)
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
 	if !inputCurrencyPattern.MatchString(req.Currency) {
 		h.Logger.Warn("invalid currency",
 			"installHash", installHash[:8])
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.BadRequest)
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
@@ -157,6 +172,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		if decision.Reason == quota.ReasonGlobal {
 			h.Logger.Warn("global capacity reached",
 				"installHash", installHash[:8])
+			count(h.Metrics, metrics.ClassifyOutcome, metrics.Capacity)
 			writeError(w, http.StatusServiceUnavailable, "capacity")
 			return
 		}
@@ -164,6 +180,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 			"installHash", installHash[:8],
 			"reason", decision.Reason,
 			"retryAfter", decision.RetryAfter)
+		count(h.Metrics, metrics.ClassifyOutcome, rateLimitKey(decision.Reason))
 		writeRateLimited(w, decision.RetryAfter, 0)
 		return
 	}
@@ -187,6 +204,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 					"status", callErr.Status,
 					"retryAfter", callErr.RetryAfter,
 					"resetAtEpochMs", callErr.ResetAtEpochMs)
+				count(h.Metrics, metrics.ClassifyOutcome, metrics.Upstream429)
 				writeRateLimited(w, callErr.RetryAfter, callErr.ResetAtEpochMs)
 				return
 			}
@@ -195,6 +213,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 					"installHash", installHash[:8],
 					"status", callErr.Status,
 					"error", callErr.Message)
+				count(h.Metrics, metrics.ClassifyOutcome, metrics.UpstreamRetryable)
 				writeError(w, http.StatusServiceUnavailable, "upstream")
 				return
 			}
@@ -202,12 +221,14 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 				"installHash", installHash[:8],
 				"status", callErr.Status,
 				"error", callErr.Message)
+			count(h.Metrics, metrics.ClassifyOutcome, metrics.UpstreamRejected)
 			writeError(w, http.StatusBadRequest, "upstream_rejected")
 			return
 		}
 		h.Logger.Error("classifier failed",
 			"installHash", installHash[:8],
 			"error", err)
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.UpstreamRetryable)
 		writeError(w, http.StatusServiceUnavailable, "upstream")
 		return
 	}
@@ -221,5 +242,37 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		"latency", latency,
 		"tokens", resp.TotalTokens)
 
+	count(h.Metrics, metrics.ClassifyOutcome, metrics.OK)
+	count(h.Metrics, metrics.ClassifyLatency, metrics.LatencyBucket(latency))
+	count(h.Metrics, metrics.Model, modelKey(resp.Model))
+	count(h.Metrics, metrics.Category, categoryKey(resp.Result.Category))
+
 	writeJSON(w, http.StatusOK, resp.Result)
+}
+
+// rateLimitKey names a per-install quota denial. Global denials take the
+// capacity branch before this is reached.
+func rateLimitKey(r quota.Reason) string {
+	if r == quota.ReasonBurst {
+		return metrics.RateLimitedBurst
+	}
+	return metrics.RateLimitedDaily
+}
+
+func modelKey(model string) string {
+	if model == "" {
+		return metrics.UnknownModel
+	}
+	// Bound cardinality: every distinct key becomes a permanent counters_daily row.
+	if len(model) > 128 {
+		return model[:128]
+	}
+	return model
+}
+
+func categoryKey(c llm.Category) string {
+	if c == llm.CategoryNone {
+		return metrics.CategoryNone
+	}
+	return string(c)
 }
