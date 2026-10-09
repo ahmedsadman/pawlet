@@ -34,10 +34,6 @@ String monthYearShort(DateTime date) {
   return "${_months[date.month - 1]} '$yy";
 }
 
-/// e.g. `Jan 15, 2025`.
-String fullDateLabel(DateTime date) =>
-    '${_months[date.month - 1]} ${date.day}, ${date.year}';
-
 /// Resolves [time] and [now] to local wall-clock values, pulling a [time]
 /// later than [now] back to [now].
 (DateTime, DateTime) _resolve(DateTime time, DateTime? now) {
