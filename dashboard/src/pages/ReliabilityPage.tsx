@@ -1,5 +1,6 @@
 import { useReliability } from "../api/queries";
 import { BarList } from "../charts/BarList";
+import { LocalModelCard } from "../charts/LocalModelCard";
 import { TimeSeriesChart } from "../charts/TimeSeriesChart";
 import { Async } from "../components/Async";
 import { Card } from "../components/Card";
@@ -7,7 +8,8 @@ import { CollectingNote } from "../components/CollectingNote";
 import { PageHeader } from "../components/PageHeader";
 import { RangePicker } from "../components/RangePicker";
 import { Skeleton } from "../components/Skeleton";
-import { fmtCount, fmtMs, fmtPercent } from "../lib/format";
+import { fmtMs, fmtPercent } from "../lib/format";
+import { fmtReliabilityFooter } from "../lib/localModel";
 import {
   ATTEST_REASONS,
   CLASSIFY_FAILURES,
@@ -39,6 +41,7 @@ export default function ReliabilityPage() {
           return (
             <div className="space-y-6">
               <CollectingNote since={d.collectingSince.counters} rangeFrom={d.range.from} />
+              <LocalModelCard lm={d.localModel} />
               <div className="grid gap-4 lg:grid-cols-2">
                 <Card title="LLM success rate" statId="chart.successRate">
                   <TimeSeriesChart
@@ -104,8 +107,10 @@ export default function ReliabilityPage() {
                 </Card>
               </div>
               <p className="text-xs text-ctp-subtext0">
-                Counted calls: {fmtCount(d.latency.reduce((s, l) => s + l.count, 0))} successful in
-                this range.
+                {fmtReliabilityFooter(
+                  d.localModel,
+                  d.latency.reduce((s, l) => s + l.count, 0),
+                )}
               </p>
             </div>
           );
