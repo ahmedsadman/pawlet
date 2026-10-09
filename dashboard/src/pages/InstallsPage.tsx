@@ -4,6 +4,7 @@ import { useInstalls } from "../api/queries";
 import type { InstallRow } from "../api/types";
 import { Async } from "../components/Async";
 import { InfoTip } from "../components/InfoTip";
+import { MessagesCell } from "../components/MessagesCell";
 import { PageHeader } from "../components/PageHeader";
 import { Segmented } from "../components/Segmented";
 import { Skeleton } from "../components/Skeleton";
@@ -66,28 +67,34 @@ const COLUMNS: Column[] = [
   },
   { key: "tier", label: "Tier", statId: "col.tier", cell: (r) => r.deviceTier ?? "—" },
   {
-    key: "callsToday",
+    key: "today",
     label: "Today",
-    statId: "col.callsToday",
-    sort: "callsToday",
+    statId: "col.messagesToday",
+    sort: "messagesToday",
     align: "right",
-    cell: (r) => fmtCount(r.callsToday),
+    cell: (r) => (
+      <MessagesCell messages={r.messagesToday} calls={r.callsToday} hasStats={r.hasModelStats} />
+    ),
   },
   {
-    key: "calls7d",
+    key: "week",
     label: "7 days",
-    statId: "col.calls7d",
-    sort: "calls7d",
+    statId: "col.messages7d",
+    sort: "messages7d",
     align: "right",
-    cell: (r) => fmtCount(r.calls7d),
+    cell: (r) => (
+      <MessagesCell messages={r.messages7d} calls={r.calls7d} hasStats={r.hasModelStats} />
+    ),
   },
   {
-    key: "callsTotal",
-    label: "Total calls",
-    statId: "col.callsTotal",
-    sort: "callsTotal",
+    key: "total",
+    label: "Total",
+    statId: "col.messagesTotal",
+    sort: "messagesTotal",
     align: "right",
-    cell: (r) => fmtCount(r.callsTotal),
+    cell: (r) => (
+      <MessagesCell messages={r.messagesTotal} calls={r.callsTotal} hasStats={r.hasModelStats} />
+    ),
   },
   {
     key: "tokensTotal",

@@ -127,16 +127,6 @@ export const statCopy = {
     computation:
       "Strongest device verdict in the latest attestation. Devices below DEVICE never get a session.",
   },
-  "col.callsToday": {
-    title: "Today",
-    meaning: "Classify calls admitted today.",
-    computation: "The install's call counter for today (UTC).",
-  },
-  "col.calls7d": {
-    title: "7 days",
-    meaning: "Classify calls admitted in the last 7 days.",
-    computation: "Sum of the install's daily call counters over the 7 days ending today.",
-  },
   "col.callsTotal": {
     title: "Total calls",
     meaning: "Every classify call admitted for this install.",
