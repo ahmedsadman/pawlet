@@ -88,8 +88,11 @@ Notes on keys:
 
 - `unauthorized` covers every 401 on classify: missing or malformed header, bad or expired
   token, and a token for an install the server has no record of.
-- `client_cancelled` counts classify calls where the request context was cancelled (client
-  disconnect or server shutdown) before the call finished.
+- `client_cancelled` counts classify calls where the classifier call failed and the request
+  context was cancelled (client disconnect or server shutdown) before the call finished. The HTTP
+  response to the client is unchanged — a cancelled retryable error still returns 503, a
+  cancelled 429 still returns 429 with rate-limit headers — so a disconnect surfaces as a
+  retryable error rather than inflating upstream failure counts.
 - `upstream_retryable` also covers an unexpected classifier error that is not an OpenRouter
   call error; both answer the client with 503 `upstream`.
 - The `session_outcome` verification keys map one-to-one to the errors in
