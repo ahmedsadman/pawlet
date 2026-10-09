@@ -81,6 +81,19 @@ void main() {
     expect(find.text('Checking'), findsNothing);
   });
 
+  testWidgets('Updated labels show the calendar date for a past year', (
+    tester,
+  ) async {
+    // _deposit stamps lastBalanceAt = 1 Jan 2025 00:00 local.
+    await _pump(tester, [_deposit('Checking', '1000.00')]);
+    expect(find.text('Updated 1 Jan 2025 · 12:00 AM'), findsOneWidget);
+
+    await tester.tap(find.text('Total Balance'));
+    await tester.pumpAndSettle();
+    // The per-bank row carries the same label as the header.
+    expect(find.text('Updated 1 Jan 2025 · 12:00 AM'), findsNWidgets(2));
+  });
+
   testWidgets('shows the Add Bank CTA when there are no banks', (tester) async {
     await _pump(tester, const []);
     expect(find.text('Add a bank to get started'), findsOneWidget);

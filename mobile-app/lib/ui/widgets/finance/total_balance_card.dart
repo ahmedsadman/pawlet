@@ -116,7 +116,7 @@ class _TotalBalanceCardState extends ConsumerState<TotalBalanceCard> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                'Updated ${relativeTime(lastUpdated.toLocal())}',
+                                'Updated ${updatedLabel(lastUpdated)}',
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: AppTheme.flavor.subtext0,
                                 ),
