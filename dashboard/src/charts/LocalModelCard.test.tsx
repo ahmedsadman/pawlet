@@ -25,6 +25,9 @@ describe("LocalModelSummary", () => {
     expect(screen.getByText(/▲ 9 pts/)).toBeInTheDocument();
     expect(screen.getByText("81 on device · 19 LLM")).toBeInTheDocument();
     expect(screen.getByText("3 model errors (not in %)")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "81% of messages handled on device" }),
+    ).toBeInTheDocument();
   });
 
   it("shows a dash and an empty track when there is no rate", () => {
@@ -33,6 +36,7 @@ describe("LocalModelSummary", () => {
     expect(screen.queryByText(/pts/)).not.toBeInTheDocument();
     expect(screen.queryByText(/model error/)).not.toBeInTheDocument();
     expect(container.querySelectorAll("circle")).toHaveLength(1);
+    expect(screen.getByRole("img", { name: "No on-device data" })).toBeInTheDocument();
   });
 });
 

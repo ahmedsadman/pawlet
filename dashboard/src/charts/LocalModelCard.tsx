@@ -33,6 +33,11 @@ const TONE_CLASS = {
   flat: "text-ctp-subtext0",
 } as const;
 
+/** Screen-reader name for the ring, which is otherwise only a drawn arc. */
+function ringLabel(rate: number | null): string {
+  return rate == null ? "No on-device data" : `${fmtRate(rate)} of messages handled on device`;
+}
+
 /**
  * Ring with the range's on-device rate, its change against the previous
  * period, and the counts behind it. The track is surface1 because the card
@@ -50,7 +55,8 @@ export function LocalModelSummary({ lm }: { lm: LocalModel }) {
           width={RING_SIZE}
           height={RING_SIZE}
           viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
-          aria-hidden
+          role="img"
+          aria-label={ringLabel(lm.rate)}
         >
           <circle
             cx={c}

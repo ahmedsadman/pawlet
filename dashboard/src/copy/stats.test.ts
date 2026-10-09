@@ -29,4 +29,9 @@ describe("stat copy", () => {
     expect(statCopy["chart.localModel"].computation).toContain("accepted ÷ (accepted + declined)");
     expect(statCopy["chart.messagesDistribution"].caveat).toContain("90 days");
   });
+
+  it("explains why the ring's LLM count differs from the footer's", () => {
+    expect(statCopy["chart.localModel"].caveat).toContain("messages the model declined");
+    expect(statCopy["chart.localModel"].caveat).toContain("model errors");
+  });
 });
