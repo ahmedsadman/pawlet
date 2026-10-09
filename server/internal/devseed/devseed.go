@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"strconv"
 	"time"
 
@@ -93,6 +94,31 @@ var (
 // Seed migrates path (creating it if needed) and fills it, using seed for
 // the random source so runs are repeatable.
 func Seed(path string, now time.Time, seed int64) (Summary, error) {
+	// Check if database is non-empty BEFORE migrating it.
+	if _, err := os.Stat(path); err == nil {
+		raw, err := sql.Open("sqlite", "file:"+path)
+		if err != nil {
+			return Summary{}, err
+		}
+		var hasTable int
+		if err := raw.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='installs'`).Scan(&hasTable); err != nil {
+			_ = raw.Close()
+			return Summary{}, err
+		}
+		if hasTable > 0 {
+			var existing int
+			if err := raw.QueryRow(`SELECT count(*) FROM installs`).Scan(&existing); err != nil {
+				_ = raw.Close()
+				return Summary{}, err
+			}
+			if existing > 0 {
+				_ = raw.Close()
+				return Summary{}, ErrNotEmpty
+			}
+		}
+		_ = raw.Close()
+	}
+
 	s, err := store.Open(path)
 	if err != nil {
 		return Summary{}, err
@@ -104,14 +130,6 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 		return Summary{}, err
 	}
 	defer func() { _ = db.Close() }()
-
-	var existing int
-	if err := db.QueryRow(`SELECT count(*) FROM installs`).Scan(&existing); err != nil {
-		return Summary{}, err
-	}
-	if existing > 0 {
-		return Summary{}, ErrNotEmpty
-	}
 
 	r := rand.New(rand.NewSource(seed)) //nolint:gosec // fake data, not security
 	today := now.UTC().Truncate(24 * time.Hour)
@@ -192,18 +210,20 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 					add(key, "classify_outcome", "rate_limited_daily", calls-200)
 					calls = 200
 				}
-				if _, err := tx.Exec(`INSERT INTO usage (id_hash, day, calls, tokens) VALUES (?,?,?,?)`,
-					hash, key, calls, calls*int64(380+r.Intn(160))); err != nil {
-					return Summary{}, err
-				}
+				var ok int64
 				for c := int64(0); c < calls; c++ {
 					o := pick(r, outcomes)
 					add(key, "classify_outcome", o, 1)
 					if o == "ok" {
+						ok++
 						add(key, "model", pick(r, modelMix), 1)
 						add(key, "category", pick(r, categoryMix), 1)
 						add(key, "classify_latency_ms", pick(r, latencyMix), 1)
 					}
+				}
+				if _, err := tx.Exec(`INSERT INTO usage (id_hash, day, calls, tokens) VALUES (?,?,?,?)`,
+					hash, key, calls, ok*int64(380+r.Intn(160))); err != nil {
+					return Summary{}, err
 				}
 			}
 
