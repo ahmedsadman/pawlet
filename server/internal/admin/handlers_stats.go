@@ -256,7 +256,7 @@ func (s *Server) installDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := withHash(in.IDHash, modelDays)
-	archived, err := s.store.MessagesArchived(ctx)
+	archived, err := s.store.MessagesArchivedFor(ctx, in.IDHash)
 	if err != nil {
 		s.fail(w, "load archived messages", err)
 		return
@@ -268,7 +268,7 @@ func (s *Server) installDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	today := s.today()
 	rows := stats.BuildInstallRows([]store.Install{in}, usage, today, limit)
-	stats.ApplyModelStats(rows, model, archived, today)
+	stats.ApplyModelStats(rows, model, map[string]int64{in.IDHash: archived}, today)
 	row := rows[0]
 	writeJSON(w, http.StatusOK, installDetailResponse{
 		Install: row,
