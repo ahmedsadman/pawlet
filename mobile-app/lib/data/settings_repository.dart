@@ -14,7 +14,10 @@ class SettingsRepository {
   static const _kTxTypes = 'tx_types';
   static const _kTxSort = 'tx_sort';
   static const _kTxTypeHintSeen = 'tx_type_hint_seen';
-  static const _kHistoryHintSeen = 'history_hint_seen';
+  // v2: the hint's wording changed when ignored messages joined History, so
+  // users who dismissed the old one see the new text once. The old
+  // `history_hint_seen` key is no longer read.
+  static const _kHistoryHintSeen = 'history_hint_seen_v2';
   static const _kBulkImportOffered = 'bulk_import_offered';
   static const _kInstalledFromPlay = 'installed_from_play';
   static const _kAttestationIneligible = 'attestation_ineligible';

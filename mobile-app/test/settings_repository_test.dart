@@ -15,11 +15,26 @@ void main() {
     expect(r.txTypeHintSeen, isTrue);
   });
 
-  test('historyHintSeen defaults false and persists', () async {
-    final r = await repo();
+  test(
+    'historyHintSeen defaults false and persists under the v2 key',
+    () async {
+      final r = await repo();
+      expect(r.historyHintSeen, isFalse);
+      await r.setHistoryHintSeen(true);
+      expect(r.historyHintSeen, isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('history_hint_seen_v2'), isTrue);
+    },
+  );
+
+  test('dismissing the old History hint does not count as seen', () async {
+    final r = await repo({'history_hint_seen': true});
     expect(r.historyHintSeen, isFalse);
-    await r.setHistoryHintSeen(true);
-    expect(r.historyHintSeen, isTrue);
+  });
+
+  test('exportAll includes the v2 History hint flag once set', () async {
+    final r = await repo({'history_hint_seen_v2': true});
+    expect(r.exportAll()['history_hint_seen_v2'], true);
   });
 
   test('defaultLlmModels lists the SO fallback chain, strongest first', () {
@@ -34,8 +49,8 @@ void main() {
     final r = await repo({'hide_balance': true});
     final snap = r.exportAll();
     expect(snap['hide_balance'], true);
-    // history_hint_seen was never written, so it is absent from the snapshot.
-    expect(snap.containsKey('history_hint_seen'), isFalse);
+    // history_hint_seen_v2 was never written, so it is absent from the snapshot.
+    expect(snap.containsKey('history_hint_seen_v2'), isFalse);
   });
 
   test('importAll restores a snapshot', () async {
@@ -49,7 +64,7 @@ void main() {
   });
 
   test('importAll clears keys missing from the snapshot (replace)', () async {
-    final r = await repo({'history_hint_seen': true});
+    final r = await repo({'history_hint_seen_v2': true});
     await r.importAll(const {}); // empty snapshot
     expect(r.historyHintSeen, isFalse); // reset to its default
   });

@@ -302,7 +302,7 @@ void main() {
   });
 
   testWidgets('History banner stays hidden once seen', (tester) async {
-    await _pump(tester, _overrides(), prefs: {'history_hint_seen': true});
+    await _pump(tester, _overrides(), prefs: {'history_hint_seen_v2': true});
     expect(find.textContaining('failed to process'), findsNothing);
   });
 
