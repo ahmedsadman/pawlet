@@ -140,9 +140,8 @@ forever.
 Only proxy-mode installs report; bulk inbox import on first launch is not counted (it never goes
 through the model).
 
-**Definitions:**
-- **On-device rate** = `accepted` ÷ (`accepted` + `declined`); `unavailable` is excluded.
-- **Messages** = `accepted` + `declined` + `unavailable`.
+How pawlet-admin turns these rows into the dashboard's local-model numbers is under
+[Dashboard definitions](#dashboard-definitions).
 
 ## Server info
 
@@ -174,6 +173,12 @@ Snapshot as of this writing — verify against the named source files.
 | Accepted day window | UTC today − 30 … today + 1 | `internal/httpapi/model_stats.go` |
 | Max count per field | 100,000 | `internal/httpapi/model_stats.go` |
 | Per-install request limit | 12 per rolling hour | `internal/httpapi/installrate.go` |
+| Rolling window | 7 days, weighted | `internal/stats/localmodel.go` |
+| Version marker minimum day volume | 20 messages | `internal/stats/localmodel.go` |
+| Version marker majority | > 50 % of a day's messages | `internal/stats/localmodel.go` |
+| Messages histogram buckets | 1, 2-3, 4-6, 7-10, 11-20, 21-50, 51+ | `internal/stats/distribution.go` |
+| Messages histogram reach | last 90 days (per-install retention) | `internal/store/model_stats.go` (`ModelStatsRetentionDays`), applied in `internal/admin/handlers_stats.go` |
+| Install detail message reach | last 90 days (per-install retention) | `internal/store/model_stats.go` (`ModelStatsRetentionDays`), applied in `internal/stats/installs.go` |
 
 ## Dashboard definitions
 
@@ -186,8 +191,10 @@ How pawlet-admin turns the stored data into numbers (`internal/stats/`).
   days ending that day. **Stickiness** is DAU divided by MAU.
 - **Cohorts:** installs grouped by the UTC ISO week (Monday start) of `first_seen`; each cell is
   the share of the cohort active at least once in that later week.
-- **Calls distribution:** every install-day with calls, bucketed by its call count; the last
-  bucket is days at or over the daily limit.
+- **Messages per active day:** every install-day with at least one message (summed across app
+  versions), bucketed by its message count. It covers `max(range start, today − 89)` through
+  today, because older per-install rows are folded into `model_stats_rollup` without install
+  identity.
 - **Dormant:** not banned, and no activity (latest of `last_seen` and the last day with calls)
   for more than 14 days. The server cannot see uninstalls, so this stands in for churn.
 - **Success rate:** `ok` divided by all classify outcomes that reached the LLM step (`ok`,
@@ -196,6 +203,27 @@ How pawlet-admin turns the stored data into numbers (`internal/stats/`).
 - **Tokens per call:** usage tokens for the day divided by that day's `ok` count.
 - **Fleet:** non-banned installs active ("Any") in the last 30 days; missing verdict values show
   as `unknown`.
+
+Local-model numbers (`internal/stats/localmodel.go`, `internal/stats/installs.go`,
+`internal/stats/distribution.go`, `internal/stats/overview.go`), built from `model_stats_daily`,
+`model_stats_rollup` and `installs.messages_archived`:
+
+- **On-device rate** = `accepted` ÷ (`accepted` + `declined`). Model errors (`unavailable`) are
+  counted but excluded. "No data" (null) when the denominator is 0, never 0 %.
+- **Messages** = `accepted` + `declined` + `unavailable`. LLM calls are not added: every message
+  passes the on-device model first. An install's lifetime total is its per-install rows plus
+  `installs.messages_archived`; its per-day messages (and on-device counts) are null outside the
+  last 90 days and for installs that never reported.
+- **Previous-period rate:** the same rate over the equal-length period just before the range;
+  none for "All".
+- **7-day average** for a day = Σ`accepted` ÷ Σ(`accepted` + `declined`) over that day and the 6
+  before it (weighted, not a mean of daily rates). It reaches before the range start.
+- **Version marker:** a day whose majority version (more than half of the day's messages, on a
+  day with at least 20 messages) differs from the last marked version. The first qualifying day
+  sets the baseline without a marker.
+- **Messages per active install-day** = messages in the range ÷ install-days with at least one
+  message; rollup rows contribute their `install_count`. Shown next to calls per active
+  install-day (calls ÷ install-days with at least one call).
 
 Caveats that apply to every number: only attested proxy-mode installs are visible (see Scope);
 session days undercount daily opens because the 24-hour token is only refreshed near expiry, so
