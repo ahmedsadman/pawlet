@@ -189,6 +189,11 @@ func TestModelStatsLoaders(t *testing.T) {
 	if err != nil || len(archived) != 1 || archived["a"] != 120 {
 		t.Fatalf("MessagesArchived() = %v, %v (installs with 0 are left out)", archived, err)
 	}
+	for hash, want := range map[string]int64{"a": 120, "b": 0, "missing": 0} {
+		if n, err := s.MessagesArchivedFor(ctx, hash); err != nil || n != want {
+			t.Fatalf("MessagesArchivedFor(%q) = %d, %v, want %d", hash, n, err, want)
+		}
+	}
 }
 
 func TestModelStatsLoadersEmpty(t *testing.T) {

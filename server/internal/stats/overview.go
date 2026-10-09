@@ -168,6 +168,9 @@ func rangeMessages(in OverviewInput) (map[string]int64, *float64) {
 		n := modelCounts(r.Accepted, r.Declined, r.Unavailable).Messages()
 		perDay[r.Day] += n
 		total += n
+		// install_count counts install x version rows, so an install that
+		// switched versions on a folded day counts twice. This slightly
+		// overcounts install-days, only for ranges reaching past 90 days.
 		installDays += r.InstallCount
 	}
 	if installDays == 0 {

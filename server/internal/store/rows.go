@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -296,4 +298,19 @@ func (s *Store) MessagesArchived(ctx context.Context) (map[string]int64, error) 
 		return nil, fmt.Errorf("iterate archived messages: %w", err)
 	}
 	return out, nil
+}
+
+// MessagesArchivedFor returns the message total folded into the rollup for
+// one install; 0 when it has none or does not exist.
+func (s *Store) MessagesArchivedFor(ctx context.Context, idHash string) (int64, error) {
+	const q = `SELECT messages_archived FROM installs WHERE id_hash = ?`
+	var n int64
+	err := s.read.QueryRowContext(ctx, q, idHash).Scan(&n)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("query archived messages for install: %w", err)
+	}
+	return n, nil
 }

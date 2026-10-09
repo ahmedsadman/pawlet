@@ -498,6 +498,37 @@ func TestEngagementMessagesDistribution(t *testing.T) {
 	}
 }
 
+func TestEngagementMessagesDistributionCapsAt90Days(t *testing.T) {
+	e := newTestEnv(t)
+	seedStats(t, e.store)
+	seedModelStats(t, e)
+	// Older than today − 89 (2026-07-12): not yet folded, but out of reach.
+	execSQL(t, e, `INSERT INTO model_stats_daily
+	    (id_hash, day, app_version_code, accepted, declined, unavailable)
+	  VALUES (?, '2026-07-01', 16, 20, 10, 0)`, hashA)
+	cookie := e.login(t)
+
+	var eng struct {
+		MessagesDistribution []struct {
+			Label string `json:"label"`
+			Count int    `json:"count"`
+		} `json:"messagesDistribution"`
+	}
+	if code := getJSON(t, e, "/api/engagement?range=all", cookie, &eng); code != http.StatusOK {
+		t.Fatalf("engagement = %d", code)
+	}
+	// Only 10-07 (5) and 10-09 (11); the 30 messages on 07-01 would land in 21-50.
+	want := map[string]int{"1": 0, "2-3": 0, "4-6": 1, "7-10": 0, "11-20": 1, "21-50": 0, "51+": 0}
+	if len(eng.MessagesDistribution) != len(want) {
+		t.Fatalf("messagesDistribution = %+v", eng.MessagesDistribution)
+	}
+	for _, b := range eng.MessagesDistribution {
+		if n, ok := want[b.Label]; !ok || n != b.Count {
+			t.Fatalf("messagesDistribution = %+v", eng.MessagesDistribution)
+		}
+	}
+}
+
 func TestOverviewMessages(t *testing.T) {
 	e := newTestEnv(t)
 	seedStats(t, e.store)
