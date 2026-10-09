@@ -145,15 +145,27 @@ func TestClassifyCountsOutcomes(t *testing.T) {
 			want: metrics.UpstreamRetryable,
 		},
 		{
-			name: "client cancelled",
+			name: "client cancelled retryable",
 			setup: func(_ *testing.T, h *testHarness) *http.Request {
 				h.touchInstall(metricsHash)
-				// Simulate a retryable upstream error, but the context is already cancelled.
-				h.classifier.err = &llm.CallError{Status: 502, Retryable: true}
+				// Cancel the context DURING the classifier call.
 				req := h.authed("content")
-				// Replace the request context with a cancelled one.
-				ctx, cancel := context.WithCancel(context.Background())
-				cancel()
+				ctx, cancel := context.WithCancel(req.Context())
+				h.classifier.before = cancel
+				h.classifier.err = &llm.CallError{Status: 502, Retryable: true}
+				return req.WithContext(ctx)
+			},
+			want: metrics.ClientCancelled,
+		},
+		{
+			name: "client cancelled 429",
+			setup: func(_ *testing.T, h *testHarness) *http.Request {
+				h.touchInstall(metricsHash)
+				// Cancel during the classifier call, but it returns 429.
+				req := h.authed("content")
+				ctx, cancel := context.WithCancel(req.Context())
+				h.classifier.before = cancel
+				h.classifier.err = &llm.CallError{Status: 429, Retryable: true}
 				return req.WithContext(ctx)
 			},
 			want: metrics.ClientCancelled,
@@ -172,6 +184,78 @@ func TestClassifyCountsOutcomes(t *testing.T) {
 			}
 			if got := h.counter.total(metrics.ClassifyOutcome); got != 1 {
 				t.Fatalf("classify_outcome total = %d, want exactly 1 (all: %v)", got, h.counter.got)
+			}
+		})
+	}
+}
+
+func TestClassifyCancelledResponseUnchanged(t *testing.T) {
+	cases := []struct {
+		name           string
+		err            error
+		wantStatus     int
+		wantBody       string
+		wantRetryAfter string
+	}{
+		{
+			name:       "retryable error still 503 upstream",
+			err:        &llm.CallError{Status: 502, Retryable: true},
+			wantStatus: http.StatusServiceUnavailable,
+			wantBody:   `{"error":"upstream"}`,
+		},
+		{
+			name:           "429 still returns 429 with headers",
+			err:            &llm.CallError{Status: 429, Retryable: true, RetryAfter: 30 * time.Second},
+			wantStatus:     http.StatusTooManyRequests,
+			wantRetryAfter: "30",
+		},
+		{
+			name:       "rejected still 400 upstream_rejected",
+			err:        &llm.CallError{Status: 400},
+			wantStatus: http.StatusBadRequest,
+			wantBody:   `{"error":"upstream_rejected"}`,
+		},
+		{
+			name:       "non-call error still 503 upstream",
+			err:        errors.New("boom"),
+			wantStatus: http.StatusServiceUnavailable,
+			wantBody:   `{"error":"upstream"}`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := newTestHarness(t)
+			h.touchInstall(metricsHash)
+
+			// Cancel the context during the classifier call.
+			req := h.authed("content")
+			ctx, cancel := context.WithCancel(req.Context())
+			h.classifier.before = cancel
+			h.classifier.err = c.err
+
+			rec := httptest.NewRecorder()
+			h.handler.Classify(rec, req.WithContext(ctx))
+
+			// Verify the HTTP response is unchanged despite cancellation.
+			if rec.Code != c.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, c.wantStatus)
+			}
+			if c.wantBody != "" {
+				got := strings.TrimSpace(rec.Body.String())
+				if got != c.wantBody {
+					t.Errorf("body = %q, want %q", got, c.wantBody)
+				}
+			}
+			if c.wantRetryAfter != "" {
+				if got := rec.Header().Get("Retry-After"); got != c.wantRetryAfter {
+					t.Errorf("Retry-After = %q, want %q", got, c.wantRetryAfter)
+				}
+			}
+
+			// But the metric should be ClientCancelled.
+			if got := h.counter.n(metrics.ClassifyOutcome, metrics.ClientCancelled); got != 1 {
+				t.Errorf("classify_outcome/client_cancelled = %d, want 1 (all: %v)", got, h.counter.got)
 			}
 		})
 	}

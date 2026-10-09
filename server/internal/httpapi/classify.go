@@ -97,15 +97,6 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		// If the context was cancelled, count it separately from internal errors.
-		if ctx.Err() != nil {
-			h.Logger.Warn("classify cancelled during install lookup",
-				"installHash", installHash[:8],
-				"error", err)
-			count(h.Metrics, metrics.ClassifyOutcome, metrics.ClientCancelled)
-			writeError(w, http.StatusServiceUnavailable, "upstream")
-			return
-		}
 		h.Logger.Error("failed to read install",
 			"installHash", installHash[:8],
 			"error", err)
@@ -203,19 +194,12 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.Classifier.Classify(ctx, llmReq)
 	if err != nil {
-		// If the request context was cancelled (client disconnect or server
-		// shutdown), count it separately from upstream failures.
-		if ctx.Err() != nil {
-			h.Logger.Warn("classify cancelled",
-				"installHash", installHash[:8],
-				"error", err)
-			count(h.Metrics, metrics.ClassifyOutcome, metrics.ClientCancelled)
-			writeError(w, http.StatusServiceUnavailable, "upstream")
-			return
-		}
 		// Map a *llm.CallError via errors.As: status 429 → rate_limited;
 		// otherwise retryable → 503 upstream; otherwise → 400 upstream_rejected.
 		// A non-*llm.CallError is 503 upstream.
+		// If the request context was cancelled (client disconnect or server
+		// shutdown), count client_cancelled instead of an upstream key, but keep
+		// the HTTP response unchanged so a disconnect surfaces as a retryable error.
 		var callErr *llm.CallError
 		if errors.As(err, &callErr) {
 			if callErr.Status == 429 {
@@ -224,7 +208,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 					"status", callErr.Status,
 					"retryAfter", callErr.RetryAfter,
 					"resetAtEpochMs", callErr.ResetAtEpochMs)
-				count(h.Metrics, metrics.ClassifyOutcome, metrics.Upstream429)
+				count(h.Metrics, metrics.ClassifyOutcome, outcomeOrCancelled(ctx, metrics.Upstream429))
 				writeRateLimited(w, callErr.RetryAfter, callErr.ResetAtEpochMs)
 				return
 			}
@@ -233,7 +217,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 					"installHash", installHash[:8],
 					"status", callErr.Status,
 					"error", callErr.Message)
-				count(h.Metrics, metrics.ClassifyOutcome, metrics.UpstreamRetryable)
+				count(h.Metrics, metrics.ClassifyOutcome, outcomeOrCancelled(ctx, metrics.UpstreamRetryable))
 				writeError(w, http.StatusServiceUnavailable, "upstream")
 				return
 			}
@@ -241,14 +225,14 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 				"installHash", installHash[:8],
 				"status", callErr.Status,
 				"error", callErr.Message)
-			count(h.Metrics, metrics.ClassifyOutcome, metrics.UpstreamRejected)
+			count(h.Metrics, metrics.ClassifyOutcome, outcomeOrCancelled(ctx, metrics.UpstreamRejected))
 			writeError(w, http.StatusBadRequest, "upstream_rejected")
 			return
 		}
 		h.Logger.Error("classifier failed",
 			"installHash", installHash[:8],
 			"error", err)
-		count(h.Metrics, metrics.ClassifyOutcome, metrics.UpstreamRetryable)
+		count(h.Metrics, metrics.ClassifyOutcome, outcomeOrCancelled(ctx, metrics.UpstreamRetryable))
 		writeError(w, http.StatusServiceUnavailable, "upstream")
 		return
 	}
@@ -277,6 +261,15 @@ func rateLimitKey(r quota.Reason) string {
 		return metrics.RateLimitedBurst
 	}
 	return metrics.RateLimitedDaily
+}
+
+// outcomeOrCancelled returns ClientCancelled if the context is cancelled,
+// otherwise the given outcome key.
+func outcomeOrCancelled(ctx context.Context, key string) string {
+	if ctx.Err() != nil {
+		return metrics.ClientCancelled
+	}
+	return key
 }
 
 func modelKey(model string) string {

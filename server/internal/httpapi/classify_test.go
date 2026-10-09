@@ -23,9 +23,13 @@ type fakeClassifier struct {
 	calls    int
 	response llm.Response
 	err      error
+	before   func() // optional hook invoked at the start of Classify
 }
 
 func (f *fakeClassifier) Classify(_ context.Context, _ llm.Request) (llm.Response, error) {
+	if f.before != nil {
+		f.before()
+	}
 	f.calls++
 	return f.response, f.err
 }
