@@ -21,10 +21,12 @@ type Request struct {
 	Currency string
 }
 
-// Response carries the fused classify+extract result and token usage.
+// Response carries the fused classify+extract result, token usage and the
+// model OpenRouter actually routed to (empty if it did not say).
 type Response struct {
 	Result      ClassifyResult
 	TotalTokens int64
+	Model       string
 }
 
 // CallError wraps a failed OpenRouter call with retry metadata.
@@ -142,6 +144,7 @@ func (c *Client) Classify(ctx context.Context, in Request) (Response, error) {
 
 	// Parse the chat-completions envelope
 	var envelope struct {
+		Model   string `json:"model"`
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
@@ -198,6 +201,7 @@ func (c *Client) Classify(ctx context.Context, in Request) (Response, error) {
 	return Response{
 		Result:      result,
 		TotalTokens: envelope.Usage.TotalTokens,
+		Model:       envelope.Model,
 	}, nil
 }
 
