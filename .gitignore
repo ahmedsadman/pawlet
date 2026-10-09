@@ -55,3 +55,6 @@ mobile-app/android/key.properties
 mobile-app/docs/superpowers
 model-training/docs/superpowers
 docs/superpowers
+
+# Brainstorming companion mockups — local scratch
+.superpowers/
