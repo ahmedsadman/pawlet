@@ -52,12 +52,12 @@ func TestParseRange(t *testing.T) {
 		in, earliest string
 		want         Range
 	}{
-		{"", "", Range{"2026-09-10", today}},
-		{"30d", "", Range{"2026-09-10", today}},
-		{"7d", "", Range{"2026-10-03", today}},
-		{"90d", "", Range{"2026-07-12", today}},
-		{"all", "2026-08-01", Range{"2026-08-01", today}},
-		{"all", "", Range{today, today}},
+		{"", "", Range{"2026-09-10", today, false}},
+		{"30d", "", Range{"2026-09-10", today, false}},
+		{"7d", "", Range{"2026-10-03", today, false}},
+		{"90d", "", Range{"2026-07-12", today, false}},
+		{"all", "2026-08-01", Range{"2026-08-01", today, true}},
+		{"all", "", Range{today, today, true}},
 	}
 	for _, c := range cases {
 		got, err := ParseRange(c.in, today, c.earliest)
