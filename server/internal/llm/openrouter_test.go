@@ -415,3 +415,43 @@ func TestClassifyErrorNeverCarriesTheResponseBody(t *testing.T) {
 		t.Fatalf("error text carries message content: %q", err.Error())
 	}
 }
+
+func TestClassify_ReportsServedModel(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "model present",
+			body: `{"model": "qwen/qwen3.8-27b:free",
+			        "choices": [{"message": {"content": "{\"category\": null}"}}],
+			        "usage": {"total_tokens": 10}}`,
+			want: "qwen/qwen3.8-27b:free",
+		},
+		{
+			name: "model absent",
+			body: `{"choices": [{"message": {"content": "{\"category\": null}"}}],
+			        "usage": {"total_tokens": 10}}`,
+			want: "",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(c.body))
+			}))
+			defer srv.Close()
+
+			client := &Client{Endpoint: srv.URL, APIKey: "k", Models: []string{"m"}, Timeout: 5 * time.Second}
+			resp, err := client.Classify(context.Background(), Request{Sender: "S", Content: "c", Currency: "BDT"})
+			if err != nil {
+				t.Fatalf("Classify() error = %v", err)
+			}
+			if resp.Model != c.want {
+				t.Fatalf("Model = %q, want %q", resp.Model, c.want)
+			}
+		})
+	}
+}
