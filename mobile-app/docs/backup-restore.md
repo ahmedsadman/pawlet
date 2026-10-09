@@ -161,6 +161,7 @@ table is a snapshot — verify there if precision matters.
 | `failure_reason` | TEXT | nullable; internal |
 | `parse_source` | TEXT | nullable; `local` or `llm` — which engine parsed the row |
 | `needs_llm` | INTEGER | required; default 0 — 1 once only the LLM can resolve the row (set only when an LLM exists) |
+| `local_verdict` | TEXT | nullable; `accepted`, `declined` or `unavailable` — the on-device model's first verdict on a live message, see [Local-model stats](model-stats.md) |
 
 **`banks`** — user's banks and cards.
 

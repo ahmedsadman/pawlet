@@ -15,5 +15,7 @@ the code disagree, trust the code.
 - [Backup & Restore](backup-restore.md) — exporting all local data to a JSON file and
   restoring it (replace-all, IDs preserved), including the expected file format, plus
   the one-off import that back-fills records from the messages already on the phone.
+- [Local-model stats](model-stats.md) — how each live message's on-device verdict is
+  counted once, and how proxy installs report the daily counts.
 - [App updates](app-updates.md) — how Play installs are offered new versions in-app, the
   "Not now" snooze, and how to test an update for real.
