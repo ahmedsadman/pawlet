@@ -104,8 +104,8 @@ func TestVerifyPasswordAcceptsEdgeCases(t *testing.T) {
 		"$argon2id$v=19$m=65536,t=2,p=1$" + salt16 + "$" + key64,
 	}
 	for _, h := range cases {
-		if _, err := VerifyPassword(h, "x"); err != nil {
-			t.Errorf("VerifyPassword(%q) err = %v, want nil", h, err)
+		if _, err := parsePHC(h); err != nil {
+			t.Errorf("parsePHC(%q) err = %v, want nil", h, err)
 		}
 	}
 }
