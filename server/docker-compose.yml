@@ -32,8 +32,9 @@ services:
       - ./service-account.json:/run/secrets/sa.json:ro
 
   pawlet-admin:
-    # The owner-only dashboard. Its own image so a dashboard change never
-    # restarts the classify API.
+    # The owner-only dashboard. Separate image so the admin binary/UI ship
+    # independently of pawletd's code, but both are deployed together with
+    # the same tag.
     image: ghcr.io/ahmedsadman/pawlet-admin:${IMAGE_TAG:-latest}
     build:
       context: ..
