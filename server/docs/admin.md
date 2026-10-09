@@ -72,6 +72,8 @@ pawletd is updated.
 
 1. Create `server/admin.env` from `admin.env.example`; get the hash from
    `docker run --rm -i ghcr.io/ahmedsadman/pawlet-admin hash-password` or `go run`.
+   **Wrap the hash in single quotes** (`ADMIN_PASSWORD_HASH='$argon2id$…'`): Compose expands
+   `$` in env files, so an unquoted hash is silently mangled and no password will match.
 2. Add a DNS record for `admin.pawlet.muhib.me`.
 3. Add a Caddy site block reverse-proxying to `localhost:8092`:
 
