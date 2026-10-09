@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ahmedsadman/pawlet/server/internal/llm"
 	"github.com/ahmedsadman/pawlet/server/internal/metrics"
@@ -223,5 +224,49 @@ func TestClassifyModelKeyTruncation(t *testing.T) {
 	expected := longModel[:128]
 	if got := h.counter.n(metrics.Model, expected); got != 1 {
 		t.Errorf("model truncated key = %d, want 1 (all: %v)", got, h.counter.got)
+	}
+}
+
+func TestModelKey(t *testing.T) {
+	cases := []struct {
+		name  string
+		model string
+		want  string
+	}{
+		{
+			name:  "empty returns unknown",
+			model: "",
+			want:  metrics.UnknownModel,
+		},
+		{
+			name:  "128-byte ASCII unchanged",
+			model: strings.Repeat("x", 128),
+			want:  strings.Repeat("x", 128),
+		},
+		{
+			name:  "129-byte ASCII truncated",
+			model: strings.Repeat("x", 129),
+			want:  strings.Repeat("x", 128),
+		},
+		{
+			name: "multibyte rune at boundary",
+			// 126 'a' + one 3-byte UTF-8 character (U+2318 ⌘) = 129 bytes total.
+			// Truncation should cut before the multibyte character.
+			model: strings.Repeat("a", 126) + "⌘",
+			want:  strings.Repeat("a", 126),
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := modelKey(c.model)
+			if got != c.want {
+				t.Errorf("modelKey(%q) = %q, want %q", c.model, got, c.want)
+			}
+			// Verify the result is valid UTF-8
+			if !utf8.ValidString(got) {
+				t.Errorf("modelKey(%q) = %q, which is invalid UTF-8", c.model, got)
+			}
+		})
 	}
 }
