@@ -36,7 +36,8 @@ const String kDataRevKey = 'data_rev';
 /// body ever arrived was 34s apart. 15s sits clear of both.
 const Duration kSmsDedupWindow = Duration(seconds: 15);
 
-/// Financial categories that appear in History (alongside failures).
+/// Financial categories that appear in History (alongside failures and
+/// ignored rows whose reason is not `gated`).
 const List<String> kHistoryCategories = ['transaction', 'bill'];
 
 /// A transaction with no bank attached, paired with the text of its backing
@@ -266,9 +267,10 @@ class SmsRepository {
     );
   }
 
-  /// Processed History (financial rows + failures), most recent first,
-  /// paginated. [query] is a multi-word substring filter over sender and content
-  /// (each term must match one of them; terms are ANDed).
+  /// Processed History (financial rows, failures, and ignored bank messages),
+  /// most recent first, paginated. [query] is a multi-word substring filter
+  /// over sender and content (each term must match one of them; terms are
+  /// ANDed).
   Future<List<SmsRecord>> history({
     int limit = kHistoryPageSize,
     int offset = 0,
@@ -299,15 +301,20 @@ class SmsRepository {
 
   (String, List<Object?>) _historyWhere(String? query) {
     final placeholders = kHistoryCategories.map((_) => '?').join(', ');
-    // Financial (success + transaction/bill) rows and failures are shown;
-    // ignored rows never are.
+    // Financial (success + transaction/bill) rows and failures are shown, and
+    // so are ignored rows unless the sender gate dropped them (`gated`: not a
+    // bank/card message). `IS NOT` is NULL-safe, so a legacy ignored row with
+    // no reason is shown.
     final where = StringBuffer(
-      '((status = ? AND category IN ($placeholders)) OR status = ?)',
+      '((status = ? AND category IN ($placeholders)) OR status = ? '
+      'OR (status = ? AND ignore_reason IS NOT ?))',
     );
     final args = <Object?>[
       SmsStatus.success.name,
       ...kHistoryCategories,
       SmsStatus.failure.name,
+      SmsStatus.ignored.name,
+      IgnoreReason.gated.value,
     ];
     final q = query?.trim();
     if (q != null && q.isNotEmpty) {
