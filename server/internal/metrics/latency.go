@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"slices"
 	"strconv"
 	"time"
 )
@@ -21,3 +22,7 @@ func LatencyBucket(d time.Duration) string {
 	}
 	return "inf"
 }
+
+// LatencyBoundsMs returns the bucket upper bounds in ascending order. The
+// admin dashboard needs them to order buckets and estimate percentiles.
+func LatencyBoundsMs() []int64 { return slices.Clone(latencyBoundsMs) }

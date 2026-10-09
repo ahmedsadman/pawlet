@@ -167,11 +167,15 @@ func nullInt(v int64) sql.NullInt64 { return sql.NullInt64{Int64: v, Valid: v !=
 
 func nullString(v string) sql.NullString { return sql.NullString{String: v, Valid: v != ""} }
 
-// Install reads one record, returning ErrNotFound when absent.
-func (s *Store) Install(ctx context.Context, idHash string) (Install, error) {
-	const q = `SELECT id_hash, first_seen, last_seen, banned, ban_reason,
-	                  app_version_code, device_tier, licensing, sdk_version
-	           FROM installs WHERE id_hash = ?`
+// installColumns is the column list scanInstall expects, in order.
+const installColumns = `id_hash, first_seen, last_seen, banned, ban_reason,
+	app_version_code, device_tier, licensing, sdk_version`
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanInstall(sc rowScanner) (Install, error) {
 	var (
 		rec               Install
 		firstSec, lastSec int64
@@ -179,15 +183,11 @@ func (s *Store) Install(ctx context.Context, idHash string) (Install, error) {
 		version, sdk      sql.NullInt64
 		tier, licensing   sql.NullString
 	)
-	err := s.read.QueryRowContext(ctx, q, idHash).Scan(
+	if err := sc.Scan(
 		&rec.IDHash, &firstSec, &lastSec, &banned, &rec.BanReason,
 		&version, &tier, &licensing, &sdk,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Install{}, ErrNotFound
-	}
-	if err != nil {
-		return Install{}, fmt.Errorf("read install: %w", err)
+	); err != nil {
+		return Install{}, err
 	}
 	rec.FirstSeen = time.Unix(firstSec, 0)
 	rec.LastSeen = time.Unix(lastSec, 0)
@@ -197,6 +197,19 @@ func (s *Store) Install(ctx context.Context, idHash string) (Install, error) {
 		DeviceTier:     tier.String,
 		Licensing:      licensing.String,
 		SDKVersion:     sdk.Int64,
+	}
+	return rec, nil
+}
+
+// Install reads one record, returning ErrNotFound when absent.
+func (s *Store) Install(ctx context.Context, idHash string) (Install, error) {
+	const q = `SELECT ` + installColumns + ` FROM installs WHERE id_hash = ?`
+	rec, err := scanInstall(s.read.QueryRowContext(ctx, q, idHash))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Install{}, ErrNotFound
+	}
+	if err != nil {
+		return Install{}, fmt.Errorf("read install: %w", err)
 	}
 	return rec, nil
 }
