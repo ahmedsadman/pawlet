@@ -6,6 +6,7 @@ Catppuccin Macchiato, matching the mobile app (`mobile-app/lib/theme/catppuccin_
 Tokens are declared in `src/index.css` as `ctp-*` Tailwind colors.
 
 Roles:
+
 - **base** — page background
 - **mantle** — sidebar
 - **surface0** — cards
@@ -43,17 +44,17 @@ every entry is filled.
 
 From `src/theme/tokens.ts` as of this writing; verify against the source.
 
-| Name | Value | Use |
-|---|---|---|
-| SERIES[0] | `#a47dd3` | First categorical series (mauve) |
-| SERIES[1] | `#06a99a` | Second series (teal) |
-| SERIES[2] | `#d17843` | Third series (peach) |
-| SERIES[3] | `#6990e2` | Fourth series (blue) |
-| SERIES[4] | `#b78b16` | Fifth series (yellow) |
-| SERIES[5] | `#c371b0` | Sixth series (pink) |
-| OTHER | `#6e738d` (ctp.overlay0) | "Other" and "unknown" buckets |
-| STATUS.good | `#a6da95` (ctp.green) | Success status |
-| STATUS.warning | `#eed49f` (ctp.yellow) | Warning status |
-| STATUS.serious | `#f5a97f` (ctp.peach) | Serious status |
-| STATUS.critical | `#ed8796` (ctp.red) | Critical status |
-| SEQUENTIAL[0-4] | `#6a638a` to `#c6a0f6` | Cohort heatmap (low to high) |
+| Name            | Value                    | Use                              |
+| --------------- | ------------------------ | -------------------------------- |
+| SERIES[0]       | `#a47dd3`                | First categorical series (mauve) |
+| SERIES[1]       | `#06a99a`                | Second series (teal)             |
+| SERIES[2]       | `#d17843`                | Third series (peach)             |
+| SERIES[3]       | `#6990e2`                | Fourth series (blue)             |
+| SERIES[4]       | `#b78b16`                | Fifth series (yellow)            |
+| SERIES[5]       | `#c371b0`                | Sixth series (pink)              |
+| OTHER           | `#6e738d` (ctp.overlay0) | "Other" and "unknown" buckets    |
+| STATUS.good     | `#a6da95` (ctp.green)    | Success status                   |
+| STATUS.warning  | `#eed49f` (ctp.yellow)   | Warning status                   |
+| STATUS.serious  | `#f5a97f` (ctp.peach)    | Serious status                   |
+| STATUS.critical | `#ed8796` (ctp.red)      | Critical status                  |
+| SEQUENTIAL[0-4] | `#6a638a` to `#c6a0f6`   | Cohort heatmap (low to high)     |
