@@ -1,10 +1,11 @@
-// Package devseed fills an empty database with about 90 days of realistic
+// Package devseed fills an empty database with about four months of realistic
 // fake history so the dashboard can be built and checked locally. It must
 // never be pointed at production data; it refuses any database that already
 // has installs.
 package devseed
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -22,14 +23,16 @@ import (
 // ErrNotEmpty reports a database that already has installs.
 var ErrNotEmpty = errors.New("devseed: database already has installs")
 
-// Days is how much history Seed writes, ending today.
-const Days = 90
+// Days is how much history Seed writes, ending today. It is longer than
+// store.ModelStatsRetentionDays so the oldest model stats get rolled up.
+const Days = 120
 
 var models = []string{"nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3.8-27b:free", "nex-agi/nex-n2.5-pro:free"}
 
 // Summary counts what Seed wrote.
 type Summary struct {
 	Installs, InstallDays, Usage, Counters int
+	ModelStats, ModelStatsRollup           int
 	From, To                               string
 }
 
@@ -138,7 +141,7 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 	releases := []struct {
 		code int64
 		day  int
-	}{{14, 0}, {15, 20}, {16, 41}, {17, 63}, {18, 80}}
+	}{{14, 0}, {15, 27}, {16, 55}, {17, 84}, {18, 107}}
 	latestAt := func(d int) int64 {
 		v := releases[0].code
 		for _, rel := range releases {
@@ -148,6 +151,19 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 		}
 		return v
 	}
+
+	// The fleet's on-device rate climbs from about 70% to 83% across the span,
+	// with day-to-day noise shared by every install.
+	dayRate := make([]float64, Days)
+	for d := range dayRate {
+		rate := 0.70 + 0.13*float64(d)/float64(Days-1) + r.NormFloat64()*0.02
+		dayRate[d] = math.Min(0.95, math.Max(0.5, rate))
+	}
+	// Model stats come only from the reporting release and later, so their
+	// version is newer than the session versions above: 19, then 20 from
+	// two-thirds through, which each install picks up within a few days.
+	const statsVersionOld, statsVersionNew = 19, 20
+	statsSwitchDay := Days * 2 / 3
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -180,6 +196,7 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 				sms = 40 + r.Float64()*80
 			}
 			version := latestAt(d)
+			statsVersion := int64(statsVersionOld)
 			lastSeen := firstSeen
 
 			for dd := d; dd < Days; dd++ {
@@ -200,8 +217,10 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 					}
 				}
 				calls := poisson(r, sms)
+				var imported int64
 				if dd == d {
-					calls += 15 + int64(r.Intn(40)) // first-day inbox import
+					imported = 15 + int64(r.Intn(40)) // first-day inbox import
+					calls += imported
 				}
 				if calls == 0 {
 					continue
@@ -209,6 +228,21 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 				if calls > 200 {
 					add(key, "classify_outcome", "rate_limited_daily", calls-200)
 					calls = 200
+				}
+				// Every live call is a message the local model declined or could
+				// not run on; it accepted the rest, so messages ≈ calls ÷ (1 − rate).
+				// The inbox import never goes through the local model.
+				if live := calls - imported; live > 0 {
+					if dd >= statsSwitchDay && statsVersion == statsVersionOld && r.Float64() < 0.6 {
+						statsVersion = statsVersionNew
+					}
+					unavailable := min(live, poisson(r, 0.02*float64(live)))
+					accepted := int64(math.Round(float64(live) * dayRate[dd] / (1 - dayRate[dd])))
+					if _, err := tx.Exec(`INSERT INTO model_stats_daily
+					    (id_hash, day, app_version_code, accepted, declined, unavailable) VALUES (?,?,?,?,?,?)`,
+						hash, key, statsVersion, accepted, live-unavailable, unavailable); err != nil {
+						return Summary{}, err
+					}
 				}
 				var ok int64
 				for c := int64(0); c < calls; c++ {
@@ -272,10 +306,23 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 		return Summary{}, err
 	}
 
+	// Fold model stats older than the retention window exactly as pawletd's
+	// rollup job would, so model_stats_rollup and messages_archived are filled.
+	s, err = store.Open(path)
+	if err != nil {
+		return Summary{}, err
+	}
+	_, err = s.RollupModelStats(context.Background(), now)
+	_ = s.Close()
+	if err != nil {
+		return Summary{}, err
+	}
+
 	sum := Summary{From: dayKey(0), To: dayKey(Days - 1)}
 	for table, dst := range map[string]*int{
 		"installs": &sum.Installs, "install_days": &sum.InstallDays,
 		"usage": &sum.Usage, "counters_daily": &sum.Counters,
+		"model_stats_daily": &sum.ModelStats, "model_stats_rollup": &sum.ModelStatsRollup,
 	} {
 		if err := db.QueryRow(`SELECT count(*) FROM ` + table).Scan(dst); err != nil { //nolint:gosec // fixed table names
 			return Summary{}, err
