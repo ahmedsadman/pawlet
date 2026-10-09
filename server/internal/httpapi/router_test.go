@@ -39,6 +39,7 @@ func TestRouterRoutesEveryEndpoint(t *testing.T) {
 		{"GET", "/v1/challenge"},
 		{"POST", "/v1/session"},
 		{"POST", "/v1/classify"},
+		{"POST", "/v1/model-stats"},
 		{"GET", "/v1/prompt-bundle"},
 	}
 
