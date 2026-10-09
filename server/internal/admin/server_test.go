@@ -108,10 +108,19 @@ func TestLoginBadRequestsAndRateLimit(t *testing.T) {
 	if rec := e.do(http.MethodPost, "/api/login", `{"password":""}`, nil); rec.Code != http.StatusBadRequest {
 		t.Fatalf("empty = %d", rec.Code)
 	}
-	for i := 0; i < loginPerIPFailures; i++ {
-		e.do(http.MethodPost, "/api/login", `{"password":"nope"}`, nil)
+
+	// Fresh env for the lockout test to avoid 400s counting against the limit
+	e2 := newTestEnv(t)
+	for i := 0; i < loginPerIPFailures-1; i++ {
+		e2.do(http.MethodPost, "/api/login", `{"password":"nope"}`, nil)
 	}
-	rec := e.do(http.MethodPost, "/api/login", `{"password":"correct horse"}`, nil)
+	// 5th wrong password should still return 401
+	rec := e2.do(http.MethodPost, "/api/login", `{"password":"nope"}`, nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("5th wrong password = %d, want 401", rec.Code)
+	}
+	// 6th attempt should be rate limited
+	rec = e2.do(http.MethodPost, "/api/login", `{"password":"correct horse"}`, nil)
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("after %d failures = %d, want 429 even with the right password", loginPerIPFailures, rec.Code)
 	}
@@ -139,14 +148,14 @@ func TestLoginConcurrentArgon2Cap(t *testing.T) {
 	srv2.verifySlots <- struct{}{}
 	srv2.verifySlots <- struct{}{}
 
-	// Login should return 429 without checking the password
-	req := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"password":"correct horse"}`))
+	// Prove no password check ran: send WRONG password, get 429 not 401
+	req := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"password":"WRONG"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "https://example.com")
 	rec := httptest.NewRecorder()
 	srv2.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("login with full verifySlots = %d, want 429", rec.Code)
+		t.Fatalf("login with full verifySlots and wrong password = %d, want 429 not 401", rec.Code)
 	}
 
 	// Drain the slots
@@ -194,6 +203,11 @@ func TestUnknownAPIRouteIs404JSON(t *testing.T) {
 	if rec.Code != http.StatusNotFound || errorCode(t, rec) != "not_found" {
 		t.Fatalf("unknown api = %d", rec.Code)
 	}
+	// POST to a defined route also hits the catch-all
+	rec = e.do(http.MethodPost, "/api/me", `{}`, e.login(t))
+	if rec.Code != http.StatusNotFound || errorCode(t, rec) != "not_found" {
+		t.Fatalf("POST /api/me = %d, want 404 JSON not_found", rec.Code)
+	}
 }
 
 func TestSPAServesAssetsAndFallsBackToIndex(t *testing.T) {
@@ -203,6 +217,11 @@ func TestSPAServesAssetsAndFallsBackToIndex(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Body.String() != "console.log(1)" ||
 		!strings.Contains(rec.Header().Get("Cache-Control"), "immutable") {
 		t.Fatalf("asset = %d %q %q", rec.Code, rec.Body.String(), rec.Header().Get("Cache-Control"))
+	}
+	// Missing asset under assets/ returns 404, not index.html
+	rec = e.do(http.MethodGet, "/assets/missing.js", "", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing asset = %d, want 404", rec.Code)
 	}
 	for _, p := range []string{"/", "/installs/abc", "/index.html"} {
 		rec = e.do(http.MethodGet, p, "", nil)

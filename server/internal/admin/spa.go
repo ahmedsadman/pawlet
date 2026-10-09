@@ -42,6 +42,11 @@ func (s *Server) spa() http.Handler {
 				files.ServeHTTP(w, r)
 				return
 			}
+			// Missing file under assets/ returns 404, not index.html
+			if strings.HasPrefix(name, "assets/") {
+				http.NotFound(w, r)
+				return
+			}
 		}
 		index, err := fs.ReadFile(s.web, "index.html")
 		if err != nil {
