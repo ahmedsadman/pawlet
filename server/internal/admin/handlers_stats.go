@@ -346,7 +346,31 @@ func (s *Server) engagement(w http.ResponseWriter, r *http.Request) {
 type reliabilityResponse struct {
 	Range stats.Range `json:"range"`
 	stats.Reliability
-	CollectingSince collectingSince `json:"collectingSince"`
+	LocalModel      stats.LocalModel `json:"localModel"`
+	CollectingSince collectingSince  `json:"collectingSince"`
+}
+
+// localModel builds the local-model card. Rows load from whichever is
+// earlier: the start of the previous period (none for range=all) or the
+// rolling window's reach before the range.
+func (s *Server) localModel(r *http.Request, rng stats.Range) (stats.LocalModel, error) {
+	ctx := r.Context()
+	days := stats.Days(rng.From, rng.To)
+	from := stats.AddDays(rng.From, -(stats.RollingWindowDays - 1))
+	var prevDays []string
+	if r.URL.Query().Get("range") != "all" {
+		prevDays = stats.Days(stats.AddDays(rng.From, -len(days)), stats.AddDays(rng.From, -1))
+		from = min(from, prevDays[0])
+	}
+	model, err := s.store.ModelStatsBetween(ctx, from, rng.To)
+	if err != nil {
+		return stats.LocalModel{}, err
+	}
+	rollup, err := s.store.ModelRollupBetween(ctx, from, rng.To)
+	if err != nil {
+		return stats.LocalModel{}, err
+	}
+	return stats.BuildLocalModel(days, prevDays, model, rollup), nil
 }
 
 func (s *Server) reliability(w http.ResponseWriter, r *http.Request) {
@@ -366,9 +390,15 @@ func (s *Server) reliability(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "load usage", err)
 		return
 	}
+	lm, err := s.localModel(r, rng)
+	if err != nil {
+		s.fail(w, "load model stats", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, reliabilityResponse{
 		Range:           rng,
 		Reliability:     stats.BuildReliability(stats.Days(rng.From, rng.To), counters, usage, metrics.LatencyBoundsMs()),
+		LocalModel:      lm,
 		CollectingSince: newCollectingSince(earliest),
 	})
 }

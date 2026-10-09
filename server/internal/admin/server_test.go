@@ -18,11 +18,13 @@ var testNow = time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 type testEnv struct {
 	store   *store.Store
 	handler http.Handler
+	dbPath  string
 }
 
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "admin.db"))
+	dbPath := filepath.Join(t.TempDir(), "admin.db")
+	st, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("store.Open() error = %v", err)
 	}
@@ -38,7 +40,7 @@ func newTestEnv(t *testing.T) *testEnv {
 			"assets/app.js": {Data: []byte("console.log(1)")},
 		},
 	})
-	return &testEnv{store: st, handler: srv.Handler()}
+	return &testEnv{store: st, handler: srv.Handler(), dbPath: dbPath}
 }
 
 func (e *testEnv) do(method, path, body string, cookie *http.Cookie) *httptest.ResponseRecorder {

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -275,5 +276,97 @@ func TestEngagementReliabilityFleetHandlers(t *testing.T) {
 	}
 	if fleet.ActiveInstalls != 1 || fleet.Versions[0].Key != "18" || len(fleet.Adoption) != 90 {
 		t.Fatalf("fleet = %+v", fleet)
+	}
+}
+
+// execSQL writes fixture rows straight to the test database. The admin only
+// reads model stats, so the store has no method to write them through.
+func execSQL(t *testing.T, e *testEnv, q string, args ...any) {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+e.dbPath)
+	if err != nil {
+		t.Fatalf("open fixture db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.ExecContext(context.Background(), q, args...); err != nil {
+		t.Fatalf("fixture %q: %v", q, err)
+	}
+}
+
+// seedModelStats adds local-model counts on top of seedStats (testNow is
+// 2026-10-09). The rollup row sits inside the 7-day range on purpose: the
+// handlers must merge it whatever its age.
+func seedModelStats(t *testing.T, e *testEnv) {
+	t.Helper()
+	execSQL(t, e, `INSERT INTO model_stats_daily
+	    (id_hash, day, app_version_code, accepted, declined, unavailable)
+	  VALUES (?, '2026-10-09', 18, 8, 2, 1), (?, '2026-10-07', 18, 4, 1, 0)`, hashA, hashA)
+	execSQL(t, e, `INSERT INTO model_stats_rollup
+	    (day, app_version_code, accepted, declined, unavailable, install_count)
+	  VALUES ('2026-10-03', 17, 8, 2, 0, 2)`)
+	execSQL(t, e, `UPDATE installs SET messages_archived = 50 WHERE id_hash = ?`, hashA)
+}
+
+func TestReliabilityLocalModel(t *testing.T) {
+	e := newTestEnv(t)
+	seedStats(t, e.store)
+	seedModelStats(t, e)
+	// In the previous 7-day period, and inside the first range day's window.
+	execSQL(t, e, `INSERT INTO model_stats_daily
+	    (id_hash, day, app_version_code, accepted, declined, unavailable)
+	  VALUES (?, '2026-09-30', 18, 1, 1, 0)`, hashA)
+	cookie := e.login(t)
+
+	type localModel struct {
+		Accepted    int64    `json:"accepted"`
+		Declined    int64    `json:"declined"`
+		Unavailable int64    `json:"unavailable"`
+		Rate        *float64 `json:"rate"`
+		PrevRate    *float64 `json:"prevRate"`
+		Daily       []struct {
+			Day      string   `json:"day"`
+			Accepted int64    `json:"accepted"`
+			Rate     *float64 `json:"rate"`
+		} `json:"daily"`
+		Rolling7 []struct {
+			Day  string   `json:"day"`
+			Rate *float64 `json:"rate"`
+		} `json:"rolling7"`
+		VersionMarkers []json.RawMessage `json:"versionMarkers"`
+	}
+	var rel struct {
+		LocalModel localModel `json:"localModel"`
+	}
+	if code := getJSON(t, e, "/api/reliability?range=7d", cookie, &rel); code != http.StatusOK {
+		t.Fatalf("reliability = %d", code)
+	}
+	lm := rel.LocalModel
+	// 10-03 rollup {8,2,0} + 10-07 {4,1,0} + 10-09 {8,2,1}.
+	if lm.Accepted != 20 || lm.Declined != 5 || lm.Unavailable != 1 || lm.Rate == nil || *lm.Rate != 0.8 {
+		t.Fatalf("totals = %+v", lm)
+	}
+	if lm.PrevRate == nil || *lm.PrevRate != 0.5 {
+		t.Fatalf("prevRate = %v, want 0.5", lm.PrevRate)
+	}
+	if len(lm.Daily) != 7 || lm.Daily[0].Day != "2026-10-03" || lm.Daily[0].Accepted != 8 ||
+		lm.Daily[5].Rate != nil || lm.Daily[6].Rate == nil || *lm.Daily[6].Rate != 0.8 {
+		t.Fatalf("daily = %+v", lm.Daily)
+	}
+	// 10-03's window (09-27..10-03) reaches the 09-30 row: 9 ÷ 12.
+	if len(lm.Rolling7) != 7 || lm.Rolling7[0].Rate == nil || *lm.Rolling7[0].Rate != 0.75 {
+		t.Fatalf("rolling7 = %+v", lm.Rolling7)
+	}
+	if lm.VersionMarkers == nil || len(lm.VersionMarkers) != 0 {
+		t.Fatalf("versionMarkers = %v, want [] (not null)", lm.VersionMarkers)
+	}
+
+	var all struct {
+		LocalModel localModel `json:"localModel"`
+	}
+	if code := getJSON(t, e, "/api/reliability?range=all", cookie, &all); code != http.StatusOK {
+		t.Fatalf("reliability all = %d", code)
+	}
+	if all.LocalModel.PrevRate != nil {
+		t.Fatalf("range=all prevRate = %v, want nil", *all.LocalModel.PrevRate)
 	}
 }
