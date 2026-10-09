@@ -73,8 +73,8 @@ class ModelStatsRepository {
   /// reclaimed row or a Retry tap therefore finds the verdict already stored
   /// and adds nothing, and the message stays filed under the UTC day and app
   /// version of its first verdict. Days that fell out of the window are
-  /// dropped in the same transaction, which keeps the table bounded in every
-  /// LLM mode, including those with no reporter. Returns whether it counted.
+  /// dropped in the same transaction, which keeps the table bounded even when
+  /// no flush gets through. Returns whether it counted.
   Future<bool> recordVerdict(
     int smsId,
     LocalVerdict verdict, {

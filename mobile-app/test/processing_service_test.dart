@@ -1637,6 +1637,7 @@ void main() {
       bool online = true,
       FinanceWriter? writer,
       Future<int?> Function()? version,
+      Future<bool> Function()? isProxy,
     }) => ProcessingService(
       smsRepository: sms,
       banksRepository: banks,
@@ -1647,6 +1648,7 @@ void main() {
       clock: () => now,
       modelStats: stats,
       appVersionCode: version ?? (() async => 21),
+      isProxy: isProxy ?? (() async => true),
     );
 
     /// `[accepted, declined, unavailable]` of the single tally row, or `[]`.
@@ -1836,6 +1838,59 @@ void main() {
       expect(await tally(), isEmpty);
       await db.close();
     });
+
+    test('BYOK mode counts nothing: its usage is never sent', () async {
+      final id = await queue('CHK', content: content);
+      await statsService(
+        llm: _FakeLlm(),
+        local: _FnLocal(_localExpense),
+        isProxy: () async => false,
+      ).process();
+
+      final r = await row(id);
+      expect(r['status'], 'success');
+      expect(r['local_verdict'], isNull);
+      expect(await tally(), isEmpty);
+      await db.close();
+    });
+
+    test('no proxy check counts nothing', () async {
+      final id = await queue('CHK', content: content);
+      await ProcessingService(
+        smsRepository: sms,
+        banksRepository: banks,
+        classifier: Classifier(_FakeLlm(), local: _FnLocal(_localExpense)),
+        financeWriter: FinanceWriter(db, nowMs: () => now),
+        isOnline: () async => true,
+        currency: () => 'BDT',
+        clock: () => now,
+        modelStats: stats,
+        appVersionCode: () async => 21,
+      ).process();
+
+      expect((await row(id))['status'], 'success');
+      expect((await row(id))['local_verdict'], isNull);
+      expect(await tally(), isEmpty);
+      await db.close();
+    });
+
+    test(
+      'a failed proxy check counts nothing and leaves the message',
+      () async {
+        final id = await queue('CHK', content: content);
+        await statsService(
+          llm: _FakeLlm(),
+          local: _FnLocal(_localExpense),
+          isProxy: () async => throw StateError('prefs unavailable'),
+        ).process();
+
+        final r = await row(id);
+        expect(r['status'], 'success');
+        expect(r['local_verdict'], isNull);
+        expect(await tally(), isEmpty);
+        await db.close();
+      },
+    );
 
     test('a gated message is never counted', () async {
       final id = await queue('DARAZ', content: 'win a prize');

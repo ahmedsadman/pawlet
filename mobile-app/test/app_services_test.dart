@@ -85,6 +85,22 @@ void main() {
 
         expect(s.modelStatsReporter != null, sends);
       });
+
+      test(
+        '${mode.name} ${sends ? 'counts' : 'does not count'} verdicts',
+        () async {
+          SharedPreferences.setMockInitialValues({});
+          final s = AppServices.from(
+            database: _MockDb(),
+            prefs: await SharedPreferences.getInstance(),
+            apiKey: 'sk-or-x',
+            mode: mode,
+          );
+          addTearDown(s.disposeStandalone);
+
+          expect(s.processingService.isProxy != null, sends);
+        },
+      );
     }
   });
 }

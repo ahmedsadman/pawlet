@@ -35,8 +35,8 @@ Future<Decimal?> _noRate() async => null;
 /// `next_attempt_at`; the existing triggers (foreground resume, incoming-SMS
 /// isolate, WorkManager tick) drive later retries.
 ///
-/// When an LLM is configured, every message the on-device model runs on has
-/// its verdict counted once for the local-model stats ([modelStats]).
+/// In proxy mode, every message the on-device model runs on has its verdict
+/// counted once for the local-model stats ([modelStats], [isProxy]).
 class ProcessingService {
   ProcessingService({
     required this.smsRepository,
@@ -52,6 +52,7 @@ class ProcessingService {
     this.reschedule,
     this.modelStats,
     this.appVersionCode = readAppVersionCode,
+    this.isProxy,
     this.onPassEnd,
   }) : _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
@@ -85,9 +86,14 @@ class ProcessingService {
   /// Where each message's on-device verdict is counted, once (see
   /// [ModelStatsRepository.recordVerdict]). Null skips counting. Used only
   /// when the classifier has an LLM: with none, the model runs ungated and
-  /// its verdicts are not comparable. BYOK counts but never sends; only the
-  /// reporter that sends the counts is proxy-only.
+  /// its verdicts are not comparable.
   final ModelStatsRepository? modelStats;
+
+  /// Whether the install is in proxy mode right now, asked before each
+  /// verdict is counted. Only proxy installs count: the counts are sent to
+  /// Pawlet's server, and a BYOK-era count kept locally would be sent if the
+  /// install later became proxy. Null, false or a failed check skips counting.
+  final Future<bool> Function()? isProxy;
 
   /// This build's versionCode, which the counts are filed under. A null
   /// answer skips counting that message rather than filing it wrongly.
@@ -418,8 +424,10 @@ class ProcessingService {
   /// counting failure must not change what happens to the message.
   Future<void> _recordVerdict(int id, LocalVerdict verdict) async {
     final stats = modelStats;
-    if (stats == null) return;
+    final proxy = isProxy;
+    if (stats == null || proxy == null) return;
     try {
+      if (!await proxy()) return;
       final version = await appVersionCode();
       if (version == null) return;
       await stats.recordVerdict(
