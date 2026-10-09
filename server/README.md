@@ -12,6 +12,11 @@ Attestation-gated proxy for bank SMS classification. Holds an OpenRouter API key
 | POST   | `/v1/classify`       | JWT       | Classify bank SMS via OpenRouter (attested installs only)  |
 | GET    | `/v1/prompt-bundle`  | None      | Fetch prompt templates for client-side classification      |
 
+## Admin dashboard
+
+A separate binary, `pawlet-admin`, serves the owner-only dashboard over the same database.
+See [docs/admin.md](docs/admin.md).
+
 ## Configuration
 
 All configuration is via environment variables. See [.env.example](./.env.example) for the full list with defaults.

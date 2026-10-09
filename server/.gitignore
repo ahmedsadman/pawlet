@@ -5,3 +5,4 @@
 .env
 service-account.json
 /data/
+admin.env

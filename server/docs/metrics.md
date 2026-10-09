@@ -109,11 +109,10 @@ counted under the **smallest bucket bound it fits under** (`internal/metrics/lat
 row `classify_latency_ms / 2000 / 2210` means 2210 calls that day took more than 1 s and at
 most 2 s. Calls over the last bound go to `inf`.
 
-The admin dashboard is intended to estimate percentiles from the bucket counts: walk the buckets
-in order until the running total crosses the target rank (half of all calls for p50, 95% for
-p95), then interpolate linearly inside that bucket. The result is an estimate within one bucket's
-range — enough to spot a slow model or a trend, not a precise timing. (This percentile estimation
-is not yet implemented in pawletd; it describes how the dashboard should read the buckets.)
+pawlet-admin estimates percentiles from the bucket counts this way (`internal/stats/percentile.go`):
+walk the buckets in order until the running total crosses the target rank (half of all calls for
+p50, 95% for p95), then interpolate linearly inside that bucket. The result is an estimate within
+one bucket's range — enough to spot a slow model or a trend, not a precise timing.
 
 ## Server info
 
@@ -138,3 +137,30 @@ Snapshot as of this writing — verify against the named source files.
 | Counter flush interval | 10 s | `cmd/pawletd/main.go` |
 | Latency bucket bounds (ms) | 250, 500, 1000, 2000, 4000, 8000, 16000, 32000, then `inf` | `internal/metrics/latency.go` |
 | Day boundary | UTC | `internal/metrics/recorder.go`, `internal/store/store.go` |
+
+## Dashboard definitions
+
+How pawlet-admin turns the stored data into numbers (`internal/stats/`).
+
+- **Active day.** "Any": the install made a classify call or minted a session that day.
+  "Classify": classify calls only. Session days only exist since the capture deploy, so before
+  that "Any" equals "Classify".
+- **DAU / WAU / MAU** for a day: distinct installs active that day / in the 7 days / in the 30
+  days ending that day. **Stickiness** is DAU divided by MAU.
+- **Cohorts:** installs grouped by the UTC ISO week (Monday start) of `first_seen`; each cell is
+  the share of the cohort active at least once in that later week.
+- **Calls distribution:** every install-day with calls, bucketed by its call count; the last
+  bucket is days at or over the daily limit.
+- **Dormant:** not banned, and no activity (latest of `last_seen` and the last day with calls)
+  for more than 14 days. The server cannot see uninstalls, so this stands in for churn.
+- **Success rate:** `ok` divided by all classify outcomes that reached the LLM step (`ok`,
+  `upstream_429`, `upstream_retryable`, `upstream_rejected`, `internal`). Client errors, quota
+  denials and `client_cancelled` are left out.
+- **Tokens per call:** usage tokens for the day divided by that day's `ok` count.
+- **Fleet:** non-banned installs active ("Any") in the last 30 days; missing verdict values show
+  as `unknown`.
+
+Caveats that apply to every number: only attested proxy-mode installs are visible (see Scope);
+session days undercount daily opens because the 24-hour token is only refreshed near expiry, so
+"Any" DAU is a lower bound while WAU, MAU and weekly cohorts are robust; classify activity
+follows SMS volume rather than engagement; and a reinstall appears as a new install.
