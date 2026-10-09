@@ -97,6 +97,15 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		// If the context was cancelled, count it separately from internal errors.
+		if ctx.Err() != nil {
+			h.Logger.Warn("classify cancelled during install lookup",
+				"installHash", installHash[:8],
+				"error", err)
+			count(h.Metrics, metrics.ClassifyOutcome, metrics.ClientCancelled)
+			writeError(w, http.StatusServiceUnavailable, "upstream")
+			return
+		}
 		h.Logger.Error("failed to read install",
 			"installHash", installHash[:8],
 			"error", err)
@@ -194,6 +203,16 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.Classifier.Classify(ctx, llmReq)
 	if err != nil {
+		// If the request context was cancelled (client disconnect or server
+		// shutdown), count it separately from upstream failures.
+		if ctx.Err() != nil {
+			h.Logger.Warn("classify cancelled",
+				"installHash", installHash[:8],
+				"error", err)
+			count(h.Metrics, metrics.ClassifyOutcome, metrics.ClientCancelled)
+			writeError(w, http.StatusServiceUnavailable, "upstream")
+			return
+		}
 		// Map a *llm.CallError via errors.As: status 429 → rate_limited;
 		// otherwise retryable → 503 upstream; otherwise → 400 upstream_rejected.
 		// A non-*llm.CallError is 503 upstream.
