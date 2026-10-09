@@ -153,11 +153,22 @@ func (s *Server) installRows(r *http.Request) ([]stats.InstallRow, error) {
 	if err != nil {
 		return nil, err
 	}
+	model, err := s.store.AllModelStats(ctx)
+	if err != nil {
+		return nil, err
+	}
+	archived, err := s.store.MessagesArchived(ctx)
+	if err != nil {
+		return nil, err
+	}
 	limit, err := s.dailyLimit(r)
 	if err != nil {
 		return nil, err
 	}
-	return stats.BuildInstallRows(installs, usage, s.today(), limit), nil
+	today := s.today()
+	rows := stats.BuildInstallRows(installs, usage, today, limit)
+	stats.ApplyModelStats(rows, model, archived, today)
+	return rows, nil
 }
 
 func (s *Server) installs(w http.ResponseWriter, r *http.Request) {
@@ -227,17 +238,45 @@ func (s *Server) installDetail(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "load install days", err)
 		return
 	}
+	modelDays, err := s.store.ModelStatsForInstall(ctx, in.IDHash)
+	if err != nil {
+		s.fail(w, "load install model stats", err)
+		return
+	}
+	model := withHash(in.IDHash, modelDays)
+	archived, err := s.store.MessagesArchived(ctx)
+	if err != nil {
+		s.fail(w, "load archived messages", err)
+		return
+	}
 	limit, err := s.dailyLimit(r)
 	if err != nil {
 		s.fail(w, "load server info", err)
 		return
 	}
 	today := s.today()
-	row := stats.BuildInstallRows([]store.Install{in}, usage, today, limit)[0]
+	rows := stats.BuildInstallRows([]store.Install{in}, usage, today, limit)
+	stats.ApplyModelStats(rows, model, archived, today)
+	row := rows[0]
 	writeJSON(w, http.StatusOK, installDetailResponse{
 		Install: row,
-		Daily:   stats.InstallDaily(in.FirstSeen.UTC().Format(stats.DayLayout), today, usage, days),
+		Daily: stats.InstallDaily(
+			in.FirstSeen.UTC().Format(stats.DayLayout), today, usage, days, model, row.HasModelStats,
+		),
 	})
+}
+
+// withHash tags one install's model stats days with its hash, so the stats
+// functions take the same rows as for all installs.
+func withHash(idHash string, days []store.ModelStatsDay) []store.ModelRow {
+	out := make([]store.ModelRow, len(days))
+	for i, d := range days {
+		out[i] = store.ModelRow{
+			IDHash: idHash, Day: d.Day, AppVersionCode: d.AppVersionCode,
+			Accepted: d.Accepted, Declined: d.Declined, Unavailable: d.Unavailable,
+		}
+	}
+	return out
 }
 
 type banRequest struct {

@@ -245,16 +245,24 @@ func QueryInstalls(rows []InstallRow, q InstallQuery) (InstallPage, error) {
 	return InstallPage{Rows: filtered[start:end], Total: len(filtered), Page: page, PageSize: size}, nil
 }
 
-// DetailDay is one day on an install's detail page.
+// DetailDay is one day on an install's detail page. Messages and OnDevice
+// are nil outside the last store.ModelStatsRetentionDays days (older
+// per-install rows are folded into the rollup) and for installs that never
+// reported model stats, so charts show a gap rather than a false zero.
 type DetailDay struct {
-	Day     string `json:"day"`
-	Calls   int64  `json:"calls"`
-	Tokens  int64  `json:"tokens"`
-	Session bool   `json:"session"`
+	Day      string `json:"day"`
+	Calls    int64  `json:"calls"`
+	Tokens   int64  `json:"tokens"`
+	Session  bool   `json:"session"`
+	Messages *int64 `json:"messages"`
+	OnDevice *int64 `json:"onDevice"`
 }
 
 // InstallDaily lists every day from firstSeenDay to today for one install.
-func InstallDaily(firstSeenDay, today string, usage []store.UsageRow, sessionDays []string) []DetailDay {
+func InstallDaily(
+	firstSeenDay, today string, usage []store.UsageRow, sessionDays []string,
+	model []store.ModelRow, hasModelStats bool,
+) []DetailDay {
 	if firstSeenDay > today {
 		firstSeenDay = today
 	}
@@ -266,11 +274,23 @@ func InstallDaily(firstSeenDay, today string, usage []store.UsageRow, sessionDay
 	for _, d := range sessionDays {
 		sessions[d] = true
 	}
+	modelByDay := map[string]ModelCounts{}
+	for _, m := range model {
+		modelByDay[m.Day] = modelByDay[m.Day].plus(modelCounts(m.Accepted, m.Declined, m.Unavailable))
+	}
+	modelFrom := AddDays(today, -(store.ModelStatsRetentionDays - 1))
+
 	days := Days(firstSeenDay, today)
 	out := make([]DetailDay, 0, len(days))
 	for _, d := range days {
 		u := byDay[d]
-		out = append(out, DetailDay{Day: d, Calls: u.Calls, Tokens: u.Tokens, Session: sessions[d]})
+		day := DetailDay{Day: d, Calls: u.Calls, Tokens: u.Tokens, Session: sessions[d]}
+		if hasModelStats && d >= modelFrom {
+			c := modelByDay[d]
+			messages, onDevice := c.Messages(), c.Accepted
+			day.Messages, day.OnDevice = &messages, &onDevice
+		}
+		out = append(out, day)
 	}
 	return out
 }

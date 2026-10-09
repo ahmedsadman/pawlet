@@ -395,3 +395,79 @@ func TestRangeAllReachesModelStats(t *testing.T) {
 		t.Fatalf("range=all = %+v", rel)
 	}
 }
+
+func TestInstallsMessages(t *testing.T) {
+	e := newTestEnv(t)
+	seedStats(t, e.store)
+	seedModelStats(t, e)
+	cookie := e.login(t)
+
+	var page struct {
+		Rows []struct {
+			Hash          string `json:"hash"`
+			MessagesToday int64  `json:"messagesToday"`
+			Messages7d    int64  `json:"messages7d"`
+			MessagesTotal int64  `json:"messagesTotal"`
+			HasModelStats bool   `json:"hasModelStats"`
+		} `json:"rows"`
+	}
+	if code := getJSON(t, e, "/api/installs?sort=messagesTotal", cookie, &page); code != http.StatusOK {
+		t.Fatalf("installs = %d", code)
+	}
+	if len(page.Rows) != 2 {
+		t.Fatalf("rows = %+v", page.Rows)
+	}
+	// 11 today + 5 on 10-07 + 50 archived; the rollup is not per install.
+	if a := page.Rows[0]; a.Hash != hashA || a.MessagesToday != 11 || a.Messages7d != 16 || a.MessagesTotal != 66 || !a.HasModelStats {
+		t.Fatalf("a = %+v", a)
+	}
+	if b := page.Rows[1]; b.Hash != hashB || b.MessagesTotal != 0 || b.HasModelStats {
+		t.Fatalf("b = %+v", b)
+	}
+	for _, old := range []string{"callsToday", "calls7d", "callsTotal"} {
+		if rec := e.do(http.MethodGet, "/api/installs?sort="+old, "", cookie); rec.Code != http.StatusBadRequest {
+			t.Fatalf("sort=%s = %d, want 400", old, rec.Code)
+		}
+	}
+
+	type detailDay struct {
+		Day      string `json:"day"`
+		Messages *int64 `json:"messages"`
+		OnDevice *int64 `json:"onDevice"`
+	}
+	var detail struct {
+		Install struct {
+			MessagesTotal int64 `json:"messagesTotal"`
+			HasModelStats bool  `json:"hasModelStats"`
+		} `json:"install"`
+		Daily []detailDay `json:"daily"`
+	}
+	if code := getJSON(t, e, "/api/installs/"+hashA, cookie, &detail); code != http.StatusOK {
+		t.Fatalf("detail = %d", code)
+	}
+	if detail.Install.MessagesTotal != 66 || !detail.Install.HasModelStats || len(detail.Daily) != 3 {
+		t.Fatalf("detail = %+v", detail)
+	}
+	d0, d1, d2 := detail.Daily[0], detail.Daily[1], detail.Daily[2] // 10-07, 10-08, 10-09
+	if d0.Messages == nil || *d0.Messages != 5 || *d0.OnDevice != 4 {
+		t.Fatalf("10-07 = %+v", d0)
+	}
+	if d1.Messages == nil || *d1.Messages != 0 {
+		t.Fatalf("10-08 = %+v, want 0", d1)
+	}
+	if d2.Messages == nil || *d2.Messages != 11 || *d2.OnDevice != 8 {
+		t.Fatalf("10-09 = %+v", d2)
+	}
+
+	var other struct {
+		Daily []detailDay `json:"daily"`
+	}
+	if code := getJSON(t, e, "/api/installs/"+hashB, cookie, &other); code != http.StatusOK {
+		t.Fatalf("detail b = %d", code)
+	}
+	for _, d := range other.Daily {
+		if d.Messages != nil {
+			t.Fatalf("install without model stats: %+v, want null messages", d)
+		}
+	}
+}
