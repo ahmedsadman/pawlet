@@ -127,6 +127,20 @@ class AppServices {
             apiBase: BuildConfig.apiBase,
             repository: modelStats,
             attestation: attestation,
+            // Attestation can flag the install ineligible (possibly from
+            // another isolate) while this bundle lives on, so the mode is
+            // re-resolved from fresh prefs before each send. The key only
+            // picks between byok and none, so it cannot make this proxy.
+            isProxy: () async {
+              await prefs.reload();
+              return resolveLlmMode(
+                    fromPlay: settings.installedFromPlay,
+                    proxyConfigured: BuildConfig.proxyConfigured,
+                    hasKey: false,
+                    attestationIneligible: settings.attestationIneligible,
+                  ) ==
+                  LlmMode.proxy;
+            },
           );
 
     final matcher = FinanceMatcher(database);
