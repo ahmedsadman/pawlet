@@ -132,11 +132,23 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "load server info", err)
 		return
 	}
+	model, err := s.store.ModelStatsBetween(ctx, rng.From, rng.To)
+	if err != nil {
+		s.fail(w, "load model stats", err)
+		return
+	}
+	rollup, err := s.store.ModelRollupBetween(ctx, rng.From, rng.To)
+	if err != nil {
+		s.fail(w, "load model rollup", err)
+		return
+	}
 
 	ov := stats.BuildOverview(stats.OverviewInput{
 		Range: rng, Today: today, Installs: installs, Usage: usage,
 		Activity:      stats.BuildActivity(usage, sessions, stats.ModeAny),
 		CountersToday: classifyCounts(counters, today),
+		Model:         model,
+		ModelRollup:   rollup,
 	})
 	writeJSON(w, http.StatusOK, overviewResponse{
 		Range: rng, Overview: ov, Server: stats.ParseServerInfo(info), CollectingSince: newCollectingSince(earliest),
