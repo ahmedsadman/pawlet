@@ -82,10 +82,10 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	// 8. Start the quota flusher via a WaitGroup so the shutdown sequence can
-	// wait for it before running the final flushes. Without the wait, a flusher
-	// could still be writing when main's final flush runs (or worse, when defer
-	// db.Close() fires).
+	// 8. Start the quota flusher under a WaitGroup that the metrics flusher (8b)
+	// joins too, so shutdown can wait for both before running the final flushes.
+	// Without the wait, a flusher could still be writing when main's final flush
+	// runs (or worse, when defer db.Close() fires).
 	var flushers sync.WaitGroup
 	flushers.Add(1)
 	go func() {

@@ -93,8 +93,9 @@ Notes on keys:
 - The `session_outcome` verification keys map one-to-one to the errors in
   `internal/attest/verify.go`. `attest_failed` catches a verification error without its own key.
 - Model keys are truncated at 128 bytes on a UTF-8 rune boundary
-  (`internal/httpapi/classify.go`) to bound the number of `counters_daily` rows: every
-  distinct key becomes a permanent row.
+  (`internal/httpapi/classify.go`) to cap each key's size: every distinct key becomes a
+  permanent row. The number of distinct model keys is limited in practice because OpenRouter
+  only serves the configured models.
 
 ### Latency buckets
 
