@@ -7,6 +7,10 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    # The deploy exports IMAGE_TAG for the image line above; pass it in too so
+    # pawletd can publish which image is running.
+    environment:
+      IMAGE_TAG: ${IMAGE_TAG:-}
     # Bound to loopback, not 0.0.0.0. Caddy runs with network_mode: host, so it
     # reaches this through localhost; binding the host side to 127.0.0.1 keeps
     # the port off the public interface. Publishing "8091:8080" instead would

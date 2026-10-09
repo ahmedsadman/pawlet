@@ -41,6 +41,9 @@ type Config struct {
 	DevSharedSecret    string
 	Addr               string
 	DatabasePath       string
+	// ImageTag is the deployed image's tag, published to server_info so the
+	// admin dashboard can show what is running. Empty outside a deploy.
+	ImageTag string
 }
 
 // LookupEnv matches the signature of os.LookupEnv so tests can inject values.
@@ -64,6 +67,7 @@ func Load(lookup LookupEnv) (Config, error) {
 		DevSharedSecret:    get("DEV_SHARED_SECRET", ""),
 		Addr:               get("ADDR", ":8080"),
 		DatabasePath:       get("DATABASE_PATH", "/data/pawlet.db"),
+		ImageTag:           get("IMAGE_TAG", ""),
 	}
 
 	cfg.JWTSecret = []byte(get("JWT_SECRET", ""))
