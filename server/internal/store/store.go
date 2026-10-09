@@ -39,7 +39,7 @@ type InstallMeta struct {
 	SDKVersion int64
 }
 
-// dayLayout is the UTC day key shared with the usage table.
+// dayLayout is the UTC day key; same format as usage.day.
 const dayLayout = "2006-01-02"
 
 // Store owns two pools over one SQLite file: writes are pinned to a single
