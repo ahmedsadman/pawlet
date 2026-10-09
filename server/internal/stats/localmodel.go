@@ -140,3 +140,54 @@ func versionMarkers(idx modelIndex, days []string) []VersionMarker {
 	}
 	return out
 }
+
+// ModelDay is one day's verdicts and on-device rate.
+type ModelDay struct {
+	Day         string   `json:"day"`
+	Accepted    int64    `json:"accepted"`
+	Declined    int64    `json:"declined"`
+	Unavailable int64    `json:"unavailable"`
+	Rate        *float64 `json:"rate"`
+}
+
+// LocalModel is the reliability page's local-model card.
+type LocalModel struct {
+	Accepted       int64           `json:"accepted"`
+	Declined       int64           `json:"declined"`
+	Unavailable    int64           `json:"unavailable"`
+	Rate           *float64        `json:"rate"`
+	PrevRate       *float64        `json:"prevRate"`
+	Daily          []ModelDay      `json:"daily"`
+	Rolling7       []RateDay       `json:"rolling7"`
+	VersionMarkers []VersionMarker `json:"versionMarkers"`
+}
+
+// BuildLocalModel assembles the card for days. prevDays is the same-length
+// period just before, or nil when there is none (range=all). The rows must
+// cover prevDays and the RollingWindowDays-1 days before days[0].
+func BuildLocalModel(days, prevDays []string, daily []store.ModelRow, rollup []store.ModelRollupRow) LocalModel {
+	idx := indexModel(daily, rollup)
+	lm := LocalModel{
+		Daily:          make([]ModelDay, 0, len(days)),
+		Rolling7:       rollingRates(idx, days),
+		VersionMarkers: versionMarkers(idx, days),
+	}
+	var total ModelCounts
+	for _, d := range days {
+		c := idx.day(d)
+		total = total.plus(c)
+		lm.Daily = append(lm.Daily, ModelDay{
+			Day: d, Accepted: c.Accepted, Declined: c.Declined, Unavailable: c.Unavailable, Rate: OnDeviceRate(c),
+		})
+	}
+	lm.Accepted, lm.Declined, lm.Unavailable = total.Accepted, total.Declined, total.Unavailable
+	lm.Rate = OnDeviceRate(total)
+	if prevDays != nil {
+		var prev ModelCounts
+		for _, d := range prevDays {
+			prev = prev.plus(idx.day(d))
+		}
+		lm.PrevRate = OnDeviceRate(prev)
+	}
+	return lm
+}
