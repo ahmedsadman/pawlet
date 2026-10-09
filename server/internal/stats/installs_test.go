@@ -81,9 +81,9 @@ func TestQueryInstalls(t *testing.T) {
 		t.Fatalf("default query = %+v, %v (want lastSeen desc)", page, err)
 	}
 
-	page, _ = QueryInstalls(rows, InstallQuery{Sort: "callsTotal", Order: "asc"})
+	page, _ = QueryInstalls(rows, InstallQuery{Sort: "tokensTotal", Order: "asc"})
 	if page.Rows[0].Hash != "cccc" || page.Rows[2].Hash != "aaaa" {
-		t.Fatalf("callsTotal asc = %v", hashes(page.Rows))
+		t.Fatalf("tokensTotal asc = %v", hashes(page.Rows))
 	}
 
 	for status, want := range map[string]string{"active": "aaaa", "dormant": "bbbb", "banned": "cccc"} {
@@ -115,7 +115,11 @@ func TestQueryInstalls(t *testing.T) {
 		}
 	}
 
-	for _, bad := range []InstallQuery{{Sort: "nope"}, {Order: "up"}, {Status: "gone"}} {
+	badQueries := []InstallQuery{
+		{Sort: "nope"}, {Order: "up"}, {Status: "gone"},
+		{Sort: "callsToday"}, {Sort: "calls7d"}, {Sort: "callsTotal"}, // replaced by message sorts
+	}
+	for _, bad := range badQueries {
 		if _, err := QueryInstalls(rows, bad); !errors.Is(err, ErrBadRequest) {
 			t.Errorf("QueryInstalls(%+v) err = %v", bad, err)
 		}
@@ -148,5 +152,38 @@ func TestInstallDaily(t *testing.T) {
 	}
 	if len(InstallDaily("2026-10-05", "2026-10-03", nil, nil)) != 1 {
 		t.Fatal("first seen after today should clamp to one day")
+	}
+}
+
+func TestApplyModelStats(t *testing.T) {
+	installs, usage := fixtureInstalls()
+	rows := BuildInstallRows(installs, usage, "2026-10-09", 200)
+	ApplyModelStats(rows, []store.ModelRow{
+		{IDHash: "aaaa", Day: "2026-10-09", AppVersionCode: 18, Accepted: 5, Declined: 1},
+		{IDHash: "aaaa", Day: "2026-10-09", AppVersionCode: 19, Accepted: 1},  // same day, newer version
+		{IDHash: "aaaa", Day: "2026-10-02", AppVersionCode: 18, Accepted: 20}, // before the 7-day window
+		{IDHash: "zzzz", Day: "2026-10-09", AppVersionCode: 18, Accepted: 9},  // unknown install: ignored
+	}, map[string]int64{"aaaa": 100, "cccc": 7}, "2026-10-09")
+
+	a, b, c := rows[0], rows[1], rows[2]
+	if a.MessagesToday != 7 || a.Messages7d != 7 || a.MessagesTotal != 127 || !a.HasModelStats {
+		t.Fatalf("a = %+v", a)
+	}
+	if b.MessagesTotal != 0 || b.HasModelStats {
+		t.Fatalf("b = %+v (no model stats)", b)
+	}
+	if c.MessagesToday != 0 || c.MessagesTotal != 7 || !c.HasModelStats {
+		t.Fatalf("c = %+v (archived only)", c)
+	}
+
+	page, err := QueryInstalls(rows, InstallQuery{Sort: "messagesTotal"})
+	if err != nil || hashes(page.Rows)[0] != "aaaa" || hashes(page.Rows)[1] != "cccc" || hashes(page.Rows)[2] != "bbbb" {
+		t.Fatalf("messagesTotal desc = %v, %v", hashes(page.Rows), err)
+	}
+	for _, key := range []string{"messagesToday", "messages7d"} {
+		page, err = QueryInstalls(rows, InstallQuery{Sort: key, Order: "asc"})
+		if err != nil || page.Rows[2].Hash != "aaaa" {
+			t.Fatalf("%s asc = %v, %v", key, hashes(page.Rows), err)
+		}
 	}
 }

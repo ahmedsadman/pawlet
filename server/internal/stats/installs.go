@@ -28,6 +28,10 @@ type InstallRow struct {
 	CallsToday     int64   `json:"callsToday"`
 	Calls7d        int64   `json:"calls7d"`
 	CallsTotal     int64   `json:"callsTotal"`
+	MessagesToday  int64   `json:"messagesToday"`
+	Messages7d     int64   `json:"messages7d"`
+	MessagesTotal  int64   `json:"messagesTotal"`
+	HasModelStats  bool    `json:"hasModelStats"`
 	TokensTotal    int64   `json:"tokensTotal"`
 	QuotaHitDays   int     `json:"quotaHitDays"`
 	Banned         bool    `json:"banned"`
@@ -99,6 +103,38 @@ func BuildInstallRows(installs []store.Install, usage []store.UsageRow, today st
 	return rows
 }
 
+// ApplyModelStats fills each row's message counts from per-install model
+// stats plus the totals already folded into the rollup. Rows for unknown
+// installs are ignored. An install with neither keeps HasModelStats false
+// and sorts as 0.
+func ApplyModelStats(rows []InstallRow, model []store.ModelRow, archived map[string]int64, today string) {
+	byHash := make(map[string]*InstallRow, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		byHash[r.Hash] = r
+		if n := archived[r.Hash]; n > 0 {
+			r.MessagesTotal += n
+			r.HasModelStats = true
+		}
+	}
+	weekFrom := AddDays(today, -6)
+	for _, m := range model {
+		r := byHash[m.IDHash]
+		if r == nil {
+			continue
+		}
+		n := modelCounts(m.Accepted, m.Declined, m.Unavailable).Messages()
+		r.HasModelStats = true
+		r.MessagesTotal += n
+		if m.Day == today {
+			r.MessagesToday += n
+		}
+		if m.Day >= weekFrom && m.Day <= today {
+			r.Messages7d += n
+		}
+	}
+}
+
 // InstallQuery is the installs table's sort, filter and page.
 type InstallQuery struct {
 	Sort     string
@@ -127,9 +163,9 @@ func deref(p *int64) int64 {
 var installSorts = map[string]func(a, b InstallRow) int{
 	"firstSeen":      func(a, b InstallRow) int { return cmp.Compare(a.FirstSeen, b.FirstSeen) },
 	"lastSeen":       func(a, b InstallRow) int { return cmp.Compare(a.LastSeen, b.LastSeen) },
-	"callsToday":     func(a, b InstallRow) int { return cmp.Compare(a.CallsToday, b.CallsToday) },
-	"calls7d":        func(a, b InstallRow) int { return cmp.Compare(a.Calls7d, b.Calls7d) },
-	"callsTotal":     func(a, b InstallRow) int { return cmp.Compare(a.CallsTotal, b.CallsTotal) },
+	"messagesToday":  func(a, b InstallRow) int { return cmp.Compare(a.MessagesToday, b.MessagesToday) },
+	"messages7d":     func(a, b InstallRow) int { return cmp.Compare(a.Messages7d, b.Messages7d) },
+	"messagesTotal":  func(a, b InstallRow) int { return cmp.Compare(a.MessagesTotal, b.MessagesTotal) },
 	"tokensTotal":    func(a, b InstallRow) int { return cmp.Compare(a.TokensTotal, b.TokensTotal) },
 	"quotaHitDays":   func(a, b InstallRow) int { return cmp.Compare(a.QuotaHitDays, b.QuotaHitDays) },
 	"appVersionCode": func(a, b InstallRow) int { return cmp.Compare(deref(a.AppVersionCode), deref(b.AppVersionCode)) },
