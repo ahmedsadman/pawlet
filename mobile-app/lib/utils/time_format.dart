@@ -55,10 +55,10 @@ int _calendarDaysBefore(DateTime time, DateTime now) => DateTime.utc(
 ).difference(DateTime.utc(time.year, time.month, time.day)).inDays;
 
 /// 12-hour clock: `9:05 AM`, `12:00 AM` (midnight), `12:00 PM` (noon).
-String _clock(DateTime t) {
-  final hour12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
-  final period = t.hour < 12 ? 'AM' : 'PM';
-  return '$hour12:${t.minute.toString().padLeft(2, '0')} $period';
+String clockLabel(DateTime time) {
+  final hour12 = time.hour % 12 == 0 ? 12 : time.hour % 12;
+  final period = time.hour < 12 ? 'AM' : 'PM';
+  return '$hour12:${time.minute.toString().padLeft(2, '0')} $period';
 }
 
 /// Day part shared by [dateLabel] and [dateTimeLabel]. Both arguments must
@@ -81,7 +81,7 @@ String dateLabel(DateTime time, {DateTime? now}) {
 /// `6 Oct · 3:42 PM`, `14 Dec 2025 · 3:42 PM`.
 String dateTimeLabel(DateTime time, {DateTime? now}) {
   final (t, n) = _resolve(time, now);
-  return '${_day(t, n)} · ${_clock(t)}';
+  return '${_day(t, n)} · ${clockLabel(t)}';
 }
 
 /// "Updated …" label: relative while still today (`just now` under a minute,

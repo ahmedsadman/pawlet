@@ -58,20 +58,13 @@ class _SmsTileState extends State<SmsTile> {
     now: DateTime.fromMillisecondsSinceEpoch(widget.now()),
   );
 
-  /// Time-only clock in the same 12-hour AM/PM style as [_timeLabel].
-  String _formatClock(int millis) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
-    final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final period = dt.hour < 12 ? 'AM' : 'PM';
-    return '$hour12:${dt.minute.toString().padLeft(2, '0')} $period';
-  }
-
   /// Retry-progress line for a queued row that has already failed at least once.
   String get _retryLine {
     final base = 'Retry ${record.attempts}/${ProcessingService.maxAttempts}';
     final next = record.nextAttemptAt;
     if (next != null && next > widget.now()) {
-      return '$base · Next attempt at ${_formatClock(next)}';
+      final clock = clockLabel(DateTime.fromMillisecondsSinceEpoch(next));
+      return '$base · Next attempt at $clock';
     }
     return base;
   }

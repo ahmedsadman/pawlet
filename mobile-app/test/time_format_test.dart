@@ -60,6 +60,17 @@ void main() {
     });
   });
 
+  group('clockLabel', () {
+    test('12-hour format with AM/PM', () {
+      expect(clockLabel(DateTime(2026, 10, 10, 9, 5)), '9:05 AM');
+      expect(clockLabel(DateTime(2026, 10, 10, 15, 42)), '3:42 PM');
+      expect(clockLabel(DateTime(2026, 10, 10, 0, 0)), '12:00 AM');
+      expect(clockLabel(DateTime(2026, 10, 10, 12, 0)), '12:00 PM');
+      expect(clockLabel(DateTime(2026, 10, 10, 0, 30)), '12:30 AM');
+      expect(clockLabel(DateTime(2026, 10, 10, 23, 59)), '11:59 PM');
+    });
+  });
+
   group('dateTimeLabel', () {
     final evening = DateTime(2026, 10, 10, 18, 0);
 
