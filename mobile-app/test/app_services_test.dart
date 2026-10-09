@@ -66,4 +66,25 @@ void main() {
       expect(s.attestation, isNull);
     });
   });
+
+  group('model stats are sent only in proxy mode', () {
+    for (final (mode, sends) in const [
+      (LlmMode.proxy, true),
+      (LlmMode.byok, false),
+      (LlmMode.none, false),
+    ]) {
+      test('${mode.name} ${sends ? 'has' : 'has no'} reporter', () async {
+        SharedPreferences.setMockInitialValues({});
+        final s = AppServices.from(
+          database: _MockDb(),
+          prefs: await SharedPreferences.getInstance(),
+          apiKey: 'sk-or-x',
+          mode: mode,
+        );
+        addTearDown(s.disposeStandalone);
+
+        expect(s.modelStatsReporter != null, sends);
+      });
+    }
+  });
 }

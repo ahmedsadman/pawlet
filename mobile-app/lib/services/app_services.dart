@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import '../config/build_config.dart';
 import '../data/banks_repository.dart';
 import '../data/database.dart';
+import '../data/model_stats_repository.dart';
 import '../data/secure_store.dart';
 import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
@@ -24,6 +25,7 @@ import 'llm/llm_provider.dart';
 import 'llm/openrouter_provider.dart';
 import 'llm/pawlet_proxy_provider.dart';
 import 'llm/prompt_bundle.dart';
+import 'model_stats_reporter.dart';
 import 'notification_service.dart';
 import 'processing_service.dart';
 
@@ -44,6 +46,7 @@ class AppServices {
     required this.localClassifier,
     required this.processingService,
     required this.exchangeRate,
+    required this.modelStatsReporter,
   });
 
   final Database database;
@@ -69,6 +72,11 @@ class AppServices {
   final TfliteLocalClassifier localClassifier;
   final ProcessingService processingService;
   final ExchangeRateService exchangeRate;
+
+  /// Sends the on-device model's daily counts to Pawlet's server. Present only
+  /// in [LlmMode.proxy]: BYOK and no-LLM installs count locally but never
+  /// send, which keeps no-LLM's "nothing leaves the phone" promise.
+  final ModelStatsReporter? modelStatsReporter;
 
   factory AppServices.from({
     required Database database,
@@ -110,6 +118,17 @@ class AppServices {
       LlmMode.none => null,
     };
 
+    final modelStats = ModelStatsRepository(database);
+    // Gated on the attestation service, which exists only in proxy mode: the
+    // counts travel on the proxy session and nowhere else.
+    final modelStatsReporter = attestation == null
+        ? null
+        : ModelStatsReporter(
+            apiBase: BuildConfig.apiBase,
+            repository: modelStats,
+            attestation: attestation,
+          );
+
     final matcher = FinanceMatcher(database);
     final localClassifier = TfliteLocalClassifier();
     final exchangeRate = ExchangeRateService(prefs);
@@ -133,6 +152,10 @@ class AppServices {
       reschedule: (delay) => delay == null
           ? BackgroundWorker.cancelCatchUp()
           : BackgroundWorker.scheduleCatchUp(delay),
+      // Counted whenever an LLM is configured (ProcessingService skips it in
+      // no-LLM mode); only the reporter is proxy-only.
+      modelStats: modelStats,
+      onPassEnd: modelStatsReporter?.maybeFlush,
     );
     return AppServices(
       database: database,
@@ -147,6 +170,7 @@ class AppServices {
       localClassifier: localClassifier,
       processingService: processingService,
       exchangeRate: exchangeRate,
+      modelStatsReporter: modelStatsReporter,
     );
   }
 
@@ -215,6 +239,7 @@ class AppServices {
         break;
     }
     attestation?.close();
+    modelStatsReporter?.close();
     promptBundles.close();
   }
 
