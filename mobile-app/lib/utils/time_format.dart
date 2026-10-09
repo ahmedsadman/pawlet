@@ -1,4 +1,9 @@
-// Compact date/time formatting helpers for the finance UI.
+// Date/time label helpers for the UI.
+//
+// Every label is in the phone's local time zone. "Today" and "Yesterday" are
+// calendar days (since local midnight), not rolling 24-hour windows. A
+// timestamp later than `now` (clock drift) is treated as `now`. Each helper
+// takes an injectable `now` for tests.
 
 const List<String> _months = [
   'Jan',
@@ -38,4 +43,50 @@ String relativeTime(DateTime time, {DateTime? now}) {
   if (delta.inDays < 30) return '${delta.inDays}d ago';
   if (delta.inDays < 365) return '${(delta.inDays / 30).floor()}mo ago';
   return '${(delta.inDays / 365).floor()}y ago';
+}
+
+/// Resolves [time] and [now] to local wall-clock values, pulling a [time]
+/// later than [now] back to [now].
+(DateTime, DateTime) _resolve(DateTime time, DateTime? now) {
+  final n = (now ?? DateTime.now()).toLocal();
+  final t = time.toLocal();
+  return (t.isAfter(n) ? n : t, n);
+}
+
+/// Whole calendar days from [time]'s date to [now]'s date (0 = same day).
+/// Compared as UTC dates so a daylight-saving shift cannot skew the count.
+int _calendarDaysBefore(DateTime time, DateTime now) => DateTime.utc(
+  now.year,
+  now.month,
+  now.day,
+).difference(DateTime.utc(time.year, time.month, time.day)).inDays;
+
+/// 12-hour clock: `9:05 AM`, `12:00 AM` (midnight), `12:00 PM` (noon).
+String _clock(DateTime t) {
+  final hour12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+  final period = t.hour < 12 ? 'AM' : 'PM';
+  return '$hour12:${t.minute.toString().padLeft(2, '0')} $period';
+}
+
+/// Day part shared by [dateLabel] and [dateTimeLabel]. Both arguments must
+/// already be resolved by [_resolve].
+String _day(DateTime t, DateTime now) => switch (_calendarDaysBefore(t, now)) {
+  0 => 'Today',
+  1 => 'Yesterday',
+  _ when t.year == now.year => '${t.day} ${_months[t.month - 1]}',
+  _ => '${t.day} ${_months[t.month - 1]} ${t.year}',
+};
+
+/// `Today`, `Yesterday`, `6 Oct`, or `14 Dec 2025` (year only when it is not
+/// the current one).
+String dateLabel(DateTime time, {DateTime? now}) {
+  final (t, n) = _resolve(time, now);
+  return _day(t, n);
+}
+
+/// [dateLabel] plus the time: `Today · 3:42 PM`, `Yesterday · 9:05 AM`,
+/// `6 Oct · 3:42 PM`, `14 Dec 2025 · 3:42 PM`.
+String dateTimeLabel(DateTime time, {DateTime? now}) {
+  final (t, n) = _resolve(time, now);
+  return '${_day(t, n)} · ${_clock(t)}';
 }
