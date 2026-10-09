@@ -59,6 +59,7 @@ void main() {
   late List<Object> script; // http.Response or an Exception to throw
   Future<void> Function()? onRequest;
   late int now;
+  late Future<bool> Function() isProxy;
   var seq = 0;
 
   setUp(() async {
@@ -70,6 +71,7 @@ void main() {
     onRequest = null;
     now = start;
     seq = 0;
+    isProxy = () async => true;
   });
 
   tearDown(() async {
@@ -80,6 +82,7 @@ void main() {
     apiBase: 'https://api.test',
     repository: repo,
     attestation: attestation,
+    isProxy: () => isProxy(),
     clock: () => now,
     client: MockClient((req) async {
       requests.add(req);
@@ -350,6 +353,45 @@ void main() {
     await Future.wait([a, b]);
 
     expect(requests, hasLength(1));
+  });
+
+  test('flushes normally while the install is still in proxy mode', () async {
+    var checks = 0;
+    isProxy = () async {
+      checks++;
+      return true;
+    };
+    await countVerdict(LocalVerdict.accepted);
+    script = [_status(204)];
+
+    await reporter().maybeFlush();
+
+    expect(checks, 1);
+    expect(requests, hasLength(1));
+    expect(await pending(), isEmpty);
+  });
+
+  test('sends nothing once the install has left proxy mode', () async {
+    isProxy = () async => false;
+    await countVerdict(LocalVerdict.accepted);
+
+    await reporter().maybeFlush();
+
+    expect(attestation.tokens, 0);
+    expect(requests, isEmpty);
+    expect(await pending(), hasLength(1));
+    expect(await repo.flushedAt(), isNull);
+  });
+
+  test('a failing mode check counts as not proxy', () async {
+    isProxy = () async => throw StateError('prefs unavailable');
+    await countVerdict(LocalVerdict.accepted);
+
+    await expectLater(reporter().maybeFlush(), completes);
+
+    expect(attestation.tokens, 0);
+    expect(requests, isEmpty);
+    expect(await repo.flushedAt(), isNull);
   });
 
   test('never throws, even with the database gone', () async {

@@ -26,10 +26,12 @@ class ModelStatsReporter {
     required this.apiBase,
     required ModelStatsRepository repository,
     required AttestationService attestation,
+    required Future<bool> Function() isProxy,
     http.Client? client,
     int Function()? clock,
   }) : _repository = repository,
        _attestation = attestation,
+       _isProxy = isProxy,
        _client = client ?? http.Client(),
        _ownsClient = client == null,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
@@ -37,6 +39,11 @@ class ModelStatsReporter {
   final String apiBase;
   final ModelStatsRepository _repository;
   final AttestationService _attestation;
+
+  /// Whether the install is in proxy mode right now. This object outlives a
+  /// mode change made in another isolate (attestation flagging the install
+  /// ineligible), so the mode is re-read before anything is sent.
+  final Future<bool> Function() _isProxy;
   final http.Client _client;
   final bool _ownsClient;
   final int Function() _clock;
@@ -87,6 +94,9 @@ class ModelStatsReporter {
       'days': [for (final r in rows) r.toJson()],
     });
 
+    // Only proxy installs send: no token, no request, no throttle stamp.
+    if (!await _stillProxy()) return;
+
     var token = await _token();
     if (token == null) return;
     var resp = await _post(body, token);
@@ -109,6 +119,15 @@ class ModelStatsReporter {
     }
     // 401 after a refresh, 403 (the session path handles bans), 404, 408,
     // 429, 5xx: nothing is stamped and the next trigger tries again.
+  }
+
+  /// [_isProxy], with a failed check counted as "not proxy".
+  Future<bool> _stillProxy() async {
+    try {
+      return await _isProxy();
+    } catch (_) {
+      return false;
+    }
   }
 
   /// The proxy session token, or null when none can be had right now (a
