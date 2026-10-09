@@ -196,7 +196,7 @@ void main() {
       expect(page2.single.sender, 'BRAC');
     });
 
-    test('shows failures alongside financial rows, hides ignored', () async {
+    test('shows failures and non-gated ignored rows; hides gated', () async {
       final db = await openTestDb();
       final repo = SmsRepository(db);
       Future<void> add(
@@ -204,6 +204,7 @@ void main() {
         SmsStatus status,
         int ts, {
         String? category,
+        IgnoreReason? ignoreReason,
       }) async {
         final id = (await repo.insertIfNew(_sms(sender, ts: ts)))!;
         await repo.updateStatus(
@@ -211,17 +212,102 @@ void main() {
           status,
           updatedAt: ts,
           category: category,
+          ignoreReason: ignoreReason,
           processedAt: ts,
         );
       }
 
       await add('BRAC', SmsStatus.success, 10, category: 'transaction');
       await add('BADKEY', SmsStatus.failure, 20);
-      await add('Daraz', SmsStatus.ignored, 30); // never shown
+      // Sender is not a bank/card: never shown.
+      await add(
+        'Daraz',
+        SmsStatus.ignored,
+        30,
+        ignoreReason: IgnoreReason.gated,
+      );
+      // Legacy ignored row with no reason: shown.
+      await add('LEGACY', SmsStatus.ignored, 40);
 
       final rows = await repo.history();
-      expect(rows.map((r) => r.sender), ['BADKEY', 'BRAC']);
-      expect(await repo.historyCount(), 2);
+      expect(rows.map((r) => r.sender), ['LEGACY', 'BADKEY', 'BRAC']);
+      expect(await repo.historyCount(), 3);
+      await db.close();
+    });
+
+    test('shows every non-gated ignore reason', () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      const shown = [
+        IgnoreReason.localNone,
+        IgnoreReason.llmNone,
+        IgnoreReason.noRecord,
+        IgnoreReason.localLowConfidence,
+        IgnoreReason.localUnavailable,
+      ];
+      var ts = 1;
+      for (final reason in [...shown, IgnoreReason.gated]) {
+        final id = (await repo.insertIfNew(_sms(reason.value, ts: ts)))!;
+        await repo.updateStatus(
+          id,
+          SmsStatus.ignored,
+          updatedAt: ts,
+          ignoreReason: reason,
+          processedAt: ts,
+        );
+        ts++;
+      }
+
+      final rows = await repo.history(limit: 50);
+      expect(rows.map((r) => r.sender).toSet(), {
+        'local_none',
+        'llm_none',
+        'no_record',
+        'local_low_confidence',
+        'local_unavailable',
+      });
+      expect(rows.map((r) => r.status).toSet(), {SmsStatus.ignored});
+      expect(await repo.historyCount(), shown.length);
+      await db.close();
+    });
+
+    test('search covers ignored rows like any other history row', () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      Future<void> addIgnored(
+        String sender,
+        String content,
+        int ts,
+        IgnoreReason reason,
+      ) async {
+        final id = (await repo.insertIfNew(
+          _sms(sender, content: content, ts: ts),
+        ))!;
+        await repo.updateStatus(
+          id,
+          SmsStatus.ignored,
+          updatedAt: ts,
+          ignoreReason: reason,
+          processedAt: ts,
+        );
+      }
+
+      await addIgnored('EBL', 'flash sale on cards', 10, IgnoreReason.llmNone);
+      await addIgnored('PROMO', 'flash sale today', 20, IgnoreReason.gated);
+      final txId = (await repo.insertIfNew(
+        _sms('BRAC', content: 'debit 50', ts: 30),
+      ))!;
+      await repo.updateStatus(
+        txId,
+        SmsStatus.success,
+        updatedAt: 30,
+        category: 'transaction',
+        processedAt: 30,
+      );
+
+      final rows = await repo.history(query: 'flash');
+      expect(rows.map((r) => r.sender), ['EBL']);
+      expect(await repo.historyCount(query: 'flash'), 1);
       await db.close();
     });
 
