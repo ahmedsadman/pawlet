@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/ahmedsadman/pawlet/server/internal/config"
 	"github.com/ahmedsadman/pawlet/server/internal/httpapi"
 	"github.com/ahmedsadman/pawlet/server/internal/llm"
+	"github.com/ahmedsadman/pawlet/server/internal/metrics"
 	"github.com/ahmedsadman/pawlet/server/internal/quota"
 	"github.com/ahmedsadman/pawlet/server/internal/store"
 	"github.com/ahmedsadman/pawlet/server/internal/token"
@@ -78,8 +82,38 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	// 8. Start the limiter's background flusher.
-	go limiter.RunFlusher(ctx, 10*time.Second, logger)
+	// 8. Start both background flushers via a WaitGroup so the shutdown sequence
+	// can wait for them before running the final flushes. Without the wait, a
+	// flusher could still be writing when main's final flush runs (or worse,
+	// when defer db.Close() fires).
+	var flushers sync.WaitGroup
+	flushers.Add(1)
+	go func() {
+		defer flushers.Done()
+		limiter.RunFlusher(ctx, 10*time.Second, logger)
+	}()
+
+	// 8a. Publish the effective limits so the admin dashboard can show them
+	// without its own copy of this configuration.
+	if err := db.PutServerInfo(ctx, map[string]string{
+		store.InfoDailyPerInstall: strconv.Itoa(cfg.DailyPerInstall),
+		store.InfoBurstPerMin:     strconv.Itoa(cfg.BurstPerMin),
+		store.InfoGlobalDailyCap:  strconv.Itoa(cfg.GlobalDailyCap),
+		store.InfoModels:          strings.Join(cfg.Models, ","),
+		store.InfoStartedAt:       strconv.FormatInt(time.Now().Unix(), 10),
+		store.InfoImageTag:        cfg.ImageTag,
+	}); err != nil {
+		return err
+	}
+
+	// 8b. Start the metrics recorder. Like the quota limiter it flushes on an
+	// interval, so handlers only ever touch memory.
+	recorder := metrics.New(&counterSink{store: db}, time.Now)
+	flushers.Add(1)
+	go func() {
+		defer flushers.Done()
+		recorder.RunFlusher(ctx, 10*time.Second, logger)
+	}()
 
 	// 9. Build the challenge store and its per-IP rate limiter. Start a janitor
 	// that cleans both.
@@ -129,6 +163,7 @@ func run(logger *slog.Logger) error {
 			Logger:           logger,
 			ChallengeLimiter: challengeLimiter,
 			TrustedProxy:     trustedProxy,
+			Metrics:          recorder,
 		},
 		Classify: &httpapi.ClassifyHandler{
 			Classifier: llmClient,
@@ -137,6 +172,7 @@ func run(logger *slog.Logger) error {
 			Limiter:    limiter,
 			Now:        time.Now,
 			Logger:     logger,
+			Metrics:    recorder,
 		},
 		Bundle: httpapi.NewBundleHandler(cfg.Models),
 		Health: db,
@@ -188,11 +224,22 @@ func run(logger *slog.Logger) error {
 		logger.Error("shutdown failed", "error", err)
 	}
 
-	// 18. Final flush so the last counters are persisted. Use WithoutCancel again
-	// so the flush context is valid even though ctx is already cancelled.
-	if err := limiter.Flush(context.WithoutCancel(ctx)); err != nil {
-		logger.Error("final flush failed", "error", err)
-		return err
+	// 18. Wait for both flushers to exit so they are not writing when the final
+	// flushes run (or worse, when defer db.Close() fires). Then do the final
+	// flushes so the last counters are persisted. Use WithoutCancel again so
+	// the flush context is valid even though ctx is already cancelled. Metrics
+	// are flushed even if quota fails; losing them is not worth a non-zero
+	// exit, losing quota is.
+	flushers.Wait()
+	quotaErr := limiter.Flush(context.WithoutCancel(ctx))
+	if quotaErr != nil {
+		logger.Error("final flush failed", "error", quotaErr)
+	}
+	if err := recorder.Flush(context.WithoutCancel(ctx)); err != nil {
+		logger.Error("final metrics flush failed", "error", err)
+	}
+	if quotaErr != nil {
+		return quotaErr
 	}
 
 	logger.Info("shutdown complete")
@@ -221,4 +268,17 @@ func (s *storeSink) PersistUsage(ctx context.Context, deltas []quota.Delta) erro
 
 func (s *storeSink) LoadUsage(ctx context.Context, day string) (map[string]int64, error) {
 	return s.store.UsageForDay(ctx, day)
+}
+
+// counterSink adapts store.Store to metrics.Sink.
+type counterSink struct {
+	store *store.Store
+}
+
+func (s *counterSink) PersistCounters(ctx context.Context, deltas []metrics.Delta) error {
+	storeDeltas := make([]store.CounterDelta, len(deltas))
+	for i, d := range deltas {
+		storeDeltas[i] = store.CounterDelta{Day: d.Day, Metric: d.Metric, Key: d.Key, Count: d.Count}
+	}
+	return s.store.AddCounters(ctx, storeDeltas)
 }

@@ -187,3 +187,23 @@ func TestSplitListTrimsAndFiltersBlanks(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadReadsImageTag(t *testing.T) {
+	env := validEnv()
+	cfg, err := Load(lookup(env))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.ImageTag != "" {
+		t.Errorf("ImageTag = %q, want empty by default", cfg.ImageTag)
+	}
+
+	env["IMAGE_TAG"] = "bcd465a"
+	cfg, err = Load(lookup(env))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.ImageTag != "bcd465a" {
+		t.Errorf("ImageTag = %q, want bcd465a", cfg.ImageTag)
+	}
+}
