@@ -83,8 +83,10 @@ func devSeed(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(out, "seeded %s: %d installs, %d session days, %d usage rows, %d counters (%s..%s)\n",
-		*path, sum.Installs, sum.InstallDays, sum.Usage, sum.Counters, sum.From, sum.To)
+	_, err = fmt.Fprintf(out, "seeded %s: %d installs, %d session days, %d usage rows, %d counters, "+
+		"%d model stats rows, %d model stats rollup rows (%s..%s)\n",
+		*path, sum.Installs, sum.InstallDays, sum.Usage, sum.Counters,
+		sum.ModelStats, sum.ModelStatsRollup, sum.From, sum.To)
 	return err
 }
 

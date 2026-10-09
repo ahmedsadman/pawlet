@@ -1,6 +1,7 @@
 package devseed
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"path/filepath"
@@ -18,10 +19,11 @@ func TestSeedFillsEmptyDatabaseOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seed() error = %v", err)
 	}
-	if sum.Installs < 50 || sum.InstallDays == 0 || sum.Usage == 0 || sum.Counters == 0 {
+	if sum.Installs < 50 || sum.InstallDays == 0 || sum.Usage == 0 || sum.Counters == 0 ||
+		sum.ModelStats == 0 || sum.ModelStatsRollup == 0 {
 		t.Fatalf("summary = %+v", sum)
 	}
-	if sum.From != "2026-07-12" || sum.To != "2026-10-09" {
+	if sum.From != "2026-06-12" || sum.To != "2026-10-09" {
 		t.Fatalf("span = %s..%s", sum.From, sum.To)
 	}
 
@@ -79,5 +81,67 @@ func TestSeedRefusesNonEmptyWithoutMigrating(t *testing.T) {
 	// Verify schema version is still 1 (not migrated).
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 1 {
 		t.Fatalf("after Seed, user_version = %d, %v; want 1 (unchanged)", version, err)
+	}
+}
+
+func TestSeedModelStats(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dev.db")
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	if _, err := Seed(path, now, 42); err != nil {
+		t.Fatalf("Seed() error = %v", err)
+	}
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+	query := func(q string, dst ...any) {
+		t.Helper()
+		if err := db.QueryRowContext(ctx, q).Scan(dst...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+
+	// Rows older than the 90-day window were folded, none left behind.
+	var stale, rollupDays int
+	var newestRollup string
+	query(`SELECT COUNT(*) FROM model_stats_daily WHERE day < '2026-07-11'`, &stale)
+	query(`SELECT COUNT(DISTINCT day), MAX(day) FROM model_stats_rollup`, &rollupDays, &newestRollup)
+	if stale != 0 {
+		t.Errorf("%d model_stats_daily rows older than the window, want 0", stale)
+	}
+	if rollupDays < 20 || newestRollup != "2026-07-10" {
+		t.Errorf("rollup covers %d days ending %s, want 20+ ending 2026-07-10", rollupDays, newestRollup)
+	}
+
+	// Every folded message is archived against its install.
+	var archived, folded int64
+	query(`SELECT SUM(messages_archived) FROM installs`, &archived)
+	query(`SELECT SUM(accepted + declined + unavailable) FROM model_stats_rollup`, &folded)
+	if archived == 0 || archived != folded {
+		t.Errorf("messages_archived total = %d, rollup total = %d; want equal and non-zero", archived, folded)
+	}
+
+	// The on-device rate rises across the span.
+	var early, late float64
+	query(`SELECT 1.0 * SUM(accepted) / SUM(accepted + declined) FROM model_stats_rollup`, &early)
+	query(`SELECT 1.0 * SUM(accepted) / SUM(accepted + declined) FROM model_stats_daily
+	       WHERE day >= '2026-09-10'`, &late)
+	if early < 0.65 || early > 0.75 || late < 0.78 || late > 0.88 || late <= early {
+		t.Errorf("rate early = %.3f, late = %.3f; want ~0.70 rising to ~0.83", early, late)
+	}
+
+	// A small unavailable trickle, and one version switch.
+	var unavailable, messages int64
+	var versions int
+	query(`SELECT SUM(unavailable), SUM(accepted + declined + unavailable) FROM model_stats_daily`,
+		&unavailable, &messages)
+	query(`SELECT COUNT(DISTINCT app_version_code) FROM model_stats_daily`, &versions)
+	if unavailable == 0 || float64(unavailable) > 0.02*float64(messages) {
+		t.Errorf("unavailable = %d of %d messages, want a small non-zero share", unavailable, messages)
+	}
+	if versions != 2 {
+		t.Errorf("model stats carry %d app versions, want 2", versions)
 	}
 }
