@@ -4,11 +4,11 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import InstallsPage from "./InstallsPage";
 
-function renderInstallsPage() {
+function renderInstallsPage(initialUrl = "/installs") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/installs"]}>
+      <MemoryRouter initialEntries={[initialUrl]}>
         <InstallsPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -54,5 +54,22 @@ describe("InstallsPage", () => {
 
     const link = await screen.findByRole("link", { name: /012345/i });
     expect(link).toHaveAttribute("href", `/installs/${mockHash}`);
+  });
+
+  it("falls back to lastSeen for an unknown sort parameter", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ rows: [], total: 0, page: 1, pageSize: 50 }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderInstallsPage("/installs?sort=bogus");
+
+    await screen.findByText(/No installs match/i);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/installs\?.*sort=lastSeen/),
+      expect.any(Object),
+    );
   });
 });

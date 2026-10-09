@@ -112,7 +112,9 @@ export default function InstallsPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const status = (STATUSES.find((s) => s.key === params.get("status"))?.key ?? "all") as Status;
-  const sort = params.get("sort") ?? "lastSeen";
+  const validSorts = COLUMNS.filter((c) => c.sort).map((c) => c.sort!);
+  const rawSort = params.get("sort");
+  const sort = rawSort && validSorts.includes(rawSort) ? rawSort : "lastSeen";
   const order = params.get("order") === "asc" ? "asc" : "desc";
   const q = params.get("q") ?? "";
   const page = Math.max(1, Number(params.get("page")) || 1);
