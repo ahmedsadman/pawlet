@@ -103,6 +103,8 @@ void main() {
     // Latest (March) shown; older ones hidden.
     expect(find.text('300.00 BDT'), findsOneWidget);
     expect(find.text('200.00 BDT'), findsNothing);
+    // Bill period shows the full year.
+    expect(find.text('Mar 2025'), findsOneWidget);
 
     await tester.tap(find.text('Visa'));
     await tester.pumpAndSettle();

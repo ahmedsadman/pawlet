@@ -63,6 +63,9 @@ void main() {
     expect(find.byType(LineChart), findsOneWidget);
     expect(find.text('Income'), findsOneWidget);
     expect(find.text('Expense'), findsOneWidget);
+    // Compact axis labels with an apostrophe year.
+    expect(find.text("Jan '25"), findsOneWidget);
+    expect(find.text("Feb '25"), findsOneWidget);
   });
 
   testWidgets('shows an empty message when there is no data', (tester) async {

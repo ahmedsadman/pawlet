@@ -22,10 +22,14 @@ const List<String> _months = [
 
 String monthShort(DateTime date) => _months[date.month - 1];
 
-/// e.g. `Jan 25`.
-String monthYearLabel(DateTime date) {
+/// e.g. `Oct 2026` (bill statement period).
+String monthYearLabel(DateTime date) =>
+    '${_months[date.month - 1]} ${date.year}';
+
+/// e.g. `Oct '26` (compact chart axis label).
+String monthYearShort(DateTime date) {
   final yy = (date.year % 100).toString().padLeft(2, '0');
-  return '${_months[date.month - 1]} $yy';
+  return "${_months[date.month - 1]} '$yy";
 }
 
 /// e.g. `Jan 15, 2025`.
