@@ -116,8 +116,13 @@ func TestQueryInstalls(t *testing.T) {
 	}
 
 	badQueries := []InstallQuery{
-		{Sort: "nope"}, {Order: "up"}, {Status: "gone"},
-		{Sort: "callsToday"}, {Sort: "calls7d"}, {Sort: "callsTotal"}, // replaced by message sorts
+		{Sort: "nope"},
+		{Order: "up"},
+		{Status: "gone"},
+		// Replaced by the message sorts.
+		{Sort: "callsToday"},
+		{Sort: "calls7d"},
+		{Sort: "callsTotal"},
 	}
 	for _, bad := range badQueries {
 		if _, err := QueryInstalls(rows, bad); !errors.Is(err, ErrBadRequest) {
