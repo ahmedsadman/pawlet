@@ -15,9 +15,10 @@ import 'auth/attestation_service.dart';
 /// (`POST /v1/model-stats`), so the admin dashboard can show how many messages
 /// the model settles without the LLM.
 ///
-/// Built only in proxy mode (see AppServices): BYOK and no-LLM installs count
-/// locally but never send. Triggered at the end of every processing pass and
-/// on app resume; [maybeFlush] decides whether anything goes out.
+/// Built only in proxy mode (see AppServices), the only mode that counts:
+/// BYOK and no-LLM installs neither count nor send. Triggered at the end of
+/// every processing pass and on app resume; [maybeFlush] decides whether
+/// anything goes out.
 ///
 /// Never blocks or fails message processing: every error is swallowed and the
 /// rows simply stay unreported until the next trigger.

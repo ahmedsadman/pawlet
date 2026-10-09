@@ -74,8 +74,9 @@ class AppServices {
   final ExchangeRateService exchangeRate;
 
   /// Sends the on-device model's daily counts to Pawlet's server. Present only
-  /// in [LlmMode.proxy]: BYOK and no-LLM installs count locally but never
-  /// send, which keeps no-LLM's "nothing leaves the phone" promise.
+  /// in [LlmMode.proxy], the only mode that counts: BYOK and no-LLM installs
+  /// neither count nor send, which keeps BYOK usage off Pawlet's server and
+  /// no-LLM's "nothing leaves the phone" promise.
   final ModelStatsReporter? modelStatsReporter;
 
   factory AppServices.from({
@@ -119,6 +120,23 @@ class AppServices {
     };
 
     final modelStats = ModelStatsRepository(database);
+    // Whether the install is still in proxy mode. Attestation can flag it
+    // ineligible (possibly from another isolate) while this bundle lives on,
+    // so the mode is re-resolved from fresh prefs on every call. The key only
+    // picks between byok and none, so it cannot make this proxy. Offered only
+    // to a proxy bundle: a byok bundle keeps calling OpenRouter even if fresh
+    // prefs would now resolve proxy, and that usage must never be counted.
+    Future<bool> stillProxy() async {
+      await prefs.reload();
+      return resolveLlmMode(
+            fromPlay: settings.installedFromPlay,
+            proxyConfigured: BuildConfig.proxyConfigured,
+            hasKey: false,
+            attestationIneligible: settings.attestationIneligible,
+          ) ==
+          LlmMode.proxy;
+    }
+
     // Gated on the attestation service, which exists only in proxy mode: the
     // counts travel on the proxy session and nowhere else.
     final modelStatsReporter = attestation == null
@@ -127,20 +145,7 @@ class AppServices {
             apiBase: BuildConfig.apiBase,
             repository: modelStats,
             attestation: attestation,
-            // Attestation can flag the install ineligible (possibly from
-            // another isolate) while this bundle lives on, so the mode is
-            // re-resolved from fresh prefs before each send. The key only
-            // picks between byok and none, so it cannot make this proxy.
-            isProxy: () async {
-              await prefs.reload();
-              return resolveLlmMode(
-                    fromPlay: settings.installedFromPlay,
-                    proxyConfigured: BuildConfig.proxyConfigured,
-                    hasKey: false,
-                    attestationIneligible: settings.attestationIneligible,
-                  ) ==
-                  LlmMode.proxy;
-            },
+            isProxy: stillProxy,
           );
 
     final matcher = FinanceMatcher(database);
@@ -166,9 +171,10 @@ class AppServices {
       reschedule: (delay) => delay == null
           ? BackgroundWorker.cancelCatchUp()
           : BackgroundWorker.scheduleCatchUp(delay),
-      // Counted whenever an LLM is configured (ProcessingService skips it in
-      // no-LLM mode); only the reporter is proxy-only.
+      // Counted only in proxy mode, re-checked per verdict with the same
+      // resolution the reporter uses before each send.
       modelStats: modelStats,
+      isProxy: attestation == null ? null : stillProxy,
       onPassEnd: modelStatsReporter?.maybeFlush,
     );
     return AppServices(
