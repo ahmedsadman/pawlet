@@ -7,6 +7,8 @@ on:
       - "server/**"
       - ".github/workflows/server-deploy.yml"
       - ".github/workflows/server-checks.yml"
+      - "dashboard/**"
+      - ".github/workflows/dashboard-checks.yml"
   workflow_dispatch:
 
 # One deploy at a time. A second merge queues instead of cancelling: cancelling
@@ -25,8 +27,11 @@ jobs:
   checks:
     uses: ./.github/workflows/server-checks.yml
 
+  dashboard:
+    uses: ./.github/workflows/dashboard-checks.yml
+
   build:
-    needs: checks
+    needs: [checks, dashboard]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -59,6 +64,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The admin image builds from the repo root: it needs dashboard/ too.
+      - name: Build and push admin
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: server/admin.Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/ahmedsadman/pawlet-admin:${{ github.sha }}
+            ghcr.io/ahmedsadman/pawlet-admin:latest
+          cache-from: type=gha,scope=admin
+          cache-to: type=gha,mode=max,scope=admin
+
   deploy:
     needs: build
     if: github.ref == 'refs/heads/main'
@@ -83,14 +102,13 @@ jobs:
 
       - name: Health check
         run: |
-          for attempt in 1 2 3 4 5; do
-            sleep 5
-            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 https://pawlet.muhib.me/healthz || true)
-            echo "Attempt $attempt/5: $status"
-            if [ "$status" = "200" ]; then
-              echo "Health check passed"
-              exit 0
-            fi
+          for url in https://pawlet.muhib.me/healthz https://admin.pawlet.muhib.me/healthz; do
+            ok=""
+            for attempt in 1 2 3 4 5; do
+              sleep 5
+              status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" || true)
+              echo "$url attempt $attempt/5: $status"
+              if [ "$status" = "200" ]; then ok=1; break; fi
+            done
+            if [ -z "$ok" ]; then echo "Health check failed for $url"; exit 1; fi
           done
-          echo "Health check failed after 5 attempts"
-          exit 1
