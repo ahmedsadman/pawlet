@@ -11,3 +11,5 @@ the code disagree, trust the code.
 - [Stored metrics](metrics.md) — what pawletd records for the admin dashboard (install
   metadata, session days, daily outcome and latency counters, server info) and what each value
   means.
+- [Admin dashboard service](admin.md) — the owner-only `pawlet-admin` service: running it
+  locally, configuration, login security and the API the dashboard uses.
