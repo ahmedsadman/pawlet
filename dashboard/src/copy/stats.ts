@@ -16,6 +16,13 @@ const SESSION_UNDERCOUNT =
 const SMS_DRIVEN =
   "Classify activity follows bank SMS volume, not engagement: background classification counts, messages handled on the phone never do.";
 const COUNTERS_SINCE = "Recorded since the capture deploy; earlier days are empty.";
+/**
+ * The app release that first reports message counts. The release owner
+ * replaces this with "app version <versionCode>" (for example
+ * "app version 22") when that release is cut.
+ */
+export const MESSAGE_COUNTS_RELEASE = "the first app release that reports message counts";
+const MESSAGES_REPORTED = `Only Play installs on ${MESSAGE_COUNTS_RELEASE} or later report message counts; earlier installs show calls only.`;
 
 export const statCopy = {
   attestedInstalls: {
@@ -319,6 +326,63 @@ export const statCopy = {
     meaning: "Android API levels of recently active installs.",
     computation: "From the verdict's device attributes.",
     caveat: 'unknown unless "device attributes" is enabled in Play Console.',
+  },
+  "chart.localModel": {
+    title: "Local model",
+    meaning:
+      "Share of messages the on-device model handled without the LLM, and how that changes over time.",
+    computation:
+      "On-device rate = accepted ÷ (accepted + declined). The change is in percentage points against the previous period of the same length. The line is a 7-day weighted average (each day and the 6 before it, pooled); dots are single days; a dashed line marks a day a new app version handled over half of at least 20 messages.",
+    caveat: `Model errors (no prediction) are counted but left out of the rate. ${MESSAGES_REPORTED}`,
+  },
+  "col.messagesToday": {
+    title: "Today",
+    meaning: "Messages the install classified today, with its LLM calls underneath.",
+    computation:
+      "Accepted + declined + model errors from today's local-model counts (UTC). Every message passes the on-device model first, so this is the total.",
+    caveat: MESSAGES_REPORTED,
+  },
+  "col.messages7d": {
+    title: "7 days",
+    meaning: "Messages the install classified in the last 7 days, with its LLM calls underneath.",
+    computation: "Sum of its daily message counts over the 7 days ending today.",
+    caveat: MESSAGES_REPORTED,
+  },
+  "col.messagesTotal": {
+    title: "Total",
+    meaning: "Every message the install classified, with its LLM calls underneath.",
+    computation:
+      "All its daily message counts, including the totals archived once days are older than 90 days.",
+    caveat: MESSAGES_REPORTED,
+  },
+  "chart.installMessages": {
+    title: "Messages and calls per day",
+    meaning: "Messages this install classified each day, next to the LLM calls it made.",
+    computation:
+      "Messages: its daily local-model counts, last 90 days only. LLM calls: its daily call counter.",
+    caveat: MESSAGES_REPORTED,
+  },
+  "chart.messagesDistribution": {
+    title: "Messages per active day",
+    meaning: "How many bank messages an install handles on a day it gets any.",
+    computation:
+      "Every install-day with at least one message, summed across app versions, bucketed by its message count.",
+    caveat: `Covers at most the last 90 days: older per-install counts are archived without install identity. ${MESSAGES_REPORTED}`,
+  },
+  "chart.messagesPerDay": {
+    title: "Messages per day",
+    meaning: "Messages classified each day, next to the LLM calls they needed.",
+    computation:
+      "Messages: accepted + declined + model errors across installs, archived days included. LLM calls: sum of per-install daily call counters.",
+    caveat: MESSAGES_REPORTED,
+  },
+  messagesPerActiveInstallDay: {
+    title: "Messages per active install-day",
+    meaning:
+      "How many messages an install classifies on a typical day it gets any, with LLM calls per active install-day in brackets.",
+    computation:
+      "Messages in the range ÷ install-days with at least one message (archived days bring their folded install-days). Bracket: calls ÷ install-days with at least one call.",
+    caveat: MESSAGES_REPORTED,
   },
 } satisfies Record<string, StatCopy>;
 
