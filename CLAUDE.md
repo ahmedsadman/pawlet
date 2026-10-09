@@ -13,9 +13,10 @@
 
 ## Docs
 
-Found under two directories, one per component:
+Found under three directories, one per component:
 - `mobile-app/docs` — the Flutter app
 - `server/docs` — the Go server
+- `dashboard/docs` — the admin dashboard UI
 
 These are intended for humans, not LLM. **Do not read those to gather context**, and do not cite them as evidence
 for how the code behaves. They may lag behind the code; the code is authoritative.

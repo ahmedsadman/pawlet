@@ -33,8 +33,8 @@ schema older than the binary needs. Start pawletd first after a schema change.
    ```
 
    Single-quote the hash: it contains `$`.
-4. The API answers on `http://localhost:8092/api/...`. Until the dashboard UI is built into the
-   binary, other paths answer 503 "dashboard not built".
+4. The API answers on `http://localhost:8092/api/...`. The UI is served once built — `npm run
+   build:embed` in `dashboard/` locally, automatically in the image.
 
 Browsers accept the session cookie's `Secure` flag on `http://localhost`, so login works
 locally without TLS.
@@ -51,6 +51,38 @@ The admin deliberately receives none of pawletd's secrets.
 | `ADMIN_ADDR` | no | listen address |
 | `DATABASE_PATH` | no | pawletd's SQLite file |
 | `TRUSTED_PROXY_CIDR` | no | proxy network whose `X-Forwarded-For` is trusted |
+
+## Deploying
+
+Image: `ghcr.io/ahmedsadman/pawlet-admin`, built by `.github/workflows/server-deploy.yml` from
+`server/admin.Dockerfile` (build context = repo root). **After the first CI run**, make the package
+public in GitHub, like `pawlet-server` — until then (or until the host logs in to ghcr), the admin
+pull fails with a warning.
+
+Compose service `pawlet-admin` in `server/docker-compose.yml`: loopback port `127.0.0.1:8092`, same
+`./data` mount read-write, `env_file: admin.env` with `required: false` so pawletd still deploys
+without it, `depends_on: pawlet`, `restart: unless-stopped`.
+
+**Before the first deploy**, on the host:
+
+1. Create `server/admin.env` from `admin.env.example`; get the hash from
+   `docker run --rm ghcr.io/ahmedsadman/pawlet-admin hash-password` or `go run`.
+2. Add a DNS record for `admin.pawlet.muhib.me`.
+3. Add a Caddy site block reverse-proxying to `localhost:8092`:
+
+   ```
+   admin.pawlet.muhib.me {
+       reverse_proxy localhost:8092
+   }
+   ```
+
+4. Reload Caddy.
+
+Deploy order is automatic: pawletd migrates the schema; the admin restarts until the schema is new
+enough. The admin sets HSTS itself — don't add it in Caddy.
+
+Rotating `ADMIN_SESSION_SECRET` signs everyone out; changing the password means a new hash and a
+container restart.
 
 ## Security
 
