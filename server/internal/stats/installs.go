@@ -198,7 +198,13 @@ func QueryInstalls(rows []InstallRow, q InstallQuery) (InstallPage, error) {
 	if page < 1 {
 		page = 1
 	}
-	start := min((page-1)*size, len(filtered))
+	lastPage := (len(filtered) + size - 1) / size
+	var start int
+	if page-1 >= lastPage {
+		start = len(filtered)
+	} else {
+		start = (page - 1) * size
+	}
 	end := min(start+size, len(filtered))
 	return InstallPage{Rows: filtered[start:end], Total: len(filtered), Page: page, PageSize: size}, nil
 }

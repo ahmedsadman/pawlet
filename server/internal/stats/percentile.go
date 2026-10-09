@@ -10,9 +10,10 @@ import "strconv"
 // are no calls.
 func Percentile(buckets map[string]int64, boundsMs []int64, q float64) (float64, bool) {
 	var total int64
-	for _, n := range buckets {
-		total += n
+	for _, b := range boundsMs {
+		total += buckets[strconv.FormatInt(b, 10)]
 	}
+	total += buckets["inf"]
 	if total == 0 {
 		return 0, false
 	}

@@ -42,3 +42,11 @@ func TestPercentileEmpty(t *testing.T) {
 		t.Fatal("Percentile(empty) ok = true")
 	}
 }
+
+func TestPercentileIgnoresStrayKeys(t *testing.T) {
+	// Stray key "750" should not count toward total; p50 should be in the 250 bucket
+	p, ok := Percentile(map[string]int64{"750": 10, "250": 10}, bounds, 0.5)
+	if !ok || p < 0 || p >= 250 {
+		t.Fatalf("p = %v, %v; want within the 250 bucket [0, 250)", p, ok)
+	}
+}
