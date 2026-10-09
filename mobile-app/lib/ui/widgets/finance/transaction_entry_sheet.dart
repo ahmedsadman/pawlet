@@ -6,6 +6,7 @@ import '../../../models/finance/bank.dart';
 import '../../../models/finance/transaction.dart';
 import '../../../state/finance_providers.dart';
 import '../../../state/providers.dart';
+import '../../../utils/time_format.dart';
 import '../keyboard_inset.dart';
 
 /// Opens the "add manual transaction" bottom sheet. Resolves to `true` when a
@@ -58,11 +59,6 @@ class _AddTransactionSheetState extends ConsumerState<_AddTransactionSheet> {
     _amount.dispose();
     _amountFocus.dispose();
     super.dispose();
-  }
-
-  String _fmtDate(DateTime d) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
   Future<void> _pickDate() async {
@@ -274,7 +270,7 @@ class _AddTransactionSheetState extends ConsumerState<_AddTransactionSheet> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_fmtDate(_date), style: theme.textTheme.bodyLarge),
+                  Text(dateLabel(_date), style: theme.textTheme.bodyLarge),
                   TextButton.icon(
                     onPressed: _pickDate,
                     icon: const Icon(Icons.calendar_today, size: 16),

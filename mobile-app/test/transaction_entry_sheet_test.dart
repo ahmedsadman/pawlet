@@ -93,6 +93,11 @@ void main() {
     );
   });
 
+  testWidgets('date field defaults to Today', (tester) async {
+    await openSheet(tester, banks: [bank(1, 'City')]);
+    expect(find.text('Today'), findsOneWidget);
+  });
+
   testWidgets('blocks save until a bank and valid amount are set', (
     tester,
   ) async {
