@@ -10,15 +10,19 @@ import (
 //go:embed migrations/001_init.sql
 var migration001 string
 
+//go:embed migrations/002_admin_stats.sql
+var migration002 string
+
 // migrations moves the schema forward one version per entry: entry i takes a
 // database from user_version i to i+1. Append only — never edit an entry that
 // has shipped, because databases that already ran it will not run it again.
-// Each migration runs inside a transaction, so PRAGMAs like journal_mode or
-// foreign_keys have no effect there. New columns must be nullable or have a
-// DEFAULT so an older binary's INSERTs keep working (that's what makes rollback
-// by image tag safe).
+// Each migration runs inside a transaction, so PRAGMAs like journal_mode have
+// no effect or fail, while foreign_keys is ignored. New columns must be nullable
+// or have a DEFAULT so an older binary's INSERTs keep working (that's what makes
+// rollback by image tag safe).
 var migrations = []string{
 	migration001,
+	migration002,
 }
 
 // SchemaVersion is the user_version a database reports once every migration

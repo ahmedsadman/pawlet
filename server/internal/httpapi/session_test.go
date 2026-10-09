@@ -332,7 +332,7 @@ func TestBannedInstallIs403(t *testing.T) {
 
 	// Ban the install first.
 	installHash := attest.InstallHash(installID)
-	if err := handler.Store.TouchInstall(context.Background(), installHash, now); err != nil {
+	if err := handler.Store.TouchInstall(context.Background(), installHash, now, store.InstallMeta{}); err != nil {
 		t.Fatalf("touch install: %v", err)
 	}
 	if err := handler.Store.Ban(context.Background(), installHash, "test ban"); err != nil {

@@ -121,7 +121,7 @@ func (h *testHarness) mintToken(installHash string) string {
 
 // touchInstall ensures the install exists in the store.
 func (h *testHarness) touchInstall(installHash string) {
-	if err := h.store.TouchInstall(context.Background(), installHash, h.now); err != nil {
+	if err := h.store.TouchInstall(context.Background(), installHash, h.now, store.InstallMeta{}); err != nil {
 		panic(err)
 	}
 }
