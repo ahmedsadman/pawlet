@@ -4,7 +4,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"fmt"
 	"time"
@@ -13,9 +12,6 @@ import (
 	// mattn/go-sqlite3 so the image can build with CGO_ENABLED=0.
 	_ "modernc.org/sqlite"
 )
-
-//go:embed schema.sql
-var schema string
 
 // ErrNotFound reports an absent install record.
 var ErrNotFound = errors.New("store: not found")
@@ -50,9 +46,9 @@ func Open(path string) (*Store, error) {
 	}
 	write.SetMaxOpenConns(1)
 
-	if _, err := write.ExecContext(context.Background(), schema); err != nil {
+	if err := migrate(context.Background(), write); err != nil {
 		_ = write.Close()
-		return nil, fmt.Errorf("apply schema: %w", err)
+		return nil, err
 	}
 
 	read, err := sql.Open("sqlite", dsn)
