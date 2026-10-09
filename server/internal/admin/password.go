@@ -54,19 +54,16 @@ func parsePHC(encoded string) (phc, error) {
 		return phc{}, ErrBadHash
 	}
 
-	// Strict version parsing: must be exactly "v=19"
 	if parts[2] != "v=19" {
 		return phc{}, ErrBadHash
 	}
 
-	// Strict parameter parsing: split on comma, parse each exactly
 	params := strings.Split(parts[3], ",")
 	if len(params) != 3 {
 		return phc{}, ErrBadHash
 	}
 
 	var p phc
-	// Parse m=...
 	if !strings.HasPrefix(params[0], "m=") {
 		return phc{}, ErrBadHash
 	}
@@ -76,7 +73,6 @@ func parsePHC(encoded string) (phc, error) {
 	}
 	p.memory = uint32(mem)
 
-	// Parse t=...
 	if !strings.HasPrefix(params[1], "t=") {
 		return phc{}, ErrBadHash
 	}
@@ -86,7 +82,6 @@ func parsePHC(encoded string) (phc, error) {
 	}
 	p.time = uint32(tm)
 
-	// Parse p=...
 	if !strings.HasPrefix(params[2], "p=") {
 		return phc{}, ErrBadHash
 	}
@@ -96,12 +91,10 @@ func parsePHC(encoded string) (phc, error) {
 	}
 	p.threads = uint8(thr)
 
-	// Parse salt (must be >= 8 bytes)
 	if p.salt, err = base64.RawStdEncoding.DecodeString(parts[4]); err != nil || len(p.salt) < 8 {
 		return phc{}, ErrBadHash
 	}
 
-	// Parse key (must be 16-64 bytes)
 	if p.key, err = base64.RawStdEncoding.DecodeString(parts[5]); err != nil || len(p.key) < 16 || len(p.key) > 64 {
 		return phc{}, ErrBadHash
 	}
