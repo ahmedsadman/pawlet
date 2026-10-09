@@ -70,7 +70,9 @@ Schema: `sms_records.local_verdict` and the `model_stats` table, both in `lib/da
 ## Retention
 
 `model_stats` rows older than the retention window are deleted whenever a verdict is counted and on every flush that
-gets past the throttle. Neither `model_stats` nor the reporter's `app_meta` key is part of a backup
+gets past the throttle. The same window bounds what is kept and what is sent. It is one day shorter than the oldest
+day the server accepts, so a phone clock slightly behind the server's near UTC midnight cannot push a row outside the
+server's window (which would get the whole payload rejected with a 400 and marked sent). Neither `model_stats` nor the reporter's `app_meta` key is part of a backup
 ([Backup & Restore](backup-restore.md)).
 
 ## Constants
@@ -82,4 +84,4 @@ Snapshot — the source files are authoritative.
 | Minimum gap between acknowledged flushes | 6 h                              | `lib/services/model_stats_reporter.dart` (`ModelStatsReporter.minGap`)         |
 | Rows per request                         | 31                               | `lib/services/model_stats_reporter.dart` (`ModelStatsReporter.maxDays`)        |
 | Request timeout                          | 20 s                             | `lib/services/model_stats_reporter.dart` (`ModelStatsReporter.requestTimeout`) |
-| Days kept and sent                       | UTC today and the 30 days before | `lib/data/model_stats_repository.dart` (`kModelStatsRetentionDays`)            |
+| Days kept and sent                       | UTC today and the 29 days before | `lib/data/model_stats_repository.dart` (`kModelStatsRetentionDays`)            |

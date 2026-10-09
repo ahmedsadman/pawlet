@@ -307,16 +307,16 @@ void main() {
     expect(await pending(), isEmpty);
   });
 
-  test('drops days past the 30-day window on each attempt', () async {
-    await seed('2026-09-09');
+  test('drops days past the 29-day window on each attempt', () async {
     await seed('2026-09-10');
+    await seed('2026-09-11');
     script = [_status(204)];
 
     await reporter().maybeFlush();
 
-    expect(sentDays(requests.single).map((d) => d['day']), ['2026-09-10']);
+    expect(sentDays(requests.single).map((d) => d['day']), ['2026-09-11']);
     final kept = await db.query('model_stats');
-    expect(kept.map((r) => r['day']), ['2026-09-10']);
+    expect(kept.map((r) => r['day']), ['2026-09-11']);
   });
 
   test('sends at most 31 rows, keeping the newest', () async {

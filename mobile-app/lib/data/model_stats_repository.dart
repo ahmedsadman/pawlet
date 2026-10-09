@@ -9,7 +9,13 @@ import 'database.dart';
 const String kModelStatsFlushedAtKey = 'model_stats_flushed_at';
 
 /// How many UTC days before today are kept and sent (today is kept too).
-const int kModelStatsRetentionDays = 30;
+///
+/// One short of the server's limit (it accepts UTC today − 30 by its own
+/// clock): with the phone's clock slightly behind near UTC midnight, the
+/// oldest day sent would otherwise fall outside it, and the 400 that follows
+/// marks the whole batch sent. Kept and sent share one window, so nothing is
+/// stored that could never go out.
+const int kModelStatsRetentionDays = 29;
 
 /// The UTC calendar day of [epochMs] as `YYYY-MM-DD` — the `day` key of
 /// `model_stats` and of the server contract.
