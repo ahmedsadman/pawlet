@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/sms_repository.dart';
 import '../models/sms_record.dart';
 import '../state/messages_providers.dart';
 import '../state/providers.dart';
@@ -11,8 +12,9 @@ import 'widgets/skeleton.dart';
 import 'widgets/sms_tile.dart';
 
 /// Messages tab: a collapsible Queue on top (with a live count) and a paginated,
-/// searchable History of processed Transaction/Bill messages below. History
-/// labels are read-only.
+/// searchable History below of processed bank messages (transactions, bills,
+/// failures, and ignored ones until they are pruned). History labels are
+/// read-only.
 class MessagesPage extends ConsumerStatefulWidget {
   const MessagesPage({super.key});
 
@@ -210,8 +212,9 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'History shows your financial messages and any that failed to '
-              "process. Other texts aren't kept.",
+              "History shows your bank messages. Ones that weren't a "
+              'transaction or bill are marked Ignored and deleted after '
+              "${kIgnoredRetention.inDays} days. Other texts aren't kept.",
               style: theme.textTheme.bodySmall,
             ),
           ),
