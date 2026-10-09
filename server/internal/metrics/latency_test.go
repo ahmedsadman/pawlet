@@ -29,3 +29,14 @@ func TestLatencyBucket(t *testing.T) {
 		}
 	}
 }
+
+func TestLatencyBoundsMsIsACopy(t *testing.T) {
+	b := LatencyBoundsMs()
+	if len(b) != 8 || b[0] != 250 || b[7] != 32000 {
+		t.Fatalf("LatencyBoundsMs() = %v", b)
+	}
+	b[0] = 1
+	if LatencyBoundsMs()[0] != 250 {
+		t.Fatal("LatencyBoundsMs() exposed the shared slice")
+	}
+}
