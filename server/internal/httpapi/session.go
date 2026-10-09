@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ahmedsadman/pawlet/server/internal/attest"
+	"github.com/ahmedsadman/pawlet/server/internal/clientip"
 	"github.com/ahmedsadman/pawlet/server/internal/metrics"
 	"github.com/ahmedsadman/pawlet/server/internal/store"
 	"github.com/ahmedsadman/pawlet/server/internal/token"
@@ -49,7 +50,7 @@ type sessionResponse struct {
 func (h *SessionHandler) Challenge(w http.ResponseWriter, r *http.Request) {
 	// Rate limit by client IP to prevent unbounded challenge allocation.
 	if h.ChallengeLimiter != nil {
-		ip := clientIP(r, h.TrustedProxy)
+		ip := clientip.From(r, h.TrustedProxy)
 		if !h.ChallengeLimiter.allow(ip) {
 			h.Logger.Warn("challenge rate limit exceeded", "ip", ip)
 			count(h.Metrics, metrics.SessionOutcome, metrics.ChallengeRateLimited)
