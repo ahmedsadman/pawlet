@@ -21,11 +21,12 @@ const healthTimeout = 2 * time.Second
 
 // Handlers collects the per-endpoint handlers the router dispatches to.
 type Handlers struct {
-	Session  *SessionHandler
-	Classify *ClassifyHandler
-	Bundle   *BundleHandler
-	Health   HealthChecker
-	Logger   *slog.Logger
+	Session    *SessionHandler
+	Classify   *ClassifyHandler
+	ModelStats *ModelStatsHandler
+	Bundle     *BundleHandler
+	Health     HealthChecker
+	Logger     *slog.Logger
 }
 
 // NewRouter builds the route table.
@@ -36,6 +37,7 @@ func NewRouter(h Handlers) http.Handler {
 	mux.HandleFunc("GET /v1/challenge", h.Session.Challenge)
 	mux.HandleFunc("POST /v1/session", h.Session.Session)
 	mux.HandleFunc("POST /v1/classify", h.Classify.Classify)
+	mux.HandleFunc("POST /v1/model-stats", h.ModelStats.ModelStats)
 	mux.HandleFunc("GET /v1/prompt-bundle", h.Bundle.Bundle)
 
 	return mux
