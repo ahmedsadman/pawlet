@@ -117,7 +117,35 @@ Every classification request carries the session token. The server:
 Message content is never written to disk and never logged. The endpoint is
 `internal/httpapi/classify.go`.
 
-### 5. Renewing
+### 5. Report model stats — `POST /v1/model-stats`
+
+Proxy-mode installs report daily counts of how the on-device model handled messages. The request
+carries the session token (same as `/v1/classify`) and a JSON body like:
+
+```json
+{
+  "days": [
+    {"day": "2026-10-09", "appVersionCode": 19, "accepted": 42, "declined": 8, "unavailable": 1}
+  ]
+}
+```
+
+Each entry is a whole-day total. A resend replaces the stored counts for that install-day-version,
+so the client can correct under- or over-counting. The endpoint:
+
+1. **checks the session token** — same as `/v1/classify`;
+2. **checks the install still exists and is not banned**;
+3. **checks the rate limit** — 12 requests per rolling hour per install;
+4. **validates the body** — up to 4 KB, 1–31 entries, day within UTC today − 30 … today + 1, and
+   all counts ≤ 100,000 (`internal/httpapi/model_stats.go`);
+5. **writes the rows** to `model_stats_daily`, replacing any existing rows for these install-day-version
+   keys.
+
+Success is **204 No Content**. Responses: `401 unauthorized` (same as classify), `403 banned`,
+`429 rate_limited` with `Retry-After`, `400 bad_request` (over 4 KB, unknown fields, or a
+validation rule broken), `500 internal`.
+
+### 6. Renewing
 
 After 24 hours, or whenever the server answers 401, the app starts again from step 1.
 
