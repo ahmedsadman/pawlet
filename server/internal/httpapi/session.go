@@ -140,8 +140,9 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Touch the install record.
-	if err := h.Store.TouchInstall(ctx, installHash, h.Now(), store.InstallMeta{}); err != nil {
+	// Touch the install record, refreshing what the verdict says about it and
+	// marking today as a session day.
+	if err := h.Store.TouchInstall(ctx, installHash, h.Now(), installMeta(payload)); err != nil {
 		h.Logger.Error("failed to touch install",
 			"installHash", installHash,
 			"error", err)
