@@ -21,7 +21,7 @@ image tag stays safe.
 | Table | One row per | Written by |
 |---|---|---|
 | `installs` | install | each successful `/v1/session` |
-| `usage` | install per UTC day | quota flusher, successful classify calls |
+| `usage` | install per UTC day | admitted classify calls (tokens on success), written by the quota flusher |
 | `install_days` | install per UTC day with a successful session | each successful `/v1/session` |
 | `counters_daily` | day, metric, key | metrics flusher (`internal/metrics/recorder.go`) |
 | `server_info` | configuration key | pawletd at startup |
@@ -78,7 +78,7 @@ defined in `internal/metrics/keys.go`.
 
 | Metric | Keys | Counted when |
 |---|---|---|
-| `classify_outcome` | `ok`, `unauthorized`, `banned`, `bad_request`, `rate_limited_daily`, `rate_limited_burst`, `capacity`, `upstream_429`, `upstream_retryable`, `upstream_rejected`, `internal` | every `/v1/classify` response, one key per request |
+| `classify_outcome` | `ok`, `unauthorized`, `banned`, `bad_request`, `rate_limited_daily`, `rate_limited_burst`, `capacity`, `upstream_429`, `upstream_retryable`, `upstream_rejected`, `client_cancelled`, `internal` | every `/v1/classify` response, one key per request |
 | `session_outcome` | `ok`, `bad_request`, `challenge_invalid`, `challenge_rate_limited`, `attest_unavailable`, `banned`, `internal`, `package_mismatch`, `request_hash_mismatch`, `stale_token`, `app_not_recognized`, `cert_mismatch`, `device_integrity`, `attest_failed` | every `/v1/session` response, plus `/v1/challenge` refusals for rate limiting |
 | `classify_latency_ms` | bucket upper bounds (see snapshot) | successful classify calls |
 | `model` | the model id OpenRouter reports serving, or `unknown` | successful classify calls |
@@ -88,6 +88,8 @@ Notes on keys:
 
 - `unauthorized` covers every 401 on classify: missing or malformed header, bad or expired
   token, and a token for an install the server has no record of.
+- `client_cancelled` counts classify calls where the request context was cancelled (client
+  disconnect or server shutdown) before the call finished.
 - `upstream_retryable` also covers an unexpected classifier error that is not an OpenRouter
   call error; both answer the client with 503 `upstream`.
 - The `session_outcome` verification keys map one-to-one to the errors in
@@ -104,10 +106,11 @@ counted under the **smallest bucket bound it fits under** (`internal/metrics/lat
 row `classify_latency_ms / 2000 / 2210` means 2210 calls that day took more than 1 s and at
 most 2 s. Calls over the last bound go to `inf`.
 
-Percentiles are estimated from the bucket counts: walk the buckets in order until the running
-total crosses the target rank (half of all calls for p50, 95% for p95), then interpolate
-linearly inside that bucket. The result is an estimate within one bucket's range — enough to
-spot a slow model or a trend, not a precise timing.
+The admin dashboard is intended to estimate percentiles from the bucket counts: walk the buckets
+in order until the running total crosses the target rank (half of all calls for p50, 95% for
+p95), then interpolate linearly inside that bucket. The result is an estimate within one bucket's
+range — enough to spot a slow model or a trend, not a precise timing. (This percentile estimation
+is not yet implemented in pawletd; it describes how the dashboard should read the buckets.)
 
 ## Server info
 
