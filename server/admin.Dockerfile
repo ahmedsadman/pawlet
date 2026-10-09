@@ -1,5 +1,6 @@
 # Build context is the repository root: the image needs dashboard/ and server/.
 #   docker build -f server/admin.Dockerfile .
+# The .dockerignore file (admin.Dockerfile.dockerignore) requires BuildKit.
 
 FROM node:24-alpine AS web
 WORKDIR /web

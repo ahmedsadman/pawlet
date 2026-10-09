@@ -1,4 +1,5 @@
 /pawletd
+/pawlet-admin
 *.db
 *.db-wal
 *.db-shm
