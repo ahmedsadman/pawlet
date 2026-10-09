@@ -3,10 +3,13 @@
 !server/
 dashboard/node_modules
 dashboard/dist
+dashboard/**/*.local
 server/data
 server/.env
 server/admin.env
 server/service-account.json
 server/pawletd
+server/pawlet-admin
+server/**/*.db*
 server/internal/admin/web/dist/*
 !server/internal/admin/web/dist/.gitkeep

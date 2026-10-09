@@ -1,0 +1,10 @@
+.env
+admin.env
+service-account.json
+data/
+pawletd
+pawlet-admin
+*.db*
+internal/admin/web/dist/*
+!internal/admin/web/dist/.gitkeep
+.git
