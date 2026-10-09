@@ -70,3 +70,23 @@ func TestFromFallsBackWhenEveryHopIsTrusted(t *testing.T) {
 		t.Fatalf("From() = %q, want the peer", got)
 	}
 }
+
+func TestFromHandlesIPv6Peer(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "[::1]:54321"
+
+	if got := From(req, nil); got != "::1" {
+		t.Fatalf("From() = %q, want ::1", got)
+	}
+}
+
+func TestFromHandlesIPv6BehindTrustedProxy(t *testing.T) {
+	_, trusted, _ := net.ParseCIDR("::1/128")
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "[::1]:54321"
+	req.Header.Set("X-Forwarded-For", "2001:db8::42")
+
+	if got := From(req, trusted); got != "2001:db8::42" {
+		t.Fatalf("From() = %q, want the forwarded IPv6 client", got)
+	}
+}
