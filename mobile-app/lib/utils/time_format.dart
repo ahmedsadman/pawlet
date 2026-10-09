@@ -38,19 +38,6 @@ String monthYearShort(DateTime date) {
 String fullDateLabel(DateTime date) =>
     '${_months[date.month - 1]} ${date.day}, ${date.year}';
 
-/// Coarse relative time: `just now`, `5m ago`, `3d ago`, `2mo ago`, `1y ago`.
-/// [now] is injectable for tests.
-String relativeTime(DateTime time, {DateTime? now}) {
-  final delta = (now ?? DateTime.now()).difference(time);
-  if (delta.isNegative) return 'just now';
-  if (delta.inSeconds < 60) return 'just now';
-  if (delta.inMinutes < 60) return '${delta.inMinutes}m ago';
-  if (delta.inHours < 24) return '${delta.inHours}h ago';
-  if (delta.inDays < 30) return '${delta.inDays}d ago';
-  if (delta.inDays < 365) return '${(delta.inDays / 30).floor()}mo ago';
-  return '${(delta.inDays / 365).floor()}y ago';
-}
-
 /// Resolves [time] and [now] to local wall-clock values, pulling a [time]
 /// later than [now] back to [now].
 (DateTime, DateTime) _resolve(DateTime time, DateTime? now) {
