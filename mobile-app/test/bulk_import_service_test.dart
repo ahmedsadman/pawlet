@@ -798,4 +798,18 @@ void main() {
     expect(result.saved, 1);
     expect(await count('sms_records'), 2);
   });
+
+  test('the inbox import never counts toward the model stats', () async {
+    final inbox = _FakeInbox([_msg('EBL', expenseBody, 1000)]);
+    final local = _FakeLocal({
+      expenseBody: _pred('expense', 'AMOUNT', expenseBody, '1250.00'),
+    });
+
+    final result = await service(inbox, local).run();
+
+    expect(result.saved, 1); // the model did run and accept it
+    expect(await count('model_stats'), 0);
+    final row = (await db.query('sms_records')).single;
+    expect(row['local_verdict'], isNull);
+  });
 }
