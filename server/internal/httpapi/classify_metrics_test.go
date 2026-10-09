@@ -263,7 +263,7 @@ func TestModelKey(t *testing.T) {
 			if got != c.want {
 				t.Errorf("modelKey(%q) = %q, want %q", c.model, got, c.want)
 			}
-			// Verify the result is valid UTF-8
+			// Verify the result is valid UTF-8.
 			if !utf8.ValidString(got) {
 				t.Errorf("modelKey(%q) = %q, which is invalid UTF-8", c.model, got)
 			}

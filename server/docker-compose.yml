@@ -7,10 +7,13 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    # The deploy exports IMAGE_TAG for the image line above; pass it in too so
-    # pawletd can publish which image is running.
+    # The deploy exports IMAGE_TAG for the image line above; pass it in so pawletd
+    # can publish which image is running (falls back to "latest" under compose).
     environment:
-      IMAGE_TAG: ${IMAGE_TAG:-}
+      IMAGE_TAG: ${IMAGE_TAG:-latest}
+    # Docker's default 10s is shorter than the 30s graceful shutdown plus final
+    # flushes, so a slow drain would be SIGKILLed before counters are persisted.
+    stop_grace_period: 40s
     # Bound to loopback, not 0.0.0.0. Caddy runs with network_mode: host, so it
     # reaches this through localhost; binding the host side to 127.0.0.1 keeps
     # the port off the public interface. Publishing "8091:8080" instead would

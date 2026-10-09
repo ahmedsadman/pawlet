@@ -42,7 +42,8 @@ type Config struct {
 	Addr               string
 	DatabasePath       string
 	// ImageTag is the deployed image's tag, published to server_info so the
-	// admin dashboard can show what is running. Empty outside a deploy.
+	// admin dashboard can show what is running. Falls back to "latest" under
+	// compose; empty when pawletd runs outside compose.
 	ImageTag string
 }
 
