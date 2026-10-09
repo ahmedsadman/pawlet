@@ -82,3 +82,27 @@ func TestUnbanClearsBanAndReason(t *testing.T) {
 		t.Fatalf("rec = %+v, want unbanned with empty reason", rec)
 	}
 }
+
+func TestOpenExistingRefusesSchemaWithoutModelStats(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v2.db")
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	for i, m := range migrations[:2] {
+		if _, err := raw.ExecContext(ctx, m); err != nil {
+			t.Fatalf("migration %d: %v", i+1, err)
+		}
+	}
+	if _, err := raw.ExecContext(ctx, "PRAGMA user_version = 2"); err != nil {
+		t.Fatalf("set user_version: %v", err)
+	}
+	_ = raw.Close()
+
+	// pawlet-admin reads model_stats_daily, model_stats_rollup and
+	// installs.messages_archived, which only exist from version 3.
+	if _, err := OpenExisting(path); !errors.Is(err, ErrSchemaTooOld) {
+		t.Fatalf("OpenExisting(v2) err = %v, want ErrSchemaTooOld", err)
+	}
+}
