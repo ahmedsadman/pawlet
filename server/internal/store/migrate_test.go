@@ -286,3 +286,62 @@ func TestOpenRollsBackFailedMigration(t *testing.T) {
 		t.Errorf("table half exists after rollback, want it rolled back")
 	}
 }
+
+func TestMigration003AddsModelStatsToVersion2Database(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v2.db")
+
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	for _, m := range []string{migration001, migration002} {
+		if _, err := raw.ExecContext(ctx, m); err != nil {
+			t.Fatalf("apply earlier migration: %v", err)
+		}
+	}
+	if _, err := raw.ExecContext(ctx, "PRAGMA user_version = 2"); err != nil {
+		t.Fatalf("set user_version: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO installs (id_hash, first_seen, last_seen) VALUES ('old', 100, 200)`); err != nil {
+		t.Fatalf("seed install: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	if got := userVersion(t, s.read); got != 3 {
+		t.Fatalf("user_version = %d, want 3", got)
+	}
+	var archived int64
+	if err := s.read.QueryRowContext(ctx,
+		`SELECT messages_archived FROM installs WHERE id_hash = 'old'`).Scan(&archived); err != nil {
+		t.Fatalf("read messages_archived: %v", err)
+	}
+	if archived != 0 {
+		t.Errorf("messages_archived = %d, want 0 for an existing install", archived)
+	}
+	for _, table := range []string{"model_stats_daily", "model_stats_rollup"} {
+		var n int
+		if err := s.read.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = ?`, table).Scan(&n); err != nil {
+			t.Fatalf("look up %s: %v", table, err)
+		}
+		if n != 1 {
+			t.Errorf("table %s missing after migration", table)
+		}
+	}
+	// The pre-003 INSERT shape (no messages_archived) must still work, so an
+	// older binary keeps running against this database after a rollback.
+	if _, err := s.write.ExecContext(ctx,
+		`INSERT INTO installs (id_hash, first_seen, last_seen) VALUES ('rollback', 1, 1)`); err != nil {
+		t.Errorf("old-shape installs INSERT failed: %v", err)
+	}
+}
