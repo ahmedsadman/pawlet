@@ -115,7 +115,6 @@ export interface EngagementResponse {
   mode: ActiveMode;
   daily: ActiveCount[];
   cohorts: Cohort[];
-  callsDistribution: Bucket[];
   messagesDistribution: Bucket[];
   dormant: number;
   collectingSince: CollectingSince;
