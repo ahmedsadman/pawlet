@@ -370,3 +370,28 @@ func TestReliabilityLocalModel(t *testing.T) {
 		t.Fatalf("range=all prevRate = %v, want nil", *all.LocalModel.PrevRate)
 	}
 }
+
+func TestRangeAllReachesModelStats(t *testing.T) {
+	e := newTestEnv(t)
+	seedStats(t, e.store)
+	seedModelStats(t, e)
+	// Older than every other source (hashB was first seen on 2026-08-30).
+	execSQL(t, e, `INSERT INTO model_stats_rollup
+	    (day, app_version_code, accepted, declined, unavailable, install_count)
+	  VALUES ('2026-08-01', 16, 3, 1, 0, 1)`)
+	cookie := e.login(t)
+
+	var rel struct {
+		Range      struct{ From, To string } `json:"range"`
+		LocalModel struct {
+			Accepted int64    `json:"accepted"`
+			PrevRate *float64 `json:"prevRate"`
+		} `json:"localModel"`
+	}
+	if code := getJSON(t, e, "/api/reliability?range=all", cookie, &rel); code != http.StatusOK {
+		t.Fatalf("reliability all = %d", code)
+	}
+	if rel.Range.From != "2026-08-01" || rel.LocalModel.Accepted != 23 || rel.LocalModel.PrevRate != nil {
+		t.Fatalf("range=all = %+v", rel)
+	}
+}

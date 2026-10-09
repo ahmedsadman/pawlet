@@ -119,6 +119,30 @@ func TestEarliestDays(t *testing.T) {
 	}
 }
 
+func TestEarliestDaysModelStats(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedRows(t, s)
+
+	for _, step := range []struct{ insert, want string }{
+		{`INSERT INTO model_stats_daily (id_hash, day, app_version_code, accepted, declined, unavailable)
+		  VALUES ('a', '2026-09-20', 20, 1, 0, 0)`, "2026-09-20"},
+		{`INSERT INTO model_stats_rollup (day, app_version_code, accepted, declined, unavailable, install_count)
+		  VALUES ('2026-06-01', 19, 1, 0, 0, 1)`, "2026-06-01"},
+	} {
+		if _, err := s.write.ExecContext(ctx, step.insert); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		got, err := s.EarliestDays(ctx)
+		if err != nil {
+			t.Fatalf("EarliestDays() error = %v", err)
+		}
+		if got.ModelStats != step.want || got.Any() != step.want {
+			t.Fatalf("EarliestDays() = %+v (Any %q), want model stats %s", got, got.Any(), step.want)
+		}
+	}
+}
+
 // seedModelRows writes model stats straight to the tables: pawletd's writer
 // is not part of this package's read API.
 func seedModelRows(t *testing.T, s *Store) {

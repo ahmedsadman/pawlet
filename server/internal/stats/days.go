@@ -44,10 +44,12 @@ func WeekStart(day string) string {
 	return t.AddDate(0, 0, -offset).Format(DayLayout)
 }
 
-// Range is an inclusive span of UTC days.
+// Range is an inclusive span of UTC days. All marks range=all: it starts
+// with the history, so it has no previous period to compare against.
 type Range struct {
 	From string `json:"from"`
 	To   string `json:"to"`
+	All  bool   `json:"-"`
 }
 
 // ParseRange resolves 7d, 30d (the default), 90d or all, each ending today.
@@ -62,9 +64,9 @@ func ParseRange(s, today, earliest string) (Range, error) {
 		return Range{From: AddDays(today, -89), To: today}, nil
 	case "all":
 		if earliest == "" || earliest > today {
-			return Range{From: today, To: today}, nil
+			return Range{From: today, To: today, All: true}, nil
 		}
-		return Range{From: earliest, To: today}, nil
+		return Range{From: earliest, To: today, All: true}, nil
 	}
 	return Range{}, ErrBadRequest
 }

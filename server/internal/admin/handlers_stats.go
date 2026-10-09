@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -353,12 +354,11 @@ type reliabilityResponse struct {
 // localModel builds the local-model card. Rows load from whichever is
 // earlier: the start of the previous period (none for range=all) or the
 // rolling window's reach before the range.
-func (s *Server) localModel(r *http.Request, rng stats.Range) (stats.LocalModel, error) {
-	ctx := r.Context()
+func (s *Server) localModel(ctx context.Context, rng stats.Range) (stats.LocalModel, error) {
 	days := stats.Days(rng.From, rng.To)
 	from := stats.AddDays(rng.From, -(stats.RollingWindowDays - 1))
 	var prevDays []string
-	if r.URL.Query().Get("range") != "all" {
+	if !rng.All {
 		prevDays = stats.Days(stats.AddDays(rng.From, -len(days)), stats.AddDays(rng.From, -1))
 		from = min(from, prevDays[0])
 	}
@@ -390,7 +390,7 @@ func (s *Server) reliability(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "load usage", err)
 		return
 	}
-	lm, err := s.localModel(r, rng)
+	lm, err := s.localModel(ctx, rng)
 	if err != nil {
 		s.fail(w, "load model stats", err)
 		return

@@ -36,12 +36,14 @@ type EarliestDays struct {
 	InstallDays string
 	Counters    string
 	FirstSeen   string
+	// ModelStats is the earlier of the per-install and rolled-up model stats.
+	ModelStats string
 }
 
 // Any is the earliest day across every source, or "" for an empty database.
 func (e EarliestDays) Any() string {
 	earliest := ""
-	for _, d := range []string{e.Usage, e.InstallDays, e.Counters, e.FirstSeen} {
+	for _, d := range []string{e.Usage, e.InstallDays, e.Counters, e.FirstSeen, e.ModelStats} {
 		if d != "" && (earliest == "" || d < earliest) {
 			earliest = d
 		}
@@ -168,12 +170,15 @@ func (s *Store) EarliestDays(ctx context.Context) (EarliestDays, error) {
 	  COALESCE((SELECT MIN(day) FROM usage), ''),
 	  COALESCE((SELECT MIN(day) FROM install_days), ''),
 	  COALESCE((SELECT MIN(day) FROM counters_daily), ''),
-	  COALESCE((SELECT MIN(first_seen) FROM installs), 0)`
+	  COALESCE((SELECT MIN(first_seen) FROM installs), 0),
+	  COALESCE((SELECT MIN(day) FROM (
+	    SELECT MIN(day) AS day FROM model_stats_daily
+	    UNION ALL SELECT MIN(day) FROM model_stats_rollup)), '')`
 	var (
 		e         EarliestDays
 		firstSeen int64
 	)
-	if err := s.read.QueryRowContext(ctx, q).Scan(&e.Usage, &e.InstallDays, &e.Counters, &firstSeen); err != nil {
+	if err := s.read.QueryRowContext(ctx, q).Scan(&e.Usage, &e.InstallDays, &e.Counters, &firstSeen, &e.ModelStats); err != nil {
 		return EarliestDays{}, fmt.Errorf("read earliest days: %w", err)
 	}
 	if firstSeen > 0 {
