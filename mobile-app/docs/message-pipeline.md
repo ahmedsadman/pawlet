@@ -91,7 +91,9 @@ and one global:
   `processing`.
 - **`success`** — processed and written to a finance record (`transaction` or `bill`).
 - **`ignored`** — processed but deliberately not a financial record. Terminal, but kept
-  only briefly (§9). Invisible in History.
+  only briefly (§9). Shown in History with a grey **"Ignored"** badge (no category, no
+  retry), except rows whose `ignore_reason` is `gated` (not a bank/card sender), which
+  never appear. See `SmsRepository.history` in `lib/data/sms_repository.dart`.
 - **`failure`** — gave up (hit max attempts, or a fatal error). Shown in History with a
   short reason hint.
 
