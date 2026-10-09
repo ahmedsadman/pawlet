@@ -23,8 +23,9 @@ export class ApiError extends Error {
 /** Fired on any 401 outside login, so the app can send the user to sign in. */
 export const UNAUTHORIZED_EVENT = "pawlet:unauthorized";
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = init.body ? { "Content-Type": "application/json" } : {};
+export async function _request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body) headers.set("Content-Type", "application/json");
   const res = await fetch(path, { credentials: "same-origin", ...init, headers });
   if (res.status === 401 && path !== "/api/login") {
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
@@ -43,7 +44,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 function post<T>(path: string, body: unknown): Promise<T> {
-  return request<T>(path, { method: "POST", body: JSON.stringify(body) });
+  return _request<T>(path, { method: "POST", body: JSON.stringify(body) });
 }
 
 function query(params: Record<string, string | number | undefined>): string {
@@ -59,20 +60,20 @@ export const api = {
   login: (password: string) => post<void>("/api/login", { password }),
   logout: () => post<void>("/api/logout", {}),
   me: async () => {
-    await request<void>("/api/me");
+    await _request<void>("/api/me");
     return true;
   },
-  overview: (range: RangeKey) => request<OverviewResponse>(`/api/overview${query({ range })}`),
+  overview: (range: RangeKey) => _request<OverviewResponse>(`/api/overview${query({ range })}`),
   installs: (q: InstallsQuery) =>
-    request<InstallsResponse>(
+    _request<InstallsResponse>(
       `/api/installs${query({ sort: q.sort, order: q.order, q: q.q, status: q.status, page: q.page })}`,
     ),
-  install: (hash: string) => request<InstallDetailResponse>(`/api/installs/${hash}`),
+  install: (hash: string) => _request<InstallDetailResponse>(`/api/installs/${hash}`),
   ban: (hash: string, reason: string) => post<void>(`/api/installs/${hash}/ban`, { reason }),
   unban: (hash: string) => post<void>(`/api/installs/${hash}/unban`, {}),
   engagement: (range: RangeKey, active: ActiveMode) =>
-    request<EngagementResponse>(`/api/engagement${query({ range, active })}`),
+    _request<EngagementResponse>(`/api/engagement${query({ range, active })}`),
   reliability: (range: RangeKey) =>
-    request<ReliabilityResponse>(`/api/reliability${query({ range })}`),
-  fleet: () => request<FleetResponse>("/api/fleet"),
+    _request<ReliabilityResponse>(`/api/reliability${query({ range })}`),
+  fleet: () => _request<FleetResponse>("/api/fleet"),
 };

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, ApiError, UNAUTHORIZED_EVENT } from "./client";
+import { _request, api, ApiError, UNAUTHORIZED_EVENT } from "./client";
 
 function mockFetch(status: number, body?: unknown) {
   const fn = vi.fn().mockResolvedValue(
@@ -27,8 +27,21 @@ describe("api client", () => {
     await expect(api.ban("a".repeat(64), "abuse")).resolves.toBeUndefined();
     const init = fn.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe("POST");
-    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
     expect(init.body).toBe(JSON.stringify({ reason: "abuse" }));
+  });
+
+  it("keeps caller headers when adding Content-Type", async () => {
+    const fn = mockFetch(200, { ok: true });
+    await _request("/test", {
+      method: "POST",
+      body: JSON.stringify({ test: true }),
+      headers: { "X-Custom": "value" },
+    });
+    const init = fn.mock.calls[0][1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("X-Custom")).toBe("value");
   });
 
   it("raises ApiError with the server code", async () => {
