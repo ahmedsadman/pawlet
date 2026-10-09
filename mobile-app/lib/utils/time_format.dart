@@ -1,9 +1,11 @@
 // Date/time label helpers for the UI.
 //
-// Every label is in the phone's local time zone. "Today" and "Yesterday" are
-// calendar days (since local midnight), not rolling 24-hour windows. A
-// timestamp later than `now` (clock drift) is treated as `now`. Each helper
-// takes an injectable `now` for tests.
+// The calendar-day labels ([dateLabel], [dateTimeLabel], [updatedLabel]) work
+// in the phone's local time zone, with an injectable `now` for tests. "Today"
+// and "Yesterday" are calendar days (since local midnight), not rolling 24-hour
+// windows. A timestamp later than `now` (clock drift) is treated as `now`.
+
+import 'dart:math';
 
 const List<String> _months = [
   'Jan',
@@ -105,5 +107,5 @@ String updatedLabel(DateTime time, {DateTime? now}) {
   if (elapsed.inMinutes < 1) return 'just now';
   if (elapsed.inHours < 1) return '${elapsed.inMinutes}m ago';
   // A same-day gap is under 24 h except on a 25-hour daylight-saving day.
-  return '${elapsed.inHours.clamp(1, 23)}h ago';
+  return '${min(elapsed.inHours, 23)}h ago';
 }
