@@ -13,13 +13,19 @@ func TestCallsDistribution(t *testing.T) {
 		{IDHash: "b", Day: "2026-10-02", Calls: 6},
 		{IDHash: "b", Day: "2026-10-03", Calls: 150},
 		{IDHash: "c", Day: "2026-10-03", Calls: 200},
-		{IDHash: "c", Day: "2026-10-04", Calls: 0},  // not an active day
-		{IDHash: "d", Day: "2026-09-01", Calls: 3},  // outside range
+		{IDHash: "c", Day: "2026-10-04", Calls: 0}, // not an active day
+		{IDHash: "d", Day: "2026-09-01", Calls: 3}, // outside range
 	}
 	got := CallsDistribution(usage, "2026-10-01", "2026-10-04", 200)
 	want := []Bucket{
-		{"1", 1}, {"2-5", 1}, {"6-10", 1}, {"11-25", 0}, {"26-50", 0},
-		{"51-100", 0}, {"101-199", 1}, {"200+", 1},
+		{"1", 1},
+		{"2-5", 1},
+		{"6-10", 1},
+		{"11-25", 0},
+		{"26-50", 0},
+		{"51-100", 0},
+		{"101-199", 1},
+		{"200+", 1},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("CallsDistribution() = %+v, want %+v", got, want)

@@ -37,9 +37,9 @@ func TestParseMode(t *testing.T) {
 
 func TestActiveSeriesRollingWindows(t *testing.T) {
 	a := Activity{}
-	a.mark("2026-09-01", "old")  // 30+ days before 2026-10-01: outside MAU
-	a.mark("2026-09-02", "m")    // inside MAU window of 2026-10-01 (day -29)
-	a.mark("2026-09-25", "w")    // inside WAU window of 2026-10-01 (day -6)
+	a.mark("2026-09-01", "old") // 30+ days before 2026-10-01: outside MAU
+	a.mark("2026-09-02", "m")   // inside MAU window of 2026-10-01 (day -29)
+	a.mark("2026-09-25", "w")   // inside WAU window of 2026-10-01 (day -6)
 	a.mark("2026-10-01", "d")
 	a.mark("2026-10-01", "w")
 
