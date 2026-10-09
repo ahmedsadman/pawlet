@@ -1,13 +1,16 @@
 import 'dart:math';
 
 import 'package:decimal/decimal.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 import '../data/banks_repository.dart';
+import '../data/model_stats_repository.dart';
 import '../data/sms_repository.dart';
 import '../models/finance/bank.dart';
 import '../models/sms_record.dart';
 import 'classification/classifier.dart';
 import 'classification/sender_matcher.dart';
+import 'app_version.dart';
 import 'finance/finance_writer.dart';
 import 'llm/llm_provider.dart';
 
@@ -31,6 +34,9 @@ Future<Decimal?> _noRate() async => null;
 /// Failures are rescheduled with a capped-exponential backoff persisted in
 /// `next_attempt_at`; the existing triggers (foreground resume, incoming-SMS
 /// isolate, WorkManager tick) drive later retries.
+///
+/// When an LLM is configured, every message the on-device model runs on has
+/// its verdict counted once for the local-model stats ([modelStats]).
 class ProcessingService {
   ProcessingService({
     required this.smsRepository,
@@ -44,6 +50,8 @@ class ProcessingService {
     this.onCounts,
     this.afterPass,
     this.reschedule,
+    this.modelStats,
+    this.appVersionCode = readAppVersionCode,
   }) : _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final SmsRepository smsRepository;
@@ -72,6 +80,17 @@ class ProcessingService {
   /// every pass with the delay until the soonest pending retry, or null when
   /// nothing is queued (so the background job can be cancelled — no idle wakes).
   final Future<void> Function(Duration? delay)? reschedule;
+
+  /// Where each message's on-device verdict is counted, once (see
+  /// [ModelStatsRepository.recordVerdict]). Null skips counting. Used only
+  /// when the classifier has an LLM: with none, the model runs ungated and
+  /// its verdicts are not comparable. BYOK counts but never sends; only the
+  /// reporter that sends the counts is proxy-only.
+  final ModelStatsRepository? modelStats;
+
+  /// This build's versionCode, which the counts are filed under. A null
+  /// answer skips counting that message rather than filing it wrongly.
+  final Future<int?> Function() appVersionCode;
 
   /// Max attempts before a record is marked failed.
   static const int maxAttempts = 10;
@@ -282,6 +301,19 @@ class ProcessingService {
           usdRate: usdRate,
         );
         final localOutcome = local.outcome;
+        // Only a gated verdict is comparable. With no LLM the model runs
+        // ungated (see Classifier.classifyLocal), so its answers say nothing
+        // about the on-device rate and are not counted.
+        if (hasLlm) {
+          await _recordVerdict(
+            id,
+            localOutcome != null
+                ? LocalVerdict.accepted
+                : local.declined
+                ? LocalVerdict.declined
+                : LocalVerdict.unavailable,
+          );
+        }
         if (localOutcome != null) {
           return await _finish(record, localOutcome, banks, cur, heldSince);
         }
@@ -356,6 +388,27 @@ class ProcessingService {
     } catch (e) {
       // Unexpected (e.g. a DB error): treat as transient and back off.
       return _reschedule(record, e.toString(), heldSince: heldSince);
+    }
+  }
+
+  /// Counts the on-device model's verdict on this message for the local-model
+  /// stats. The repository makes it count-once, so a retry, a reclaimed row
+  /// or a Retry tap that re-runs the model adds nothing. Never throws: a
+  /// counting failure must not change what happens to the message.
+  Future<void> _recordVerdict(int id, LocalVerdict verdict) async {
+    final stats = modelStats;
+    if (stats == null) return;
+    try {
+      final version = await appVersionCode();
+      if (version == null) return;
+      await stats.recordVerdict(
+        id,
+        verdict,
+        nowMs: _clock(),
+        appVersionCode: version,
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('model stats: verdict not counted: $e');
     }
   }
 
