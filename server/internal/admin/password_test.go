@@ -55,6 +55,18 @@ func TestVerifyPasswordRejectsMalformedHashes(t *testing.T) {
 		"$argon2id$v=19$m=0,t=2,p=1$c2FsdA$a2V5",
 		"$argon2id$v=19$m=65536,t=2,p=1$!!$a2V5",
 		"$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$",
+		// Strict parsing tests
+		"$argon2id$v=19junk$m=65536,t=2,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",
+		"$argon2id$v=19$m=65536,t=2,p=1xyz$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",
+		"$argon2id$v=19$m= 65536,t=2,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",
+		"$argon2id$v=19$m=2000000,t=2,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5", // huge memory
+		"$argon2id$v=19$m=1,t=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",           // missing p
+		"$argon2id$v=19$m=65536,t=2,p=1$YQ$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",       // 1-byte salt
+		"$argon2id$v=19$m=65536,t=2,p=1$c2FsdHNhbHQ$YQ",                            // 1-byte key
+		"$argon2id$v=19$m=100,t=2,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",     // memory too low
+		"$argon2id$v=19$m=65536,t=0,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",   // time=0
+		"$argon2id$v=19$m=65536,t=20,p=1$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",  // time too high
+		"$argon2id$v=19$m=65536,t=2,p=20$c2FsdA$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5",  // threads too high
 	} {
 		if _, err := VerifyPassword(bad, "x"); !errors.Is(err, ErrBadHash) {
 			t.Errorf("VerifyPassword(%q) err = %v, want ErrBadHash", bad, err)

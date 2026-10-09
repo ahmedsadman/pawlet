@@ -21,7 +21,8 @@ func TestSessionsRoundTrip(t *testing.T) {
 		t.Fatalf("cookies = %v", cookies)
 	}
 	c := cookies[0]
-	if c.Name != cookieName || !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
+	if c.Name != cookieName || !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteStrictMode || c.Path != "/" ||
+		c.MaxAge != int(sessionTTL.Seconds()) {
 		t.Fatalf("cookie flags = %+v", c)
 	}
 
@@ -61,5 +62,23 @@ func TestSessionsEndClearsCookie(t *testing.T) {
 	c := rec.Result().Cookies()[0]
 	if c.Name != cookieName || c.MaxAge >= 0 {
 		t.Fatalf("cleared cookie = %+v", c)
+	}
+}
+
+func TestSessionsRejectWrongSubject(t *testing.T) {
+	now := func() time.Time { return time.Unix(1_700_000_000, 0) }
+	secret := []byte(strings.Repeat("k", 32))
+	s := newSessions(secret, now)
+
+	// Mint a token with the same secret but different subject
+	wrongSubjectToken, err := s.issuer.Mint("not-admin", now())
+	if err != nil {
+		t.Fatalf("Mint() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: wrongSubjectToken})
+	if s.valid(req) {
+		t.Fatal("token with wrong subject accepted")
 	}
 }
