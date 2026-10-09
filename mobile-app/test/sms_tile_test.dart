@@ -44,6 +44,46 @@ void main() {
     expect(find.text('Queued'), findsOneWidget);
   });
 
+  testWidgets('history tile shows Today with the time', (tester) async {
+    // _rec is timestamped 2 Jan 2026 15:30 local.
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.success, category: 'transaction'),
+        showCategory: true,
+        now: () => DateTime(2026, 1, 2, 16, 0).millisecondsSinceEpoch,
+      ),
+    );
+    expect(find.text('Today · 3:30 PM'), findsOneWidget);
+  });
+
+  testWidgets('history tile shows Yesterday on the next calendar day', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.success, category: 'transaction'),
+        showCategory: true,
+        now: () => DateTime(2026, 1, 3, 9, 0).millisecondsSinceEpoch,
+      ),
+    );
+    expect(find.text('Yesterday · 3:30 PM'), findsOneWidget);
+  });
+
+  testWidgets('queue tile shows day and month for older messages', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.queued),
+        now: () => DateTime(2026, 3, 1, 9, 0).millisecondsSinceEpoch,
+      ),
+    );
+    expect(find.text('2 Jan · 3:30 PM'), findsOneWidget);
+  });
+
   testWidgets('history tile shows a muted LLM badge when LLM-parsed', (
     tester,
   ) async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/sms_record.dart';
 import '../../services/processing_service.dart';
+import '../../utils/time_format.dart';
 import 'category_label.dart';
 import 'status_badge.dart';
 
@@ -30,8 +31,9 @@ class SmsTile extends StatefulWidget {
   /// When true, render the History (compact, expandable) layout.
   final bool showCategory;
 
-  /// Injectable clock (epoch ms) for deciding whether a scheduled next-attempt
-  /// time is still upcoming. Defaults to the wall clock; overridden in tests.
+  /// Injectable clock (epoch ms) for the date label and for deciding whether a
+  /// scheduled next-attempt time is still upcoming. Defaults to the wall
+  /// clock; overridden in tests.
   final int Function() now;
 
   /// Tapped by the per-row retry icon on a Failed history row. Null hides it.
@@ -50,15 +52,13 @@ class _SmsTileState extends State<SmsTile> {
 
   String get _title => record.sender;
 
-  String _formatTime(int millis) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
-    String two(int n) => n.toString().padLeft(2, '0');
-    final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final period = dt.hour < 12 ? 'AM' : 'PM';
-    return '${dt.year}-${two(dt.month)}-${two(dt.day)} $hour12:${two(dt.minute)} $period';
-  }
+  /// When the message arrived, e.g. `Today · 3:42 PM` (see [dateTimeLabel]).
+  String get _timeLabel => dateTimeLabel(
+    DateTime.fromMillisecondsSinceEpoch(record.timestamp),
+    now: DateTime.fromMillisecondsSinceEpoch(widget.now()),
+  );
 
-  /// Time-only clock in the same 12-hour AM/PM style as [_formatTime].
+  /// Time-only clock in the same 12-hour AM/PM style as [_timeLabel].
   String _formatClock(int millis) {
     final dt = DateTime.fromMillisecondsSinceEpoch(millis);
     final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
@@ -155,7 +155,7 @@ class _SmsTileState extends State<SmsTile> {
               const SizedBox(height: 4),
               // Line 2: timestamp.
               Text(
-                _formatTime(record.timestamp),
+                _timeLabel,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.outline,
                 ),
@@ -232,7 +232,7 @@ class _SmsTileState extends State<SmsTile> {
             ),
             const SizedBox(height: 6),
             Text(
-              _formatTime(record.timestamp),
+              _timeLabel,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),
