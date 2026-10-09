@@ -80,7 +80,7 @@ void main() {
     // version pair it has no branch for, so a bump that forgets its branch
     // ships a database the app queries with the wrong schema and no failing
     // test. Update this only together with the branch and its parity test.
-    expect(AppDatabase.version, 6);
+    expect(AppDatabase.version, 7);
   });
 
   test('schema creates all tables', () async {
@@ -286,20 +286,19 @@ void main() {
     );
   });
 
-  group('needs_llm migration (v5 -> v6)', () {
-    // The complete v5 shape, frozen here because createSchema now describes
-    // v6: an upgrade test needs the schema it is upgrading FROM. Every table
-    // is reproduced, not just the one v6 alters — the parity check below is
-    // only as wide as this fixture, and a future migration that forgets to
-    // touch `banks`/`transactions`/`bills`/`app_meta` has to have something to
-    // drift away from.
-    Future<Database> openV5() async {
-      final db = await databaseFactory.openDatabase(
-        inMemoryDatabasePath,
-        options: OpenDatabaseOptions(singleInstance: false),
-      );
-      // The only table whose v5 shape differs from v6: no needs_llm.
-      await db.execute('''
+  // The complete v5 shape, frozen here because createSchema now describes
+  // v6: an upgrade test needs the schema it is upgrading FROM. Every table
+  // is reproduced, not just the one v6 alters — the parity check below is
+  // only as wide as this fixture, and a future migration that forgets to
+  // touch `banks`/`transactions`/`bills`/`app_meta` has to have something to
+  // drift away from.
+  Future<Database> openV5() async {
+    final db = await databaseFactory.openDatabase(
+      inMemoryDatabasePath,
+      options: OpenDatabaseOptions(singleInstance: false),
+    );
+    // The only table whose v5 shape differs from v6: no needs_llm.
+    await db.execute('''
         CREATE TABLE sms_records (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           sender TEXT NOT NULL,
@@ -318,25 +317,25 @@ void main() {
           parse_source TEXT
         )
       ''');
-      await db.execute(
-        'CREATE UNIQUE INDEX idx_sms_unique '
-        'ON sms_records (sender, timestamp, content)',
-      );
-      await db.execute(
-        'CREATE INDEX idx_sms_status_updated ON sms_records (status, updated_at)',
-      );
-      await db.execute(
-        'CREATE INDEX idx_sms_status_next ON sms_records (status, next_attempt_at)',
-      );
+    await db.execute(
+      'CREATE UNIQUE INDEX idx_sms_unique '
+      'ON sms_records (sender, timestamp, content)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_sms_status_updated ON sms_records (status, updated_at)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_sms_status_next ON sms_records (status, next_attempt_at)',
+    );
 
-      await db.execute('''
+    await db.execute('''
         CREATE TABLE app_meta (
           key TEXT PRIMARY KEY,
           value INTEGER NOT NULL
         )
       ''');
 
-      await db.execute('''
+    await db.execute('''
         CREATE TABLE banks (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
@@ -348,16 +347,16 @@ void main() {
           matchers TEXT
         )
       ''');
-      await db.execute(
-        "CREATE UNIQUE INDEX idx_banks_deposit ON banks (name) "
-        "WHERE account_type = 'deposit'",
-      );
-      await db.execute(
-        "CREATE UNIQUE INDEX idx_banks_credit ON banks (name, card_digits) "
-        "WHERE account_type = 'credit'",
-      );
+    await db.execute(
+      "CREATE UNIQUE INDEX idx_banks_deposit ON banks (name) "
+      "WHERE account_type = 'deposit'",
+    );
+    await db.execute(
+      "CREATE UNIQUE INDEX idx_banks_credit ON banks (name, card_digits) "
+      "WHERE account_type = 'credit'",
+    );
 
-      await db.execute('''
+    await db.execute('''
         CREATE TABLE transactions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           message_id INTEGER,
@@ -373,12 +372,12 @@ void main() {
           created_at INTEGER NOT NULL
         )
       ''');
-      await db.execute(
-        'CREATE UNIQUE INDEX idx_tx_message ON transactions (message_id)',
-      );
-      await db.execute('CREATE INDEX idx_tx_date ON transactions (date)');
+    await db.execute(
+      'CREATE UNIQUE INDEX idx_tx_message ON transactions (message_id)',
+    );
+    await db.execute('CREATE INDEX idx_tx_date ON transactions (date)');
 
-      await db.execute('''
+    await db.execute('''
         CREATE TABLE bills (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           message_id INTEGER NOT NULL,
@@ -392,15 +391,16 @@ void main() {
           created_at INTEGER NOT NULL
         )
       ''');
-      await db.execute(
-        'CREATE UNIQUE INDEX idx_bill_message ON bills (message_id)',
-      );
-      await db.execute(
-        'CREATE INDEX idx_bill_bank_period ON bills (bank_id, statement_period)',
-      );
-      return db;
-    }
+    await db.execute(
+      'CREATE UNIQUE INDEX idx_bill_message ON bills (message_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_bill_bank_period ON bills (bank_id, statement_period)',
+    );
+    return db;
+  }
 
+  group('needs_llm migration (v5 -> v6)', () {
     test('preserves messages and hand-configured accounts', () async {
       final db = await openV5();
       await db.insert('sms_records', {
@@ -494,6 +494,105 @@ void main() {
 
       expect(await db.query('sms_records'), isEmpty);
       expect(await _columnNames(db, 'sms_records'), contains('needs_llm'));
+      await db.close();
+    });
+  });
+
+  group('local model stats migration (v6 -> v7)', () {
+    // v6 is v5 plus needs_llm. Built by hand from the frozen v5 fixture rather
+    // than onUpgrade(5, 6), which now runs the v7 step as well.
+    Future<Database> openV6() async {
+      final db = await openV5();
+      await db.execute(
+        'ALTER TABLE sms_records '
+        'ADD COLUMN needs_llm INTEGER NOT NULL DEFAULT 0',
+      );
+      return db;
+    }
+
+    test(
+      'preserves messages and accounts, and old rows carry no verdict',
+      () async {
+        final db = await openV6();
+        await db.insert('sms_records', {
+          'sender': 'CHK',
+          'content': 'debit 50',
+          'timestamp': 1,
+          'status': 'queued',
+          'updated_at': 1,
+          'needs_llm': 1,
+        });
+        await db.insert('banks', {
+          'name': 'My Card',
+          'account_type': 'credit',
+          'card_digits': '4238|3241',
+          'created_at': 1,
+        });
+
+        await AppDatabase.onUpgrade(db, 6, 7);
+
+        final sms = (await db.query('sms_records')).single;
+        expect(sms['needs_llm'], 1);
+        // Legacy rows have no verdict, so they are never counted.
+        expect(sms['local_verdict'], isNull);
+        expect((await db.query('banks')).single['name'], 'My Card');
+        expect(await db.query('model_stats'), isEmpty);
+        await db.close();
+      },
+    );
+
+    test('lands on the same shape as a fresh v7 create', () async {
+      final migrated = await openV6();
+      await AppDatabase.onUpgrade(migrated, 6, 7);
+      final fresh = await openTestDb();
+
+      for (final table in const [
+        'sms_records',
+        'banks',
+        'transactions',
+        'bills',
+        'app_meta',
+        'model_stats',
+      ]) {
+        expect(
+          await _columnSpecs(migrated, table),
+          await _columnSpecs(fresh, table),
+          reason: 'columns of $table drifted from a fresh create',
+        );
+        expect(
+          await _indexDdl(migrated, table),
+          await _indexDdl(fresh, table),
+          reason: 'indexes of $table drifted from a fresh create',
+        );
+      }
+      await migrated.close();
+      await fresh.close();
+    });
+
+    test('model_stats is keyed on (day, app_version_code)', () async {
+      final db = await openTestDb();
+      final row = {
+        'day': '2026-10-10',
+        'app_version_code': 21,
+        'updated_at': 1,
+      };
+      await db.insert('model_stats', row);
+      await db.insert('model_stats', {...row, 'app_version_code': 22});
+      await expectLater(
+        db.insert('model_stats', row),
+        throwsA(isA<Exception>()),
+      );
+
+      final stored = (await db.query(
+        'model_stats',
+        where: 'app_version_code = ?',
+        whereArgs: [21],
+      )).single;
+      expect(
+        [stored['accepted'], stored['declined'], stored['unavailable']],
+        [0, 0, 0],
+      );
+      expect(stored['reported_at'], isNull);
       await db.close();
     });
   });
