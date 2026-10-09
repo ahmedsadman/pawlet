@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ahmedsadman/pawlet/server/internal/attest"
+	"github.com/ahmedsadman/pawlet/server/internal/metrics"
 	"github.com/ahmedsadman/pawlet/server/internal/store"
 )
 
@@ -70,5 +71,117 @@ func TestSessionRecordsInstallMetaAndDay(t *testing.T) {
 	}
 	if len(days) != 1 || days[0] != "2026-10-03" {
 		t.Fatalf("days = %v, want [2026-10-03]", days)
+	}
+}
+
+func TestSessionCountsOutcomes(t *testing.T) {
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name string
+		run  func(t *testing.T, h *SessionHandler, d *fakeDecoder)
+		want string
+	}{
+		{
+			name: "ok",
+			run: func(t *testing.T, h *SessionHandler, d *fakeDecoder) {
+				postSession(h, sessionBody(t, h, d, "i-ok", nil))
+			},
+			want: metrics.OK,
+		},
+		{
+			name: "bad request",
+			run: func(_ *testing.T, h *SessionHandler, _ *fakeDecoder) {
+				postSession(h, []byte(`{"installId": "broken`))
+			},
+			want: metrics.BadRequest,
+		},
+		{
+			name: "challenge invalid",
+			run: func(_ *testing.T, h *SessionHandler, _ *fakeDecoder) {
+				body, _ := json.Marshal(sessionRequest{InstallID: "i", Challenge: "never-issued", IntegrityToken: "t"})
+				postSession(h, body)
+			},
+			want: metrics.ChallengeInvalid,
+		},
+		{
+			name: "attest unavailable",
+			run: func(t *testing.T, h *SessionHandler, d *fakeDecoder) {
+				body := sessionBody(t, h, d, "i-down", nil)
+				d.shouldError = true
+				d.err = attest.ErrDecodeUnreachable
+				postSession(h, body)
+			},
+			want: metrics.AttestUnavailable,
+		},
+		{
+			name: "device integrity",
+			run: func(t *testing.T, h *SessionHandler, d *fakeDecoder) {
+				postSession(h, sessionBody(t, h, d, "i-basic", func(p *attest.Payload) {
+					p.DeviceIntegrity.DeviceRecognitionVerdict = []string{"MEETS_BASIC_INTEGRITY"}
+				}))
+			},
+			want: metrics.DeviceIntegrity,
+		},
+		{
+			name: "cert mismatch",
+			run: func(t *testing.T, h *SessionHandler, d *fakeDecoder) {
+				postSession(h, sessionBody(t, h, d, "i-cert", func(p *attest.Payload) {
+					p.AppIntegrity.CertificateSha256Digest = []string{"other"}
+				}))
+			},
+			want: metrics.CertMismatch,
+		},
+		{
+			name: "banned",
+			run: func(t *testing.T, h *SessionHandler, d *fakeDecoder) {
+				hash := attest.InstallHash("i-banned")
+				if err := h.Store.TouchInstall(context.Background(), hash, now, store.InstallMeta{}); err != nil {
+					t.Fatalf("touch: %v", err)
+				}
+				if err := h.Store.Ban(context.Background(), hash, "test"); err != nil {
+					t.Fatalf("ban: %v", err)
+				}
+				postSession(h, sessionBody(t, h, d, "i-banned", nil))
+			},
+			want: metrics.Banned,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			decoder := &fakeDecoder{}
+			h := newTestHandler(t, decoder, now)
+			counter := newFakeCounter()
+			h.Metrics = counter
+
+			c.run(t, h, decoder)
+
+			if got := counter.n(metrics.SessionOutcome, c.want); got != 1 {
+				t.Fatalf("session_outcome/%s = %d, want 1 (all: %v)", c.want, got, counter.got)
+			}
+			if got := counter.total(metrics.SessionOutcome); got != 1 {
+				t.Fatalf("session_outcome total = %d, want exactly 1 (all: %v)", got, counter.got)
+			}
+		})
+	}
+}
+
+func TestChallengeCountsRateLimit(t *testing.T) {
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	h := newTestHandler(t, &fakeDecoder{}, now)
+	counter := newFakeCounter()
+	h.Metrics = counter
+	h.ChallengeLimiter = NewChallengeLimiter(1)
+
+	for i := 0; i < 2; i++ {
+		h.Challenge(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/challenge", nil))
+	}
+
+	if got := counter.n(metrics.SessionOutcome, metrics.ChallengeRateLimited); got != 1 {
+		t.Fatalf("challenge_rate_limited = %d, want 1 (all: %v)", got, counter.got)
+	}
+	if got := counter.total(metrics.SessionOutcome); got != 1 {
+		t.Fatalf("session_outcome total = %d, want 1: a granted challenge is not counted", got)
 	}
 }

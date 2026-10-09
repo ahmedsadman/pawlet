@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ahmedsadman/pawlet/server/internal/attest"
+	"github.com/ahmedsadman/pawlet/server/internal/metrics"
 	"github.com/ahmedsadman/pawlet/server/internal/store"
 	"github.com/ahmedsadman/pawlet/server/internal/token"
 )
@@ -25,6 +26,7 @@ type SessionHandler struct {
 	Logger           *slog.Logger
 	ChallengeLimiter *hourlyLimiter // nil-safe: existing tests construct without one
 	TrustedProxy     *net.IPNet
+	Metrics          Counter // nil-safe: existing tests construct without one
 }
 
 type challengeResponse struct {
@@ -50,6 +52,7 @@ func (h *SessionHandler) Challenge(w http.ResponseWriter, r *http.Request) {
 		ip := clientIP(r, h.TrustedProxy)
 		if !h.ChallengeLimiter.allow(ip) {
 			h.Logger.Warn("challenge rate limit exceeded", "ip", ip)
+			count(h.Metrics, metrics.SessionOutcome, metrics.ChallengeRateLimited)
 			writeRateLimited(w, time.Hour, 0)
 			return
 		}
@@ -74,6 +77,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 	var req sessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.Logger.Warn("malformed session request", "error", err)
+		count(h.Metrics, metrics.SessionOutcome, metrics.BadRequest)
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
@@ -81,6 +85,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 	// Validate required fields.
 	if req.InstallID == "" || req.Challenge == "" || req.IntegrityToken == "" {
 		h.Logger.Warn("session request missing required field")
+		count(h.Metrics, metrics.SessionOutcome, metrics.BadRequest)
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
@@ -91,6 +96,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 	if !h.Challenges.Consume(req.Challenge) {
 		h.Logger.Warn("challenge consume failed",
 			"installHash", shortHash(attest.InstallHash(req.InstallID)))
+		count(h.Metrics, metrics.SessionOutcome, metrics.ChallengeInvalid)
 		writeError(w, http.StatusForbidden, "attestation_failed")
 		return
 	}
@@ -107,6 +113,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("integrity decode failed",
 			"installHash", shortHash(attest.InstallHash(req.InstallID)),
 			"error", err)
+		count(h.Metrics, metrics.SessionOutcome, metrics.AttestUnavailable)
 		writeError(w, http.StatusServiceUnavailable, "attestation_unavailable")
 		return
 	}
@@ -117,6 +124,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Warn("attestation verification failed",
 			"installHash", shortHash(attest.InstallHash(req.InstallID)),
 			"error", err)
+		count(h.Metrics, metrics.SessionOutcome, attestFailureKey(err))
 		writeError(w, http.StatusForbidden, "attestation_failed")
 		return
 	}
@@ -129,6 +137,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to read install",
 			"installHash", installHash,
 			"error", err)
+		count(h.Metrics, metrics.SessionOutcome, metrics.Internal)
 		writeError(w, http.StatusInternalServerError, "internal")
 		return
 	}
@@ -136,6 +145,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Warn("banned install attempted session",
 			"installHash", installHash,
 			"banReason", install.BanReason)
+		count(h.Metrics, metrics.SessionOutcome, metrics.Banned)
 		writeError(w, http.StatusForbidden, "banned")
 		return
 	}
@@ -146,6 +156,7 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to touch install",
 			"installHash", installHash,
 			"error", err)
+		count(h.Metrics, metrics.SessionOutcome, metrics.Internal)
 		writeError(w, http.StatusInternalServerError, "internal")
 		return
 	}
@@ -156,10 +167,12 @@ func (h *SessionHandler) Session(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to mint session token",
 			"installHash", installHash,
 			"error", err)
+		count(h.Metrics, metrics.SessionOutcome, metrics.Internal)
 		writeError(w, http.StatusInternalServerError, "internal")
 		return
 	}
 
+	count(h.Metrics, metrics.SessionOutcome, metrics.OK)
 	expiresAt := h.Now().Add(h.Issuer.TTL()).Unix()
 	writeJSON(w, http.StatusOK, sessionResponse{
 		Token:     sessionToken,
