@@ -136,7 +136,7 @@ func hashes(rows []InstallRow) []string {
 
 func TestInstallDaily(t *testing.T) {
 	usage := []store.UsageRow{{IDHash: "a", Day: "2026-10-02", Calls: 3, Tokens: 30}}
-	got := InstallDaily("2026-10-01", "2026-10-03", usage, []string{"2026-10-01", "2026-10-02"})
+	got := InstallDaily("2026-10-01", "2026-10-03", usage, []string{"2026-10-01", "2026-10-02"}, nil, false)
 	want := []DetailDay{
 		{Day: "2026-10-01", Session: true},
 		{Day: "2026-10-02", Calls: 3, Tokens: 30, Session: true},
@@ -150,7 +150,7 @@ func TestInstallDaily(t *testing.T) {
 			t.Fatalf("InstallDaily() = %+v, want %+v", got, want)
 		}
 	}
-	if len(InstallDaily("2026-10-05", "2026-10-03", nil, nil)) != 1 {
+	if len(InstallDaily("2026-10-05", "2026-10-03", nil, nil, nil, false)) != 1 {
 		t.Fatal("first seen after today should clamp to one day")
 	}
 }
@@ -184,6 +184,34 @@ func TestApplyModelStats(t *testing.T) {
 		page, err = QueryInstalls(rows, InstallQuery{Sort: key, Order: "asc"})
 		if err != nil || page.Rows[2].Hash != "aaaa" {
 			t.Fatalf("%s asc = %v, %v", key, hashes(page.Rows), err)
+		}
+	}
+}
+
+func TestInstallDailyMessages(t *testing.T) {
+	model := []store.ModelRow{
+		{IDHash: "a", Day: "2026-07-11", AppVersionCode: 20, Accepted: 5},                 // 90 days back: outside the window
+		{IDHash: "a", Day: "2026-10-08", AppVersionCode: 20, Accepted: 3, Declined: 1},    //
+		{IDHash: "a", Day: "2026-10-08", AppVersionCode: 21, Accepted: 1, Unavailable: 1}, // same day, summed
+	}
+	got := InstallDaily("2026-07-10", "2026-10-09", nil, nil, model, true)
+	byDay := map[string]DetailDay{}
+	for _, d := range got {
+		byDay[d.Day] = d
+	}
+	if d := byDay["2026-07-11"]; d.Messages != nil || d.OnDevice != nil {
+		t.Fatalf("outside the 90-day window = %+v, want null", d)
+	}
+	if d := byDay["2026-07-12"]; d.Messages == nil || *d.Messages != 0 || d.OnDevice == nil || *d.OnDevice != 0 {
+		t.Fatalf("first day in the window = %+v, want 0", d)
+	}
+	if d := byDay["2026-10-08"]; d.Messages == nil || *d.Messages != 6 || *d.OnDevice != 4 {
+		t.Fatalf("10-08 = %+v, want 6 messages, 4 on device", d)
+	}
+
+	for _, d := range InstallDaily("2026-10-01", "2026-10-09", nil, nil, nil, false) {
+		if d.Messages != nil || d.OnDevice != nil {
+			t.Fatalf("install without model stats = %+v, want null", d)
 		}
 	}
 }
