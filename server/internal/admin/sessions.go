@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	cookieName   = "pawlet_admin"
+	cookieName   = "__Host-pawlet_admin"
 	sessionTTL   = 7 * 24 * time.Hour
 	adminSubject = "admin"
 )

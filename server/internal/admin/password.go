@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -52,24 +53,59 @@ func parsePHC(encoded string) (phc, error) {
 	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" {
 		return phc{}, ErrBadHash
 	}
-	var version int
-	if n, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil || n != 1 || version != argon2.Version {
+
+	// Strict version parsing: must be exactly "v=19"
+	if parts[2] != "v=19" {
 		return phc{}, ErrBadHash
 	}
+
+	// Strict parameter parsing: split on comma, parse each exactly
+	params := strings.Split(parts[3], ",")
+	if len(params) != 3 {
+		return phc{}, ErrBadHash
+	}
+
 	var p phc
-	if n, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &p.memory, &p.time, &p.threads); err != nil || n != 3 {
+	// Parse m=...
+	if !strings.HasPrefix(params[0], "m=") {
 		return phc{}, ErrBadHash
 	}
-	if p.memory == 0 || p.time == 0 || p.threads == 0 {
+	mem, err := strconv.ParseUint(params[0][2:], 10, 32)
+	if err != nil || mem < 19456 || mem > 1048576 {
 		return phc{}, ErrBadHash
 	}
-	var err error
-	if p.salt, err = base64.RawStdEncoding.DecodeString(parts[4]); err != nil || len(p.salt) == 0 {
+	p.memory = uint32(mem)
+
+	// Parse t=...
+	if !strings.HasPrefix(params[1], "t=") {
 		return phc{}, ErrBadHash
 	}
-	if p.key, err = base64.RawStdEncoding.DecodeString(parts[5]); err != nil || len(p.key) == 0 || len(p.key) > 64 {
+	tm, err := strconv.ParseUint(params[1][2:], 10, 32)
+	if err != nil || tm < 1 || tm > 10 {
 		return phc{}, ErrBadHash
 	}
+	p.time = uint32(tm)
+
+	// Parse p=...
+	if !strings.HasPrefix(params[2], "p=") {
+		return phc{}, ErrBadHash
+	}
+	thr, err := strconv.ParseUint(params[2][2:], 10, 8)
+	if err != nil || thr < 1 || thr > 16 {
+		return phc{}, ErrBadHash
+	}
+	p.threads = uint8(thr)
+
+	// Parse salt (must be >= 8 bytes)
+	if p.salt, err = base64.RawStdEncoding.DecodeString(parts[4]); err != nil || len(p.salt) < 8 {
+		return phc{}, ErrBadHash
+	}
+
+	// Parse key (must be 16-64 bytes)
+	if p.key, err = base64.RawStdEncoding.DecodeString(parts[5]); err != nil || len(p.key) < 16 || len(p.key) > 64 {
+		return phc{}, ErrBadHash
+	}
+
 	return p, nil
 }
 
