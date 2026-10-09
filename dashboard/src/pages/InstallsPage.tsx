@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from "lucide-react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { useInstalls } from "../api/queries";
 import type { InstallRow } from "../api/types";
 import { Async } from "../components/Async";
@@ -33,7 +33,15 @@ const COLUMNS: Column[] = [
     key: "hash",
     label: "Install",
     statId: "col.hash",
-    cell: (r) => <span className="font-mono text-ctp-text">{shortHash(r.hash)}</span>,
+    cell: (r) => (
+      <Link
+        to={`/installs/${r.hash}`}
+        className="font-mono text-ctp-text rounded"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {shortHash(r.hash)}
+      </Link>
+    ),
   },
   {
     key: "firstSeen",
