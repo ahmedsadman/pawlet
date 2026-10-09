@@ -1,6 +1,6 @@
 import type { DayCounts } from "../api/types";
 import type { Series } from "../charts/TimeSeriesChart";
-import { OTHER, SERIES } from "../theme/tokens";
+import { ctp, OTHER, SERIES } from "../theme/tokens";
 
 /**
  * The n most common versions over the period become series, coloured newest
@@ -25,7 +25,7 @@ export function topVersionSeries(adoption: DayCounts[], n = 5) {
   }));
   if (totals.has("unknown")) series.push({ key: "unknown", label: "unknown", color: OTHER });
   const hasOther = versions.length > top.length;
-  if (hasOther) series.push({ key: "other", label: "Other", color: "#5b6078" });
+  if (hasOther) series.push({ key: "other", label: "Other", color: ctp.surface2 });
 
   const keep = new Set(series.map((s) => s.key));
   const rows = adoption.map((d) => {
