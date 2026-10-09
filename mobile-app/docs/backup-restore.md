@@ -221,7 +221,7 @@ up; anything else in `settings` is ignored.
 | `tx_sort` | string | transactions sort key |
 | `hide_balance` | bool | mask monetary values |
 | `tx_type_hint_seen` | bool | one-time hint dismissed |
-| `history_hint_seen` | bool | one-time hint dismissed |
+| `history_hint_seen_v2` | bool | one-time History hint dismissed (the older `history_hint_seen` key is no longer read, so it is ignored on restore) |
 
 ## After a restore
 
