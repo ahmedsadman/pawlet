@@ -240,7 +240,7 @@ class ProcessingService {
       // Layer 1. Re-run even for a `needs_llm` row: the user may since have
       // deleted the bank that let it through.
       if (gateBanks(record.sender, record.content, banks).isEmpty) {
-        return smsRepository.updateStatus(
+        return await smsRepository.updateStatus(
           id,
           SmsStatus.ignored,
           attempts: record.attempts,
@@ -283,7 +283,7 @@ class ProcessingService {
         );
         final localOutcome = local.outcome;
         if (localOutcome != null) {
-          return _finish(record, localOutcome, banks, cur, heldSince);
+          return await _finish(record, localOutcome, banks, cur, heldSince);
         }
         declined = local.declined;
       }
@@ -298,7 +298,7 @@ class ProcessingService {
       // two readers above would then drop this row while offline and skip its
       // inference for good.
       if (!hasLlm) {
-        return smsRepository.updateStatus(
+        return await smsRepository.updateStatus(
           id,
           SmsStatus.failure,
           attempts: record.attempts + 1,
@@ -312,11 +312,11 @@ class ProcessingService {
 
       // Layer 3.
       if (!await isOnline()) {
-        return _deferForLlm(record, heldSince, declined: declined);
+        return await _deferForLlm(record, heldSince, declined: declined);
       }
       final slotAt = _clock();
       if (!await smsRepository.acquireLlmSlot(id, slotAt)) {
-        return _deferForLlm(record, heldSince, declined: declined);
+        return await _deferForLlm(record, heldSince, declined: declined);
       }
       heldSince = slotAt; // the promotion rewrote `updated_at`
 
@@ -325,7 +325,9 @@ class ProcessingService {
         content: record.content,
         currency: cur,
       );
-      return _finish(record, outcome, banks, cur, heldSince);
+      // Awaited, like every return in this block: un-awaited, an error from
+      // the returned future skips the handlers below and stops the pass.
+      return await _finish(record, outcome, banks, cur, heldSince);
     } on LlmException catch (e) {
       if (e.needsForeground) {
         _awaitingForeground = true;
