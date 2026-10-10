@@ -90,8 +90,9 @@ void main() {
 
     await tester.tap(find.text('Total Balance'));
     await tester.pumpAndSettle();
-    // The per-bank row carries the same label as the header.
-    expect(find.text('Updated 1 Jan 2025 · 12:00 AM'), findsNWidgets(2));
+    // The per-bank row shows the same time, without the header's prefix.
+    expect(find.text('Updated 1 Jan 2025 · 12:00 AM'), findsOneWidget);
+    expect(find.text('1 Jan 2025 · 12:00 AM'), findsOneWidget);
   });
 
   testWidgets('shows the Add Bank CTA when there are no banks', (tester) async {
