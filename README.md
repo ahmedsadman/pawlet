@@ -24,6 +24,24 @@ promotions. Pawlet watches those messages, works out which ones describe real mo
 pulls the numbers out of them, and keeps a running picture of your finances. All of the storage,
 matching, and aggregation happens locally in an on-device database.
 
+## Privacy
+
+- **Your ledger stays on your phone.** Messages, transactions, balances and bills live only in
+  the app's local database. No accounts, no cloud sync.
+- **Most messages never leave the device.** A sender filter and an on-device model handle the
+  common case offline.
+- **Only messages the on-device model can't read are sent out**, over HTTPS, for AI
+  classification: the sender ID, the message text and your currency code. Nothing that
+  identifies you is attached, and Pawlet's server never stores or logs the text.
+- **Non-financial messages are discarded.** Ignored ones are deleted after 7 days.
+- **No third-party analytics, crash-reporting or advertising SDKs.**
+- **The server keeps only anonymous usage stats**, tied to a random, hashed install ID: activity,
+  request counts, app version and how well the on-device model is handling messages.
+- **Never collected:** message content, amounts, contacts, location, your name, email, phone
+  number or any device identifier.
+
+Full details: [Privacy Policy](https://ahmedsadman.github.io/pawlet/).
+
 ## How it works (high level)
 
 The pipeline is a queue. Every incoming message is saved first, then processed one step at a
