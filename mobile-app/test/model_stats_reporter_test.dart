@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HttpDate;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -51,6 +52,7 @@ void main() {
   /// 2026-10-10 12:00 UTC.
   final start = DateTime.utc(2026, 10, 10, 12).millisecondsSinceEpoch;
   const hour = Duration.millisecondsPerHour;
+  const minute = Duration.millisecondsPerMinute;
 
   late Database db;
   late ModelStatsRepository repo;
@@ -212,7 +214,7 @@ void main() {
     expect(await repo.flushedAt(), start);
   });
 
-  test('a second 401 gives up until the next trigger', () async {
+  test('a second 401 gives up for now', () async {
     await countVerdict(LocalVerdict.accepted);
     script = [_status(401), _status(401)];
 
@@ -248,23 +250,18 @@ void main() {
   });
 
   for (final code in const [404, 408, 429, 500, 503]) {
-    test('HTTP $code leaves the rows for the next trigger', () async {
+    test('HTTP $code leaves the rows for a later trigger', () async {
       await countVerdict(LocalVerdict.accepted);
-      script = [_status(code), _status(204)];
-      final r = reporter();
+      script = [_status(code)];
 
-      await r.maybeFlush();
+      await reporter().maybeFlush();
+
       expect(await pending(), hasLength(1));
       expect(await repo.flushedAt(), isNull);
-
-      // Not throttled: the next trigger tries again straight away.
-      await r.maybeFlush();
-      expect(requests, hasLength(2));
-      expect(await pending(), isEmpty);
     });
   }
 
-  test('a network error leaves the rows for the next trigger', () async {
+  test('a network error leaves the rows for a later trigger', () async {
     await countVerdict(LocalVerdict.accepted);
     script = [http.ClientException('offline')];
 
@@ -398,5 +395,280 @@ void main() {
     await db.close();
 
     await expectLater(reporter().maybeFlush(), completes);
+  });
+
+  group('backoff', () {
+    Future<void> setMeta(String key, int value) => db.insert('app_meta', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+    /// Runs one flush that the server answers with [answer] and returns how
+    /// far past the clock the next attempt was put off, in ms.
+    Future<int?> failOnce(Object answer) async {
+      await countVerdict(LocalVerdict.accepted);
+      script = [answer];
+      await reporter().maybeFlush();
+      final at = await repo.retryAt();
+      return at == null ? null : at - now;
+    }
+
+    http.Response tooMany(String? retryAfter) =>
+        http.Response('', 429, headers: {'retry-after': ?retryAfter});
+
+    for (final code in const [500, 502, 503, 408]) {
+      test('HTTP $code backs off 15 minutes', () async {
+        expect(await failOnce(_status(code)), 15 * minute);
+        expect(await repo.failures(), 1);
+        expect(await pending(), hasLength(1));
+      });
+    }
+
+    test('a network error backs off 15 minutes', () async {
+      expect(await failOnce(http.ClientException('offline')), 15 * minute);
+      expect(await repo.failures(), 1);
+    });
+
+    test('a timeout backs off 15 minutes', () async {
+      expect(await failOnce(TimeoutException('slow')), 15 * minute);
+      expect(await repo.failures(), 1);
+    });
+
+    test('no session backs off 15 minutes without a request', () async {
+      attestation.error = const AttestationException(
+        'no Play Integrity channel',
+        ineligible: false,
+        needsForeground: true,
+      );
+      await countVerdict(LocalVerdict.accepted);
+
+      await reporter().maybeFlush();
+
+      expect(requests, isEmpty);
+      expect(await repo.retryAt(), now + 15 * minute);
+      expect(await repo.failures(), 1);
+    });
+
+    test('a 401 after the re-attest backs off 15 minutes', () async {
+      await countVerdict(LocalVerdict.accepted);
+      script = [_status(401), _status(401)];
+
+      await reporter().maybeFlush();
+
+      expect(requests, hasLength(2));
+      expect(await repo.retryAt(), now + 15 * minute);
+      expect(await repo.failures(), 1);
+    });
+
+    for (final code in const [403, 404]) {
+      test('HTTP $code backs off six hours', () async {
+        expect(await failOnce(_status(code)), 6 * hour);
+        expect(await repo.failures(), 1);
+      });
+    }
+
+    test('doubles from 15 minutes up to a six-hour cap', () async {
+      final r = reporter();
+      final gaps = <int>[];
+      for (var i = 0; i < 7; i++) {
+        await countVerdict(LocalVerdict.accepted);
+        script = [_status(500)];
+        await r.maybeFlush();
+        final at = (await repo.retryAt())!;
+        gaps.add(at - now);
+        now = at;
+      }
+
+      expect(requests, hasLength(7));
+      expect(gaps, [
+        15 * minute,
+        30 * minute,
+        hour,
+        2 * hour,
+        4 * hour,
+        6 * hour,
+        6 * hour,
+      ]);
+      expect(await repo.failures(), 7);
+    });
+
+    group('429', () {
+      test('honours Retry-After in seconds', () async {
+        expect(await failOnce(tooMany('120')), 120 * 1000);
+        expect(await repo.failures(), 1);
+      });
+
+      test('honours Retry-After as an HTTP date', () async {
+        final at = DateTime.fromMillisecondsSinceEpoch(
+          start + 40 * minute,
+          isUtc: true,
+        );
+        expect(await failOnce(tooMany(HttpDate.format(at))), 40 * minute);
+      });
+
+      test('waits at least a minute', () async {
+        expect(await failOnce(tooMany('5')), minute);
+      });
+
+      test('a Retry-After date in the past waits a minute', () async {
+        final at = DateTime.fromMillisecondsSinceEpoch(
+          start - hour,
+          isUtc: true,
+        );
+        expect(await failOnce(tooMany(HttpDate.format(at))), minute);
+      });
+
+      test('waits at most six hours', () async {
+        expect(await failOnce(tooMany('86400')), 6 * hour);
+      });
+
+      test('a huge Retry-After in seconds waits six hours', () async {
+        expect(await failOnce(tooMany('9223372036854776')), 6 * hour);
+      });
+
+      test('a far Retry-After date waits six hours', () async {
+        final at = DateTime.fromMillisecondsSinceEpoch(
+          start + 30 * hour,
+          isUtc: true,
+        );
+        expect(await failOnce(tooMany(HttpDate.format(at))), 6 * hour);
+      });
+
+      test('without Retry-After falls back to the doubling', () async {
+        await setMeta(kModelStatsFailuresKey, 2);
+        expect(await failOnce(tooMany(null)), hour);
+        expect(await repo.failures(), 3);
+      });
+
+      test('an unparseable Retry-After falls back to the doubling', () async {
+        expect(await failOnce(tooMany('soon')), 15 * minute);
+        expect(await repo.failures(), 1);
+      });
+    });
+
+    test('a 2xx resend after a 401 clears the backoff', () async {
+      await setMeta(kModelStatsFailuresKey, 3);
+      await setMeta(kModelStatsRetryAtKey, start - minute);
+      await countVerdict(LocalVerdict.accepted);
+      script = [_status(401), _status(204)];
+
+      await reporter().maybeFlush();
+
+      expect(requests, hasLength(2));
+      expect(await repo.failures(), 0);
+      expect(await repo.retryAt(), isNull);
+    });
+
+    test('leaving proxy mode leaves the backoff alone', () async {
+      isProxy = () async => false;
+      await setMeta(kModelStatsFailuresKey, 3);
+      await setMeta(kModelStatsRetryAtKey, start - minute);
+      await countVerdict(LocalVerdict.accepted);
+
+      await reporter().maybeFlush();
+
+      expect(requests, isEmpty);
+      expect(await repo.failures(), 3);
+      expect(await repo.retryAt(), start - minute);
+    });
+
+    test('an empty payload leaves the backoff alone', () async {
+      await setMeta(kModelStatsFailuresKey, 3);
+      await setMeta(kModelStatsRetryAtKey, start - minute);
+
+      await reporter().maybeFlush();
+
+      expect(attestation.tokens, 0);
+      expect(requests, isEmpty);
+      expect(await repo.failures(), 3);
+      expect(await repo.retryAt(), start - minute);
+    });
+
+    test('a 2xx clears the backoff', () async {
+      await setMeta(kModelStatsFailuresKey, 3);
+      await setMeta(kModelStatsRetryAtKey, start - minute);
+      expect(await failOnce(_status(204)), isNull);
+      expect(await repo.failures(), 0);
+      expect(await repo.flushedAt(), start);
+    });
+
+    test('a 400 clears the backoff', () async {
+      await setMeta(kModelStatsFailuresKey, 3);
+      await setMeta(kModelStatsRetryAtKey, start - minute);
+      expect(await failOnce(_status(400)), isNull);
+      expect(await repo.failures(), 0);
+      expect(await pending(), isEmpty);
+    });
+
+    test('a backed-off flush touches nothing', () async {
+      var checks = 0;
+      isProxy = () async {
+        checks++;
+        return true;
+      };
+      await countVerdict(LocalVerdict.accepted);
+      await seed('2026-09-01'); // outside the window: a flush would prune it
+      await setMeta(kModelStatsRetryAtKey, start + minute);
+
+      await reporter().maybeFlush();
+
+      expect(checks, 0);
+      expect(attestation.tokens, 0);
+      expect(requests, isEmpty);
+      expect(await db.query('model_stats'), hasLength(2));
+    });
+
+    test('flushes again once the backoff has passed', () async {
+      final r = reporter();
+      expect(await failOnce(_status(500)), 15 * minute);
+
+      now = start + 15 * minute - 1;
+      await r.maybeFlush();
+      expect(requests, hasLength(1));
+
+      now = start + 15 * minute;
+      script = [_status(204)];
+      await r.maybeFlush();
+      expect(requests, hasLength(2));
+      expect(await pending(), isEmpty);
+      expect(await repo.retryAt(), isNull);
+    });
+
+    test('a six-hour backoff is honoured to the end', () async {
+      await countVerdict(LocalVerdict.accepted);
+      await setMeta(kModelStatsRetryAtKey, start + 6 * hour);
+
+      await reporter().maybeFlush();
+
+      expect(requests, isEmpty);
+    });
+
+    test('a retry time over six hours ahead is ignored', () async {
+      await countVerdict(LocalVerdict.accepted);
+      await setMeta(kModelStatsRetryAtKey, start + 6 * hour + 1);
+      script = [_status(204)];
+
+      await reporter().maybeFlush();
+
+      expect(requests, hasLength(1));
+      expect(await pending(), isEmpty);
+    });
+
+    test('the failure count is shared through app_meta', () async {
+      expect(await failOnce(_status(500)), 15 * minute);
+
+      // Another isolate's reporter, on the same database.
+      final other = reporter();
+      now = start + 15 * minute - 1;
+      await other.maybeFlush();
+      expect(requests, hasLength(1));
+
+      now = start + 15 * minute;
+      script = [_status(503)];
+      await other.maybeFlush();
+      expect(requests, hasLength(2));
+      expect(await repo.failures(), 2);
+      expect(await repo.retryAt(), now + 30 * minute);
+    });
   });
 }

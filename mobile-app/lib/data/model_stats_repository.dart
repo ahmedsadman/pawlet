@@ -8,6 +8,14 @@ import 'database.dart';
 /// `last_prune_at`, so they all honour one throttle.
 const String kModelStatsFlushedAtKey = 'model_stats_flushed_at';
 
+/// `app_meta` key holding the epoch-ms time before which no model-stats
+/// flush is attempted, set after a failed upload. Shared by every isolate.
+const String kModelStatsRetryAtKey = 'model_stats_retry_at';
+
+/// `app_meta` key holding how many model-stats uploads in a row failed.
+/// Shared by every isolate; drives the backoff doubling.
+const String kModelStatsFailuresKey = 'model_stats_failures';
+
 /// How many UTC days before today are kept and sent (today is kept too).
 ///
 /// One short of the server's limit (it accepts UTC today − 30 by its own
@@ -157,21 +165,57 @@ class ModelStatsRepository {
   }
 
   /// Start time of the last acknowledged flush (any isolate), or null.
-  Future<int?> flushedAt() async {
-    final rows = await _db.query(
+  Future<int?> flushedAt() => _metaInt(_db, kModelStatsFlushedAtKey);
+
+  Future<void> setFlushedAt(int epochMs) =>
+      _setMetaInt(_db, kModelStatsFlushedAtKey, epochMs);
+
+  /// Earliest time the next flush may be attempted (any isolate), or null
+  /// when no failure is being backed off.
+  Future<int?> retryAt() => _metaInt(_db, kModelStatsRetryAtKey);
+
+  /// Consecutive failed uploads (any isolate); 0 when none.
+  Future<int> failures() async =>
+      await _metaInt(_db, kModelStatsFailuresKey) ?? 0;
+
+  /// Counts one more failed upload and sets the retry time to
+  /// `retryAtFor(failures)`, `failures` being the new count. One transaction,
+  /// so failures in two isolates are both counted.
+  Future<void> recordFailure(int Function(int failures) retryAtFor) =>
+      _db.transaction((txn) async {
+        final failures = (await _metaInt(txn, kModelStatsFailuresKey) ?? 0) + 1;
+        await _setMetaInt(txn, kModelStatsFailuresKey, failures);
+        await _setMetaInt(txn, kModelStatsRetryAtKey, retryAtFor(failures));
+      });
+
+  /// Forgets past failures: no retry time, a failure count of 0.
+  Future<void> clearBackoff() async {
+    await _db.delete(
+      AppDatabase.metaTable,
+      where: 'key IN (?, ?)',
+      whereArgs: [kModelStatsRetryAtKey, kModelStatsFailuresKey],
+    );
+  }
+
+  static Future<int?> _metaInt(DatabaseExecutor db, String key) async {
+    final rows = await db.query(
       AppDatabase.metaTable,
       columns: ['value'],
       where: 'key = ?',
-      whereArgs: [kModelStatsFlushedAtKey],
+      whereArgs: [key],
       limit: 1,
     );
     return rows.isEmpty ? null : rows.first['value'] as int?;
   }
 
-  Future<void> setFlushedAt(int epochMs) async {
-    await _db.insert(AppDatabase.metaTable, {
-      'key': kModelStatsFlushedAtKey,
-      'value': epochMs,
+  static Future<void> _setMetaInt(
+    DatabaseExecutor db,
+    String key,
+    int value,
+  ) async {
+    await db.insert(AppDatabase.metaTable, {
+      'key': key,
+      'value': value,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 }

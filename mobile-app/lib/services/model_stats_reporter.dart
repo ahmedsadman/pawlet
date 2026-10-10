@@ -4,12 +4,24 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HttpDate;
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:http/http.dart' as http;
 
 import '../data/model_stats_repository.dart';
 import 'auth/attestation_service.dart';
+
+/// First wait after a failed upload; doubled per further consecutive failure
+/// up to [kModelStatsBackoffCap].
+const Duration kModelStatsBackoffBase = Duration(minutes: 15);
+
+/// Longest wait after a failed upload, and the wait after a 403 or 404. A
+/// retry time further ahead than this (the clock moved back) is ignored.
+const Duration kModelStatsBackoffCap = Duration(hours: 6);
+
+/// Shortest wait a 429's `Retry-After` can set.
+const Duration kModelStatsRetryAfterMin = Duration(minutes: 1);
 
 /// Sends the on-device model's daily verdict counts to Pawlet's server
 /// (`POST /v1/model-stats`), so the admin dashboard can show how many messages
@@ -21,7 +33,9 @@ import 'auth/attestation_service.dart';
 /// anything goes out.
 ///
 /// Never blocks or fails message processing: every error is swallowed and the
-/// rows simply stay unreported until the next trigger.
+/// rows simply stay unreported. A failed upload puts the next attempt off
+/// (see [kModelStatsBackoffBase]), across all isolates, so an outage does not
+/// cost an attestation and a request per message.
 class ModelStatsReporter {
   ModelStatsReporter({
     required this.apiBase,
@@ -64,8 +78,9 @@ class ModelStatsReporter {
   }
 
   /// Flushes unless a flush is already running in this isolate (the caller
-  /// then shares it), the last acknowledged flush was under [minGap] ago, or
-  /// nothing changed. Never throws.
+  /// then shares it), a failed upload is being backed off, the last
+  /// acknowledged flush was under [minGap] ago, or nothing changed. Never
+  /// throws.
   Future<void> maybeFlush() =>
       _inflight ??= _flushSafely().whenComplete(() => _inflight = null);
 
@@ -79,6 +94,14 @@ class ModelStatsReporter {
 
   Future<void> _flush() async {
     final startedAt = _clock();
+    // A retry time too far ahead (the clock moved back) holds nothing off.
+    final retryAt = await _repository.retryAt();
+    if (retryAt != null &&
+        startedAt < retryAt &&
+        retryAt - startedAt <= kModelStatsBackoffCap.inMilliseconds) {
+      return;
+    }
+
     final last = await _repository.flushedAt();
     // A stamp in the future (the clock moved back) does not hold flushes off.
     if (last != null &&
@@ -99,27 +122,80 @@ class ModelStatsReporter {
     if (!await _stillProxy()) return;
 
     var token = await _token();
-    if (token == null) return;
+    if (token == null) return _failed();
     var resp = await _post(body, token);
-    if (resp == null) return;
+    if (resp == null) return _failed();
     if (resp.statusCode == 401) {
       token = await _token(forceRefresh: true);
-      if (token == null) return;
+      if (token == null) return _failed();
       resp = await _post(body, token);
-      if (resp == null) return;
+      if (resp == null) return _failed();
     }
 
     final code = resp.statusCode;
     if (code >= 200 && code < 300) {
       await _repository.markReported(rows, startedAt);
       await _repository.setFlushedAt(startedAt);
+      await _repository.clearBackoff();
     } else if (code == 400) {
       // A rejected payload is a bug; resending it would loop forever.
       if (kDebugMode) debugPrint('model stats: rejected (400): ${resp.body}');
       await _repository.markReported(rows, startedAt);
+      await _repository.clearBackoff();
+    } else if (code == 403 || code == 404) {
+      // Banned (the session path handles that) or no endpoint: neither clears
+      // up soon.
+      await _failed(fixed: kModelStatsBackoffCap);
+    } else if (code == 429) {
+      await _failed(fixed: _retryAfter(resp));
+    } else {
+      // 401 after a refresh, 408, 5xx and anything unexpected.
+      await _failed();
     }
-    // 401 after a refresh, 403 (the session path handles bans), 404, 408,
-    // 429, 5xx: nothing is stamped and the next trigger tries again.
+  }
+
+  /// Counts a failed upload and puts the next attempt off by [fixed], or by
+  /// the doubling backoff when null.
+  Future<void> _failed({Duration? fixed}) {
+    final now = _clock();
+    return _repository.recordFailure(
+      (failures) => now + (fixed ?? _backoff(failures)).inMilliseconds,
+    );
+  }
+
+  /// [kModelStatsBackoffBase] doubled per failure after the first, capped at
+  /// [kModelStatsBackoffCap].
+  static Duration _backoff(int failures) {
+    var delay = kModelStatsBackoffBase;
+    for (var i = 1; i < failures && delay < kModelStatsBackoffCap; i++) {
+      delay *= 2;
+    }
+    return delay < kModelStatsBackoffCap ? delay : kModelStatsBackoffCap;
+  }
+
+  /// A 429's `Retry-After` (delta-seconds or HTTP date) clamped to
+  /// [kModelStatsRetryAfterMin]..[kModelStatsBackoffCap], or null when
+  /// missing or unparseable.
+  Duration? _retryAfter(http.Response resp) {
+    final value = resp.headers['retry-after']?.trim();
+    if (value == null || value.isEmpty) return null;
+    int ms;
+    if (RegExp(r'^\d+$').hasMatch(value)) {
+      // Capped before scaling to ms, which could overflow; too many digits
+      // for an int is still "very long".
+      final cap = kModelStatsBackoffCap.inSeconds;
+      final seconds = int.tryParse(value) ?? cap;
+      ms = (seconds < cap ? seconds : cap) * Duration.millisecondsPerSecond;
+    } else {
+      try {
+        ms = HttpDate.parse(value).millisecondsSinceEpoch - _clock();
+      } catch (_) {
+        return null;
+      }
+    }
+    final min = kModelStatsRetryAfterMin.inMilliseconds;
+    final max = kModelStatsBackoffCap.inMilliseconds;
+    return Duration(milliseconds: ms.clamp(min, max));
   }
 
   /// [_isProxy], with a failed check counted as "not proxy".
