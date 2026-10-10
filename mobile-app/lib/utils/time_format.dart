@@ -80,9 +80,9 @@ String dateTimeLabel(DateTime time, {DateTime? now}) {
   return '${_day(t, n)} · ${clockLabel(t)}';
 }
 
-/// "Updated …" label: relative while still today (`just now` under a minute,
-/// then `5m ago`, then `2h ago`, at most `23h ago`); from yesterday back it is
-/// identical to [dateTimeLabel].
+/// Freshness label (the balance header prefixes it with "Updated"): relative
+/// while still today (`just now` under a minute, then `5m ago`, then `2h ago`,
+/// at most `23h ago`); from yesterday back it is identical to [dateTimeLabel].
 String updatedLabel(DateTime time, {DateTime? now}) {
   final (t, n) = _resolve(time, now);
   if (_calendarDaysBefore(t, n) > 0) return dateTimeLabel(t, now: n);

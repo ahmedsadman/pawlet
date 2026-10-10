@@ -114,7 +114,7 @@ class _BankRow extends StatelessWidget {
                   )
                 else if (bank.lastBalanceAt != null)
                   Text(
-                    'Updated ${updatedLabel(bank.lastBalanceAt!)}',
+                    updatedLabel(bank.lastBalanceAt!),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: AppTheme.flavor.subtext0,
                     ),
