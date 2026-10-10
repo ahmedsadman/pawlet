@@ -4,8 +4,7 @@ Pawlet is an on-device Android app that turns your bank SMS into a personal-fina
 dashboard — transactions, bills, balances, spending trends. Your data lives only on the phone;
 there is no account and no cloud copy. Most messages are read by a bundled on-device model.
 Messages it can't confidently handle fall back to a large language model (OpenRouter's free
-models): through Pawlet's server for Play Store installs, or directly with your own OpenRouter key
-otherwise. With neither, they never leave the phone.
+models) through Pawlet's server.
 
 > **Note:** Pawlet currently targets **Bangladeshi banks only**, with plans to expand to more regions in the future.
 
@@ -116,17 +115,15 @@ The Flutter app lives in `mobile-app/` — run the commands below from there (`c
 
 The app ships with **no** OpenRouter API key. A key in a client binary is extractable, which is why
 it was removed. Play Store installs classify through Pawlet's server instead, which holds the key
-and accepts only genuine installs verified with Google Play Integrity. Other installs have LLM
-parsing off until the user adds their own OpenRouter key under **Settings → Privacy**, where it is
-validated and stored in the Android keystore. Without a key, the on-device model is the only
-classifier, and messages it cannot parse are marked failed in Messages, where they can be retried
-later.
+and accepts only genuine installs verified with Google Play Integrity. Other builds (local debug
+builds, for example) have LLM parsing off by default: the on-device model is the only classifier,
+and messages it cannot parse are marked failed in Messages, where they can be retried later.
 
 **No `--dart-define` values are required to build.** Two optional ones exist:
 
 | Define | Effect |
 |---|---|
-| `PAWLET_API_BASE` | Pawlet's server. Lets a BYOK install fetch the current prompt bundle. |
+| `PAWLET_API_BASE` | Pawlet's server. Lets the app fetch the current prompt bundle. |
 | `PLAY_CLOUD_PROJECT_NUMBER` | With `PAWLET_API_BASE`, enables proxy mode for Play installs. Only release builds set it. |
 
 Without them the app uses its built-in prompt and never contacts Pawlet's server.
@@ -170,8 +167,8 @@ exactly like a real message.
    (the channel handler is installed when the UI starts).
 2. For the injected message to do anything past the gate, the matching bank must already be
    added in-app (e.g. add "EBL" before sending an `EBL` message). The on-device model handles
-   the message on its own; to exercise the LLM fallback as well, add an OpenRouter key under
-   Settings → Privacy first.
+   the message on its own; exercising the LLM fallback as well needs an LLM configured for the
+   debug build in Settings.
 3. Broadcast a fake message with adb:
 
 ```bash
