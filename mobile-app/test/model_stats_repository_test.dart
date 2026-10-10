@@ -325,4 +325,32 @@ void main() {
     );
     expect(meta.single['value'], now);
   });
+
+  test('recordFailure counts failures and sets the retry time', () async {
+    expect(await repo.failures(), 0);
+    expect(await repo.retryAt(), isNull);
+
+    await repo.recordFailure((f) => now + f);
+    await repo.recordFailure((f) => now + f * 10);
+
+    expect(await repo.failures(), 2);
+    expect(await repo.retryAt(), now + 20);
+    final meta = await db.query(
+      'app_meta',
+      where: 'key IN (?, ?)',
+      whereArgs: [kModelStatsRetryAtKey, kModelStatsFailuresKey],
+    );
+    expect(meta, hasLength(2));
+  });
+
+  test('clearBackoff forgets failures and leaves the throttle', () async {
+    await repo.setFlushedAt(now);
+    await repo.recordFailure((f) => now + f);
+
+    await repo.clearBackoff();
+
+    expect(await repo.failures(), 0);
+    expect(await repo.retryAt(), isNull);
+    expect(await repo.flushedAt(), now);
+  });
 }
