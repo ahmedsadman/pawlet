@@ -6,7 +6,7 @@ void main() {
   void mockBuild(String buildNumber) => PackageInfo.setMockInitialValues(
     appName: 'Pawlet',
     packageName: 'com.pastabyte.pawlet',
-    version: '1.1.0',
+    version: '0.2.1',
     buildNumber: buildNumber,
     buildSignature: '',
   );
