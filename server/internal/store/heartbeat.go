@@ -45,7 +45,7 @@ func (s *Store) RecordHeartbeat(ctx context.Context, idHash string, now time.Tim
 	const upsertDay = `INSERT INTO install_days (id_hash, day, app_version_code, opened, alive, session)
 	  VALUES (?, ?, ?, ?, ?, 0)
 	  ON CONFLICT(id_hash, day) DO UPDATE SET
-	    app_version_code = MAX(COALESCE(install_days.app_version_code, 0), excluded.app_version_code),
+	    app_version_code = COALESCE(MAX(install_days.app_version_code, excluded.app_version_code), install_days.app_version_code, excluded.app_version_code),
 	    opened           = MAX(install_days.opened, excluded.opened),
 	    alive            = MAX(install_days.alive, excluded.alive)`
 	stmt, err := tx.PrepareContext(ctx, upsertDay)
