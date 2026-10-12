@@ -72,7 +72,8 @@ Schema: `sms_records.local_verdict` and the `model_stats` table, both in `lib/da
 
 ### Backoff
 
-Kept in two `app_meta` keys shared by every isolate: `model_stats_failures` (uploads failed in a row) and
+The pacing is `UploadBackoff` (`lib/services/upload_backoff.dart`), shared with the [heartbeat](heartbeat.md) upload.
+Its state is kept in two `app_meta` keys shared by every isolate: `model_stats_failures` (uploads failed in a row) and
 `model_stats_retry_at` (earliest time of the next attempt). Every failure in the table above, and a missing session
 token, adds one to the failure count and sets the retry time; a 2xx or a 400 resets both. No jitter is added.
 
@@ -99,6 +100,6 @@ Snapshot — the source files are authoritative.
 | Rows per request                         | 31                               | `lib/services/model_stats_reporter.dart` (`ModelStatsReporter.maxDays`)        |
 | Request timeout                          | 20 s                             | `lib/services/model_stats_reporter.dart` (`ModelStatsReporter.requestTimeout`) |
 | Days kept and sent                       | UTC today and the 29 days before | `lib/data/model_stats_repository.dart` (`kModelStatsRetentionDays`)            |
-| Backoff base wait (first failure)        | 15 min                           | `lib/services/model_stats_reporter.dart` (`kModelStatsBackoffBase`)            |
-| Backoff cap, and wait after 403/404      | 6 h                              | `lib/services/model_stats_reporter.dart` (`kModelStatsBackoffCap`)             |
-| Shortest `Retry-After` wait              | 1 min                            | `lib/services/model_stats_reporter.dart` (`kModelStatsRetryAfterMin`)          |
+| Backoff base wait (first failure)        | 15 min                           | `lib/services/upload_backoff.dart` (`kUploadBackoffBase`)                      |
+| Backoff cap, and wait after 403/404      | 6 h                              | `lib/services/upload_backoff.dart` (`kUploadBackoffCap`)                       |
+| Shortest `Retry-After` wait              | 1 min                            | `lib/services/upload_backoff.dart` (`kUploadRetryAfterMin`)                    |
