@@ -72,15 +72,15 @@ class BackgroundWorker {
   static Future<void> cancelCatchUp() =>
       Workmanager().cancelByUniqueName(_catchUpName);
 
-  /// Registers the daily heartbeat: marks the day alive and uploads, with no
-  /// processing pass. [ExistingPeriodicWorkPolicy.keep], so re-registering on
-  /// every launch never resets its schedule.
+  /// Registers the daily heartbeat: marks the day alive locally (the reporter
+  /// defers the upload when offline), with no processing pass.
+  /// [ExistingPeriodicWorkPolicy.update], so re-registering on every launch
+  /// keeps its schedule but picks up changed settings.
   static Future<void> scheduleHeartbeat() => Workmanager().registerPeriodicTask(
     _heartbeatName,
     _heartbeatTask,
     frequency: const Duration(hours: 24),
-    constraints: Constraints(networkType: NetworkType.connected),
-    existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+    existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
   );
 
   /// Cancels the daily heartbeat (no-LLM mode).
