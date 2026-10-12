@@ -79,6 +79,7 @@ func TestOverviewHandler(t *testing.T) {
 	var got struct {
 		Range struct{ From, To string } `json:"range"`
 		KPIs  struct {
+			Installs         int   `json:"installs"`
 			AttestedInstalls int   `json:"attestedInstalls"`
 			CallsToday       int64 `json:"callsToday"`
 			DAU              int   `json:"dau"`
@@ -99,7 +100,7 @@ func TestOverviewHandler(t *testing.T) {
 	if got.Range.From != "2026-10-03" || got.Range.To != "2026-10-09" || len(got.Daily) != 7 {
 		t.Fatalf("range/daily = %+v %d", got.Range, len(got.Daily))
 	}
-	if got.KPIs.AttestedInstalls != 2 || got.KPIs.CallsToday != 5 || got.KPIs.DAU != 1 {
+	if got.KPIs.Installs != 2 || got.KPIs.AttestedInstalls != 2 || got.KPIs.CallsToday != 5 || got.KPIs.DAU != 1 {
 		t.Fatalf("kpis = %+v", got.KPIs)
 	}
 	if got.Server.DailyPerInstall != 200 || len(got.Server.Models) != 1 {
@@ -555,5 +556,36 @@ func TestOverviewMessages(t *testing.T) {
 	// (10 rollup + 5 + 11) ÷ (2 rollup install-days + 2).
 	if got := ov.KPIs.MessagesPerActiveInstallDay; got == nil || *got != 6.5 {
 		t.Fatalf("messagesPerActiveInstallDay = %v, want 6.5", got)
+	}
+}
+
+func TestInstallsFilterByAttested(t *testing.T) {
+	e := newTestEnv(t)
+	seedStats(t, e.store) // hashA and hashB attest through sessions
+	hashC := strings.Repeat("c", 64)
+	if err := e.store.RecordHeartbeat(context.Background(), hashC, testNow,
+		[]store.HeartbeatDay{{Day: "2026-10-09", AppVersionCode: 28, Opened: true}}); err != nil {
+		t.Fatal(err)
+	}
+	cookie := e.login(t)
+
+	var page struct {
+		Rows []struct {
+			Hash     string `json:"hash"`
+			Attested bool   `json:"attested"`
+		} `json:"rows"`
+		Total int `json:"total"`
+	}
+	if code := getJSON(t, e, "/api/installs?attested=no", cookie, &page); code != http.StatusOK {
+		t.Fatalf("installs = %d", code)
+	}
+	if page.Total != 1 || page.Rows[0].Hash != hashC || page.Rows[0].Attested {
+		t.Fatalf("unattested page = %+v", page)
+	}
+	if code := getJSON(t, e, "/api/installs?attested=yes", cookie, &page); code != http.StatusOK || page.Total != 2 {
+		t.Fatalf("attested page = %d %+v", code, page)
+	}
+	if rec := e.do(http.MethodGet, "/api/installs?attested=maybe", "", cookie); rec.Code != http.StatusBadRequest {
+		t.Fatalf("attested=maybe = %d, want 400", rec.Code)
 	}
 }
