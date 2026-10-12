@@ -108,16 +108,31 @@ func validateHeartbeat(req heartbeatRequest, today time.Time) ([]store.Heartbeat
 	return out, nil
 }
 
+// heartbeatLimitKey returns a rate-limiter bucket key for the given IP.
+// IPv6 addresses share one bucket per /64 network: a single host controls
+// that range, so per-address buckets wouldn't limit it. IPv4 and unparseable
+// strings are returned unchanged.
+func heartbeatLimitKey(ip string) string {
+	parsed := net.ParseIP(ip)
+	if parsed == nil || parsed.To4() != nil {
+		return ip
+	}
+	// IPv6: mask to /64 network.
+	network := parsed.Mask(net.CIDRMask(64, 128))
+	return network.String() + "/64"
+}
+
 // Heartbeat stores the caller's reported days. Every exit counts one
 // heartbeat_outcome key. The body holds dates, a version and two flags only.
 func (h *HeartbeatHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	now := h.Now()
+	ip := clientip.From(r, h.TrustedProxy)
 
 	// 1. Per-IP rate limit. Generous: carrier NAT puts many phones behind one
 	// address, and each sends at most about one batch an hour.
 	if h.Limiter != nil {
-		ip := clientip.From(r, h.TrustedProxy)
-		if !h.Limiter.allow(ip) {
+		if !h.Limiter.allow(heartbeatLimitKey(ip)) {
 			h.Logger.Warn("heartbeat: rate limited", "ip", ip)
 			count(h.Metrics, metrics.HeartbeatOutcome, metrics.RateLimited)
 			writeRateLimited(w, time.Hour, 0)
@@ -131,27 +146,27 @@ func (h *HeartbeatHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var req heartbeatRequest
 	if err := dec.Decode(&req); err != nil {
-		h.Logger.Warn("heartbeat: malformed body", "error", err)
+		h.Logger.Warn("heartbeat: malformed body", "ip", ip, "error", err)
 		h.fail(w, http.StatusBadRequest, metrics.BadRequest, "bad_request")
 		return
 	}
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		h.Logger.Warn("heartbeat: trailing data after body")
+		h.Logger.Warn("heartbeat: trailing data after body", "ip", ip)
 		h.fail(w, http.StatusBadRequest, metrics.BadRequest, "bad_request")
 		return
 	}
 
 	// 3. Validate.
-	days, err := validateHeartbeat(req, h.Now())
+	days, err := validateHeartbeat(req, now)
 	if err != nil {
-		h.Logger.Warn("heartbeat: invalid body", "error", err)
+		h.Logger.Warn("heartbeat: invalid body", "ip", ip, "error", err)
 		h.fail(w, http.StatusBadRequest, metrics.BadRequest, "bad_request")
 		return
 	}
 
 	// 4. Store under the hash, never the ID itself.
 	installHash := attest.InstallHash(req.InstallID)
-	if err := h.Store.RecordHeartbeat(ctx, installHash, h.Now(), days); err != nil {
+	if err := h.Store.RecordHeartbeat(ctx, installHash, now, days); err != nil {
 		h.Logger.Error("heartbeat: failed to store", "installHash", shortHash(installHash), "error", err)
 		h.fail(w, http.StatusServiceUnavailable, metrics.Internal, "internal")
 		return
