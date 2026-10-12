@@ -701,8 +701,8 @@ void main() {
     test(
       'a version-skipping upgrade from v5 to v8 still preserves data',
       () async {
-        // A device that skipped releases v6, v7, and v8 arrives as (5, 8) and
-        // must still migrate rather than get wiped.
+        // A device that skipped v6 and v7 arrives as (5, 8) and must still
+        // migrate rather than get wiped.
         final db = await openV5();
         await db.insert('banks', {
           'name': 'My Card',
@@ -714,10 +714,15 @@ void main() {
         await AppDatabase.onUpgrade(db, 5, 8);
 
         expect((await db.query('banks')).single['name'], 'My Card');
+        // v6 added needs_llm column
+        expect(await _columnNames(db, 'sms_records'), contains('needs_llm'));
+        // v7 added local_verdict column and model_stats table
         expect(
           await _columnNames(db, 'sms_records'),
           contains('local_verdict'),
         );
+        expect(await _tableNames(db), contains('model_stats'));
+        // v8 added heartbeat_days table
         expect(await _tableNames(db), contains('heartbeat_days'));
         await db.close();
       },

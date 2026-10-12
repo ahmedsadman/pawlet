@@ -121,6 +121,30 @@ void main() {
     });
   });
 
+  test('pruneBefore deletes old days', () async {
+    await db.insert('heartbeat_days', {
+      'day': '2026-10-08',
+      'app_version_code': 27,
+      'alive': 1,
+      'updated_at': now - 5 * day,
+    });
+    await db.insert('heartbeat_days', {
+      'day': '2026-10-11',
+      'app_version_code': 28,
+      'alive': 1,
+      'updated_at': now - 2 * day,
+    });
+    await db.insert('heartbeat_days', {
+      'day': '2026-10-13',
+      'app_version_code': 28,
+      'alive': 1,
+      'updated_at': now,
+    });
+    await repo.pruneBefore('2026-10-11');
+    final days = (await db.query('heartbeat_days')).map((r) => r['day']);
+    expect(days, ['2026-10-11', '2026-10-13']);
+  });
+
   test('deleteAll empties the log', () async {
     await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
     await repo.deleteAll();
