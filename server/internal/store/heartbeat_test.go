@@ -229,3 +229,30 @@ func TestRecordHeartbeatSameDayVersionMonotonic(t *testing.T) {
 		t.Errorf("day version = %d, want 28 (monotonic)", days[0].AppVersionCode)
 	}
 }
+
+func TestRecordHeartbeatZeroVersionDoesNotWipe(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+
+	if err := s.RecordHeartbeat(ctx, "hash-z", now,
+		[]HeartbeatDay{{Day: "2026-10-13", AppVersionCode: 28, Opened: true}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+	// A heartbeat without a version (0 becomes NULL via nullInt).
+	if err := s.RecordHeartbeat(ctx, "hash-z", now.Add(time.Hour),
+		[]HeartbeatDay{{Day: "2026-10-13", AppVersionCode: 0, Alive: true}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+
+	days, err := s.InstallDays(ctx, "hash-z")
+	if err != nil {
+		t.Fatalf("InstallDays() error = %v", err)
+	}
+	if len(days) != 1 {
+		t.Fatalf("len(days) = %d, want 1", len(days))
+	}
+	if days[0].AppVersionCode != 28 {
+		t.Errorf("day version = %d, want 28 (zero should not wipe)", days[0].AppVersionCode)
+	}
+}
