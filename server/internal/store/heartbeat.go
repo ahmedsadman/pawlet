@@ -21,9 +21,9 @@ type HeartbeatDay struct {
 // A missing install is created unattested; an existing one only gets
 // last_seen = now, so its attested flag and verdict fields are untouched.
 // Day flags only ever go from 0 to 1, so a resend or an out-of-order batch
-// never clears one. A day's version is overwritten: the app reports the build
-// it is running. The install's version is then taken from its newest day
-// that has one, so a late batch of old days cannot roll it back.
+// never clears one. A day's version only moves up: Play never downgrades an
+// install. The install's version is then taken from its newest day that has
+// one, so a late batch of old days cannot roll it back.
 func (s *Store) RecordHeartbeat(ctx context.Context, idHash string, now time.Time, days []HeartbeatDay) error {
 	if len(days) == 0 {
 		return nil
@@ -45,7 +45,7 @@ func (s *Store) RecordHeartbeat(ctx context.Context, idHash string, now time.Tim
 	const upsertDay = `INSERT INTO install_days (id_hash, day, app_version_code, opened, alive, session)
 	  VALUES (?, ?, ?, ?, ?, 0)
 	  ON CONFLICT(id_hash, day) DO UPDATE SET
-	    app_version_code = excluded.app_version_code,
+	    app_version_code = MAX(COALESCE(install_days.app_version_code, 0), excluded.app_version_code),
 	    opened           = MAX(install_days.opened, excluded.opened),
 	    alive            = MAX(install_days.alive, excluded.alive)`
 	stmt, err := tx.PrepareContext(ctx, upsertDay)
@@ -54,7 +54,7 @@ func (s *Store) RecordHeartbeat(ctx context.Context, idHash string, now time.Tim
 	}
 	defer func() { _ = stmt.Close() }()
 	for _, d := range days {
-		if _, err := stmt.ExecContext(ctx, idHash, d.Day, d.AppVersionCode,
+		if _, err := stmt.ExecContext(ctx, idHash, d.Day, nullInt(d.AppVersionCode),
 			boolInt(d.Opened), boolInt(d.Alive || d.Opened)); err != nil {
 			return fmt.Errorf("heartbeat day %s: %w", d.Day, err)
 		}
@@ -73,11 +73,4 @@ func (s *Store) RecordHeartbeat(ctx context.Context, idHash string, now time.Tim
 		return fmt.Errorf("commit heartbeat tx: %w", err)
 	}
 	return nil
-}
-
-func boolInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
