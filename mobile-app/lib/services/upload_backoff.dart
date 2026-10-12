@@ -4,8 +4,8 @@ import 'dart:io' show HttpDate;
 /// consecutive failure up to [kUploadBackoffCap].
 const Duration kUploadBackoffBase = Duration(minutes: 15);
 
-/// Longest wait after a failed upload. A retry time further ahead than this
-/// (the clock moved back) is ignored.
+/// Longest wait after a failed upload. Callers ignore a retry time further
+/// ahead than this (the clock moved back).
 const Duration kUploadBackoffCap = Duration(hours: 6);
 
 /// Shortest wait a 429's `Retry-After` can set.
