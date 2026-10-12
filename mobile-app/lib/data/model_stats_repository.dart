@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../models/sms_record.dart';
+import 'app_meta.dart';
 import 'database.dart';
 
 /// `app_meta` key holding the epoch-ms start time of the last model-stats
@@ -78,6 +79,13 @@ class ModelStatsRepository {
 
   final Database _db;
   static const _table = AppDatabase.modelStatsTable;
+
+  late final UploadSchedule _schedule = UploadSchedule(
+    _db,
+    flushedAtKey: kModelStatsFlushedAtKey,
+    retryAtKey: kModelStatsRetryAtKey,
+    failuresKey: kModelStatsFailuresKey,
+  );
 
   /// Records [verdict] for message [smsId], counting it at most once ever.
   ///
@@ -165,57 +173,23 @@ class ModelStatsRepository {
   }
 
   /// Start time of the last acknowledged flush (any isolate), or null.
-  Future<int?> flushedAt() => _metaInt(_db, kModelStatsFlushedAtKey);
+  Future<int?> flushedAt() => _schedule.flushedAt();
 
-  Future<void> setFlushedAt(int epochMs) =>
-      _setMetaInt(_db, kModelStatsFlushedAtKey, epochMs);
+  Future<void> setFlushedAt(int epochMs) => _schedule.setFlushedAt(epochMs);
 
   /// Earliest time the next flush may be attempted (any isolate), or null
   /// when no failure is being backed off.
-  Future<int?> retryAt() => _metaInt(_db, kModelStatsRetryAtKey);
+  Future<int?> retryAt() => _schedule.retryAt();
 
   /// Consecutive failed uploads (any isolate); 0 when none.
-  Future<int> failures() async =>
-      await _metaInt(_db, kModelStatsFailuresKey) ?? 0;
+  Future<int> failures() => _schedule.failures();
 
   /// Counts one more failed upload and sets the retry time to
   /// `retryAtFor(failures)`, `failures` being the new count. One transaction,
   /// so failures in two isolates are both counted.
   Future<void> recordFailure(int Function(int failures) retryAtFor) =>
-      _db.transaction((txn) async {
-        final failures = (await _metaInt(txn, kModelStatsFailuresKey) ?? 0) + 1;
-        await _setMetaInt(txn, kModelStatsFailuresKey, failures);
-        await _setMetaInt(txn, kModelStatsRetryAtKey, retryAtFor(failures));
-      });
+      _schedule.recordFailure(retryAtFor);
 
   /// Forgets past failures: no retry time, a failure count of 0.
-  Future<void> clearBackoff() async {
-    await _db.delete(
-      AppDatabase.metaTable,
-      where: 'key IN (?, ?)',
-      whereArgs: [kModelStatsRetryAtKey, kModelStatsFailuresKey],
-    );
-  }
-
-  static Future<int?> _metaInt(DatabaseExecutor db, String key) async {
-    final rows = await db.query(
-      AppDatabase.metaTable,
-      columns: ['value'],
-      where: 'key = ?',
-      whereArgs: [key],
-      limit: 1,
-    );
-    return rows.isEmpty ? null : rows.first['value'] as int?;
-  }
-
-  static Future<void> _setMetaInt(
-    DatabaseExecutor db,
-    String key,
-    int value,
-  ) async {
-    await db.insert(AppDatabase.metaTable, {
-      'key': key,
-      'value': value,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
-  }
+  Future<void> clearBackoff() => _schedule.clearBackoff();
 }
