@@ -198,7 +198,7 @@ func matchesAttested(r InstallRow, attested string) bool {
 }
 
 // QueryInstalls filters, sorts (default lastSeen desc, ties by hash) and
-// pages the table. Unknown sort, order or status values are ErrBadRequest.
+// pages the table. Unknown sort, order, status or attested values are ErrBadRequest.
 func QueryInstalls(rows []InstallRow, q InstallQuery) (InstallPage, error) {
 	sortKey := q.Sort
 	if sortKey == "" {

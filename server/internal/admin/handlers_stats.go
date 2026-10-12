@@ -26,6 +26,8 @@ const maxBanReason = 200
 // collectingSince tells the dashboard where history begins for data that
 // only exists since the capture deploy.
 type collectingSince struct {
+	// Sessions is the first install_days row of any kind (session or heartbeat);
+	// the JSON name is kept for the dashboard contract.
 	Sessions *string `json:"sessions"`
 	Counters *string `json:"counters"`
 }
