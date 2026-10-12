@@ -107,6 +107,18 @@ void main() {
       expect([scheduled, cancelled], [0, 1]);
     });
 
+    test('cancel throws but log still emptied', () async {
+      await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
+      await syncHeartbeatMode(
+        mode: LlmMode.none,
+        repository: repo,
+        apiBaseConfigured: true,
+        schedule: () async {},
+        cancel: () async => throw Exception('cancel failed'),
+      );
+      expect(await db.query('heartbeat_days'), isEmpty);
+    });
+
     test('never throws', () async {
       await syncHeartbeatMode(
         mode: LlmMode.proxy,

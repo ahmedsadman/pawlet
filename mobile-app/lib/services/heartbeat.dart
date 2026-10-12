@@ -56,6 +56,7 @@ class Heartbeat {
     await _reporter.maybeFlush();
   }
 
+  /// Releases the reporter's HTTP client.
   void close() => _reporter.close();
 }
 
@@ -78,8 +79,18 @@ Future<void> syncHeartbeatMode({
     if (mode != LlmMode.none && configured) {
       await schedule();
     } else {
-      await cancel();
-      await repository.deleteAll();
+      // Delete the log first (privacy-relevant), then cancel. Each in its own
+      // try so one failing doesn't skip the other.
+      try {
+        await repository.deleteAll();
+      } catch (e) {
+        if (kDebugMode) debugPrint('heartbeat: delete failed: $e');
+      }
+      try {
+        await cancel();
+      } catch (e) {
+        if (kDebugMode) debugPrint('heartbeat: cancel failed: $e');
+      }
     }
   } catch (e) {
     if (kDebugMode) debugPrint('heartbeat: mode sync failed: $e');
