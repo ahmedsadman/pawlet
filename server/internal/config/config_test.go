@@ -39,6 +39,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if len(cfg.Models) != 3 || cfg.Models[0] != "nvidia/nemotron-3-super-120b-a12b:free" {
 		t.Errorf("Models = %v", cfg.Models)
 	}
+	if cfg.HeartbeatPerIPHour != 120 {
+		t.Errorf("HeartbeatPerIPHour = %d, want 120", cfg.HeartbeatPerIPHour)
+	}
 }
 
 func TestLoadRejectsMissingRequired(t *testing.T) {
