@@ -133,7 +133,7 @@ func (h *HeartbeatHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	// address, and each sends at most about one batch an hour.
 	if h.Limiter != nil {
 		if !h.Limiter.allow(heartbeatLimitKey(ip)) {
-			h.Logger.Warn("heartbeat: rate limited", "ip", ip)
+			h.Logger.Warn("heartbeat: rate limited")
 			count(h.Metrics, metrics.HeartbeatOutcome, metrics.RateLimited)
 			writeRateLimited(w, time.Hour, 0)
 			return
@@ -146,12 +146,12 @@ func (h *HeartbeatHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var req heartbeatRequest
 	if err := dec.Decode(&req); err != nil {
-		h.Logger.Warn("heartbeat: malformed body", "ip", ip, "error", err)
+		h.Logger.Warn("heartbeat: malformed body", "error", err)
 		h.fail(w, http.StatusBadRequest, metrics.BadRequest, "bad_request")
 		return
 	}
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		h.Logger.Warn("heartbeat: trailing data after body", "ip", ip)
+		h.Logger.Warn("heartbeat: trailing data after body")
 		h.fail(w, http.StatusBadRequest, metrics.BadRequest, "bad_request")
 		return
 	}
@@ -159,7 +159,7 @@ func (h *HeartbeatHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	// 3. Validate.
 	days, err := validateHeartbeat(req, now)
 	if err != nil {
-		h.Logger.Warn("heartbeat: invalid body", "ip", ip, "error", err)
+		h.Logger.Warn("heartbeat: invalid body", "error", err)
 		h.fail(w, http.StatusBadRequest, metrics.BadRequest, "bad_request")
 		return
 	}
