@@ -380,8 +380,8 @@ func TestMigration004AddsHeartbeatFlagsToVersion3Database(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	if got := userVersion(t, s.read); got != 4 {
-		t.Fatalf("user_version = %d, want 4", got)
+	if got := userVersion(t, s.read); got != SchemaVersion() {
+		t.Fatalf("user_version = %d, want %d", got, SchemaVersion())
 	}
 	// Every pre-heartbeat row came from a foreground session.
 	var opened, alive, session, attested int
