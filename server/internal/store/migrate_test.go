@@ -317,8 +317,8 @@ func TestMigration003AddsModelStatsToVersion2Database(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	if got := userVersion(t, s.read); got != 3 {
-		t.Fatalf("user_version = %d, want 3", got)
+	if got := userVersion(t, s.read); got != SchemaVersion() {
+		t.Fatalf("user_version = %d, want %d", got, SchemaVersion())
 	}
 	var archived int64
 	if err := s.read.QueryRowContext(ctx,
@@ -343,5 +343,70 @@ func TestMigration003AddsModelStatsToVersion2Database(t *testing.T) {
 	if _, err := s.write.ExecContext(ctx,
 		`INSERT INTO installs (id_hash, first_seen, last_seen) VALUES ('rollback', 1, 1)`); err != nil {
 		t.Errorf("old-shape installs INSERT failed: %v", err)
+	}
+}
+
+func TestMigration004AddsHeartbeatFlagsToVersion3Database(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v3.db")
+
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	for _, m := range []string{migration001, migration002, migration003} {
+		if _, err := raw.ExecContext(ctx, m); err != nil {
+			t.Fatalf("apply earlier migration: %v", err)
+		}
+	}
+	if _, err := raw.ExecContext(ctx, "PRAGMA user_version = 3"); err != nil {
+		t.Fatalf("set user_version: %v", err)
+	}
+	for _, q := range []string{
+		`INSERT INTO installs (id_hash, first_seen, last_seen) VALUES ('old', 100, 200)`,
+		`INSERT INTO install_days (id_hash, day, app_version_code) VALUES ('old', '2026-10-01', 25)`,
+	} {
+		if _, err := raw.ExecContext(ctx, q); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	if got := userVersion(t, s.read); got != 4 {
+		t.Fatalf("user_version = %d, want 4", got)
+	}
+	// Every pre-heartbeat row came from a foreground session.
+	var opened, alive, session, attested int
+	if err := s.read.QueryRowContext(ctx,
+		`SELECT opened, alive, session FROM install_days WHERE id_hash = 'old'`).
+		Scan(&opened, &alive, &session); err != nil {
+		t.Fatalf("read day flags: %v", err)
+	}
+	if opened != 1 || alive != 1 || session != 1 {
+		t.Errorf("day flags = %d %d %d, want 1 1 1", opened, alive, session)
+	}
+	if err := s.read.QueryRowContext(ctx,
+		`SELECT attested FROM installs WHERE id_hash = 'old'`).Scan(&attested); err != nil {
+		t.Fatalf("read attested: %v", err)
+	}
+	if attested != 1 {
+		t.Errorf("attested = %d, want 1", attested)
+	}
+	// An older binary's INSERT shapes must keep working after a rollback.
+	for _, q := range []string{
+		`INSERT INTO installs (id_hash, first_seen, last_seen) VALUES ('rollback', 1, 1)`,
+		`INSERT INTO install_days (id_hash, day, app_version_code) VALUES ('rollback', '2026-10-02', 26)`,
+	} {
+		if _, err := s.write.ExecContext(ctx, q); err != nil {
+			t.Errorf("old-shape INSERT failed: %v", err)
+		}
 	}
 }
