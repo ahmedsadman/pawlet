@@ -4,24 +4,22 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show HttpDate;
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:http/http.dart' as http;
 
 import '../data/model_stats_repository.dart';
 import 'auth/attestation_service.dart';
+import 'upload_backoff.dart';
 
-/// First wait after a failed upload; doubled per further consecutive failure
-/// up to [kModelStatsBackoffCap].
-const Duration kModelStatsBackoffBase = Duration(minutes: 15);
+/// First wait after a failed upload; see [kUploadBackoffBase].
+const Duration kModelStatsBackoffBase = kUploadBackoffBase;
 
-/// Longest wait after a failed upload, and the wait after a 403 or 404. A
-/// retry time further ahead than this (the clock moved back) is ignored.
-const Duration kModelStatsBackoffCap = Duration(hours: 6);
+/// Longest wait after a failed upload, and the wait after a 403 or 404.
+const Duration kModelStatsBackoffCap = kUploadBackoffCap;
 
 /// Shortest wait a 429's `Retry-After` can set.
-const Duration kModelStatsRetryAfterMin = Duration(minutes: 1);
+const Duration kModelStatsRetryAfterMin = kUploadRetryAfterMin;
 
 /// Sends the on-device model's daily verdict counts to Pawlet's server
 /// (`POST /v1/model-stats`), so the admin dashboard can show how many messages
@@ -147,7 +145,9 @@ class ModelStatsReporter {
       // up soon.
       await _failed(fixed: kModelStatsBackoffCap);
     } else if (code == 429) {
-      await _failed(fixed: _retryAfter(resp));
+      await _failed(
+        fixed: kUploadBackoff.retryAfter(resp.headers['retry-after'], _clock()),
+      );
     } else {
       // 401 after a refresh, 408, 5xx and anything unexpected.
       await _failed();
@@ -159,43 +159,9 @@ class ModelStatsReporter {
   Future<void> _failed({Duration? fixed}) {
     final now = _clock();
     return _repository.recordFailure(
-      (failures) => now + (fixed ?? _backoff(failures)).inMilliseconds,
+      (failures) =>
+          now + (fixed ?? kUploadBackoff.forFailures(failures)).inMilliseconds,
     );
-  }
-
-  /// [kModelStatsBackoffBase] doubled per failure after the first, capped at
-  /// [kModelStatsBackoffCap].
-  static Duration _backoff(int failures) {
-    var delay = kModelStatsBackoffBase;
-    for (var i = 1; i < failures && delay < kModelStatsBackoffCap; i++) {
-      delay *= 2;
-    }
-    return delay < kModelStatsBackoffCap ? delay : kModelStatsBackoffCap;
-  }
-
-  /// A 429's `Retry-After` (delta-seconds or HTTP date) clamped to
-  /// [kModelStatsRetryAfterMin]..[kModelStatsBackoffCap], or null when
-  /// missing or unparseable.
-  Duration? _retryAfter(http.Response resp) {
-    final value = resp.headers['retry-after']?.trim();
-    if (value == null || value.isEmpty) return null;
-    int ms;
-    if (RegExp(r'^\d+$').hasMatch(value)) {
-      // Capped before scaling to ms, which could overflow; too many digits
-      // for an int is still "very long".
-      final cap = kModelStatsBackoffCap.inSeconds;
-      final seconds = int.tryParse(value) ?? cap;
-      ms = (seconds < cap ? seconds : cap) * Duration.millisecondsPerSecond;
-    } else {
-      try {
-        ms = HttpDate.parse(value).millisecondsSinceEpoch - _clock();
-      } catch (_) {
-        return null;
-      }
-    }
-    final min = kModelStatsRetryAfterMin.inMilliseconds;
-    final max = kModelStatsBackoffCap.inMilliseconds;
-    return Duration(milliseconds: ms.clamp(min, max));
   }
 
   /// [_isProxy], with a failed check counted as "not proxy".
