@@ -133,7 +133,6 @@ func (h *HeartbeatHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	// address, and each sends at most about one batch an hour.
 	if h.Limiter != nil {
 		if !h.Limiter.allow(heartbeatLimitKey(ip)) {
-			h.Logger.Warn("heartbeat: rate limited")
 			count(h.Metrics, metrics.HeartbeatOutcome, metrics.RateLimited)
 			writeRateLimited(w, time.Hour, 0)
 			return
