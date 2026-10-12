@@ -26,9 +26,11 @@ void main() {
     if (db.isOpen) await db.close();
   });
 
-  Future<Map<String, Object?>> row(String d) async =>
-      (await db.query('heartbeat_days', where: 'day = ?', whereArgs: [d]))
-          .single;
+  Future<Map<String, Object?>> row(String d) async => (await db.query(
+    'heartbeat_days',
+    where: 'day = ?',
+    whereArgs: [d],
+  )).single;
 
   test('marks today alive, and opened only when asked', () async {
     await repo.mark(opened: false, nowMs: now, appVersionCode: 28);
