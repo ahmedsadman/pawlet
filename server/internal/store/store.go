@@ -28,7 +28,10 @@ type Install struct {
 	LastSeen  time.Time
 	Banned    bool
 	BanReason string
-	Meta      InstallMeta
+	// Attested is whether the install has ever passed Play Integrity. One first
+	// seen through a heartbeat (bring-your-own-key, sideloaded) is false.
+	Attested bool
+	Meta     InstallMeta
 }
 
 // InstallMeta is what the install's latest Play Integrity verdict said about
@@ -124,8 +127,11 @@ func (s *Store) Close() error {
 }
 
 // TouchInstall inserts the install or refreshes its last_seen and verdict
-// metadata, and records today (UTC) as one of its session days. Both writes
-// share a transaction so the two tables never disagree.
+// metadata, marks it attested, and records today (UTC) as a session day. Both
+// writes share a transaction so the two tables never disagree. A verdict that
+// omits the version keeps the last one known (a heartbeat may have reported
+// it); the other verdict fields are only ever reported here, so the latest
+// verdict wins outright. The day's heartbeat flags are left as they are.
 func (s *Store) TouchInstall(ctx context.Context, idHash string, now time.Time, meta InstallMeta) error {
 	tx, err := s.write.BeginTx(ctx, nil)
 	if err != nil {
@@ -134,14 +140,15 @@ func (s *Store) TouchInstall(ctx context.Context, idHash string, now time.Time, 
 	defer func() { _ = tx.Rollback() }()
 
 	const upsertInstall = `INSERT INTO installs
-	    (id_hash, first_seen, last_seen, app_version_code, device_tier, licensing, sdk_version)
-	  VALUES (?, ?, ?, ?, ?, ?, ?)
+	    (id_hash, first_seen, last_seen, app_version_code, device_tier, licensing, sdk_version, attested)
+	  VALUES (?, ?, ?, ?, ?, ?, ?, 1)
 	  ON CONFLICT(id_hash) DO UPDATE SET
 	    last_seen        = excluded.last_seen,
-	    app_version_code = excluded.app_version_code,
+	    app_version_code = COALESCE(excluded.app_version_code, installs.app_version_code),
 	    device_tier      = excluded.device_tier,
 	    licensing        = excluded.licensing,
-	    sdk_version      = excluded.sdk_version`
+	    sdk_version      = excluded.sdk_version,
+	    attested         = 1`
 	version := nullInt(meta.AppVersionCode)
 	if _, err := tx.ExecContext(ctx, upsertInstall,
 		idHash, now.Unix(), now.Unix(),
@@ -150,9 +157,11 @@ func (s *Store) TouchInstall(ctx context.Context, idHash string, now time.Time, 
 		return fmt.Errorf("touch install: %w", err)
 	}
 
-	const upsertDay = `INSERT INTO install_days (id_hash, day, app_version_code)
-	  VALUES (?, ?, ?)
-	  ON CONFLICT(id_hash, day) DO UPDATE SET app_version_code = excluded.app_version_code`
+	const upsertDay = `INSERT INTO install_days (id_hash, day, app_version_code, opened, alive, session)
+	  VALUES (?, ?, ?, 0, 0, 1)
+	  ON CONFLICT(id_hash, day) DO UPDATE SET
+	    app_version_code = COALESCE(excluded.app_version_code, install_days.app_version_code),
+	    session          = 1`
 	if _, err := tx.ExecContext(ctx, upsertDay, idHash, now.UTC().Format(dayLayout), version); err != nil {
 		return fmt.Errorf("record install day: %w", err)
 	}
@@ -168,7 +177,7 @@ func nullInt(v int64) sql.NullInt64 { return sql.NullInt64{Int64: v, Valid: v !=
 func nullString(v string) sql.NullString { return sql.NullString{String: v, Valid: v != ""} }
 
 // installColumns is the column list scanInstall expects, in order.
-const installColumns = `id_hash, first_seen, last_seen, banned, ban_reason,
+const installColumns = `id_hash, first_seen, last_seen, banned, ban_reason, attested,
 	app_version_code, device_tier, licensing, sdk_version`
 
 type rowScanner interface {
@@ -179,12 +188,12 @@ func scanInstall(sc rowScanner) (Install, error) {
 	var (
 		rec               Install
 		firstSec, lastSec int64
-		banned            int
+		banned, attested  int
 		version, sdk      sql.NullInt64
 		tier, licensing   sql.NullString
 	)
 	if err := sc.Scan(
-		&rec.IDHash, &firstSec, &lastSec, &banned, &rec.BanReason,
+		&rec.IDHash, &firstSec, &lastSec, &banned, &rec.BanReason, &attested,
 		&version, &tier, &licensing, &sdk,
 	); err != nil {
 		return Install{}, err
@@ -192,6 +201,7 @@ func scanInstall(sc rowScanner) (Install, error) {
 	rec.FirstSeen = time.Unix(firstSec, 0)
 	rec.LastSeen = time.Unix(lastSec, 0)
 	rec.Banned = banned != 0
+	rec.Attested = attested != 0
 	rec.Meta = InstallMeta{
 		AppVersionCode: version.Int64,
 		DeviceTier:     tier.String,
@@ -212,30 +222,6 @@ func (s *Store) Install(ctx context.Context, idHash string) (Install, error) {
 		return Install{}, fmt.Errorf("read install: %w", err)
 	}
 	return rec, nil
-}
-
-// InstallDays lists the UTC days on which the install minted a session,
-// oldest first.
-func (s *Store) InstallDays(ctx context.Context, idHash string) ([]string, error) {
-	const q = `SELECT day FROM install_days WHERE id_hash = ? ORDER BY day`
-	rows, err := s.read.QueryContext(ctx, q, idHash)
-	if err != nil {
-		return nil, fmt.Errorf("query install days: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var days []string
-	for rows.Next() {
-		var day string
-		if err := rows.Scan(&day); err != nil {
-			return nil, fmt.Errorf("scan install day: %w", err)
-		}
-		days = append(days, day)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate install days: %w", err)
-	}
-	return days, nil
 }
 
 // Ban marks an install as refused for all future requests.

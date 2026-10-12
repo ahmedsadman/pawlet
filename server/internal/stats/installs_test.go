@@ -141,7 +141,7 @@ func hashes(rows []InstallRow) []string {
 
 func TestInstallDaily(t *testing.T) {
 	usage := []store.UsageRow{{IDHash: "a", Day: "2026-10-02", Calls: 3, Tokens: 30}}
-	got := InstallDaily("2026-10-01", "2026-10-03", usage, []string{"2026-10-01", "2026-10-02"}, nil, false)
+	got := InstallDaily("2026-10-01", "2026-10-03", usage, []store.DayRow{{Day: "2026-10-01", Session: true}, {Day: "2026-10-02", Session: true}}, nil, false)
 	want := []DetailDay{
 		{Day: "2026-10-01", Session: true},
 		{Day: "2026-10-02", Calls: 3, Tokens: 30, Session: true},

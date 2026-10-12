@@ -75,7 +75,7 @@ func TestInstallDaysBetween(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstallDaysBetween() error = %v", err)
 	}
-	if len(got) != 1 || got[0] != (DayRow{IDHash: "a", Day: "2026-10-01", AppVersionCode: 17}) {
+	if len(got) != 1 || got[0] != (DayRow{IDHash: "a", Day: "2026-10-01", AppVersionCode: 17, Session: true}) {
 		t.Fatalf("InstallDaysBetween() = %+v", got)
 	}
 }
