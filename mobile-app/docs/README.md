@@ -17,5 +17,8 @@ the code disagree, trust the code.
   the one-off import that back-fills records from the messages already on the phone.
 - [Local-model stats](model-stats.md) — how each live message's on-device verdict is
   counted once, and how proxy installs report the daily counts.
+- [Heartbeat](heartbeat.md) — the per-day "opened / ran" log that proxy and
+  bring-your-own-key installs send to Pawlet's server, the daily background task, upload
+  pacing, and why no-LLM mode never sends it.
 - [App updates](app-updates.md) — how Play installs are offered new versions in-app, the
   "Not now" snooze, and how to test an update for real.

@@ -10,6 +10,8 @@ Defined in `lib/services/llm/llm_mode.dart` and resolved by `resolveLlmMode()`:
 - **`byok`** (bring your own key) — Calls OpenRouter directly with a key the user entered in Settings. Non-Play installs, and Play installs that failed attestation, land here when a key is saved.
 - **`none`** — No LLM at all. The on-device model is the only classifier, and your messages never leave your phone.
 
+What each mode sends to Pawlet's server besides classify calls: `proxy` sends the [heartbeat](heartbeat.md) and the [local-model stats](model-stats.md); `byok` sends only the heartbeat (in builds that set `PAWLET_API_BASE`); `none` sends nothing, and moving to it deletes the unsent heartbeat log and cancels the daily heartbeat task.
+
 The four inputs:
 
 1. **`fromPlay`** — Whether the Play Store installed this app. Read from the platform over a channel served by `MainActivity` (`lib/services/install_source.dart`), compared against the known Play package name.

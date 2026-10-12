@@ -345,7 +345,9 @@ Recovery comes from two mechanisms instead:
   slot mid-call) is never cancelled and re-enqueued. Crucially the task carries a
   **"network connected" constraint**, so an offline backlog schedules a catch-up at
   delay zero and the OS simply holds it until connectivity returns, then runs it. An idle
-  app with an empty queue schedules nothing and never wakes.
+  app with an empty queue schedules no catch-up; its only background wake is the daily
+  [heartbeat](heartbeat.md) task, in proxy and bring-your-own-key modes, which runs no
+  processing pass.
 
   **The network constraint survives §5 deliberately.** A pass now does useful work
   offline, but nothing offline-resolvable depends on *this* task: an incoming SMS drives
