@@ -23,9 +23,13 @@ class AppDatabase {
   /// messages (see `ModelStatsRepository`).
   static const String modelStatsTable = 'model_stats';
 
+  /// One row per UTC day the app ran: whether it was opened, and the build
+  /// running (see `HeartbeatRepository`).
+  static const String heartbeatTable = 'heartbeat_days';
+
   /// Schema version. Every bump needs a matching [onUpgrade] branch and a
   /// parity test — see the guard in `test/database_test.dart`.
-  static const int version = 7;
+  static const int version = 8;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), fileName);
@@ -74,6 +78,7 @@ class AppDatabase {
       )
     ''');
     await _createModelStatsTable(db);
+    await _createHeartbeatTable(db);
 
     await db.execute('''
       CREATE TABLE $banksTable (
@@ -180,6 +185,23 @@ class AppDatabase {
     ''');
   }
 
+  /// The heartbeat log. Shared by [createSchema] and the v8 upgrade so the two
+  /// cannot drift. `day` is the UTC `YYYY-MM-DD`; `updated_at` is bumped when
+  /// a mark changes the row and `reported_at` holds the flush start time of
+  /// the last send the server acknowledged, as for [modelStatsTable].
+  static Future<void> _createHeartbeatTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE $heartbeatTable (
+        day TEXT PRIMARY KEY,
+        app_version_code INTEGER NOT NULL,
+        opened INTEGER NOT NULL DEFAULT 0,
+        alive INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        reported_at INTEGER
+      )
+    ''');
+  }
+
   /// Upgrade policy: walk forward one step at a time, preserving data from
   /// every released version; rebuild destructively only from versions that
   /// predate release and so have no migration path.
@@ -210,6 +232,7 @@ class AppDatabase {
         billsTable,
         metaTable,
         modelStatsTable,
+        heartbeatTable,
       ]) {
         // Dropping a table also drops its indexes.
         await db.execute('DROP TABLE IF EXISTS $table');
@@ -232,6 +255,11 @@ class AppDatabase {
       // Additive. Existing rows get no verdict and are never counted.
       await db.execute('ALTER TABLE $smsTable ADD COLUMN local_verdict TEXT');
       await _createModelStatsTable(db);
+    }
+
+    if (oldVersion < 8) {
+      // Additive: a new, empty table.
+      await _createHeartbeatTable(db);
     }
   }
 }
