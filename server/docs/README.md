@@ -7,9 +7,9 @@ the code disagree, trust the code.
 
 - [Auth flow](auth-flow.md) — how an install proves it is the genuine app on a genuine
   device, gets a session token, and uses it to classify messages; what each piece is for
-  and what happens when a step fails.
+  and what happens when a step fails; and the unauthenticated heartbeat endpoint outside it.
 - [Stored metrics](metrics.md) — what pawletd records for the admin dashboard (install
-  metadata, session days, daily outcome and latency counters, server info) and what each value
-  means.
+  metadata, activity days from sessions and heartbeats, daily outcome and latency counters,
+  server info) and what each value means.
 - [Admin dashboard service](admin.md) — the owner-only `pawlet-admin` service: running it
   locally, configuration, login security and the API the dashboard uses.
