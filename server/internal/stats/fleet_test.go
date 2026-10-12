@@ -12,8 +12,11 @@ func TestBuildFleet(t *testing.T) {
 		install("a", "2026-09-01"), install("b", "2026-09-01"), install("c", "2026-09-01"),
 		install("d", "2026-08-01"), install("e", "2026-09-01"),
 	}
+	installs[0].Attested = true
 	installs[0].Meta = store.InstallMeta{AppVersionCode: 18, DeviceTier: "STRONG", Licensing: "LICENSED", SDKVersion: 34}
+	installs[1].Attested = true
 	installs[1].Meta = store.InstallMeta{AppVersionCode: 17, DeviceTier: "DEVICE", Licensing: "LICENSED"}
+	installs[2].Attested = true
 	installs[2].Meta = store.InstallMeta{AppVersionCode: 18, DeviceTier: "DEVICE", Licensing: "UNLICENSED", SDKVersion: 33}
 	installs[4].Banned = true
 
@@ -45,5 +48,29 @@ func TestBuildFleet(t *testing.T) {
 	}
 	if f.Adoption[0].Counts["17"] != 1 || f.Adoption[1].Counts["18"] != 1 || f.Adoption[1].Counts[Unknown] != 1 {
 		t.Fatalf("adoption = %+v", f.Adoption)
+	}
+}
+
+func TestBuildFleetVerdictChartsCoverAttestedOnly(t *testing.T) {
+	today := "2026-10-09"
+	installs := []store.Install{
+		{IDHash: "a", Attested: true, Meta: store.InstallMeta{AppVersionCode: 28, DeviceTier: "STRONG", Licensing: "LICENSED", SDKVersion: 34}},
+		{IDHash: "b", Attested: false, Meta: store.InstallMeta{AppVersionCode: 27}},
+	}
+	recent := Activity{}
+	recent.mark(today, "a")
+	recent.mark(today, "b")
+
+	f := BuildFleet(installs, recent, nil, []string{today}, today)
+	if f.ActiveInstalls != 2 {
+		t.Fatalf("ActiveInstalls = %d, want 2", f.ActiveInstalls)
+	}
+	if len(f.Versions) != 2 {
+		t.Errorf("Versions = %+v, want both installs", f.Versions)
+	}
+	for name, kc := range map[string][]KeyCount{"tier": f.DeviceTier, "licensing": f.Licensing, "sdk": f.SDK} {
+		if len(kc) != 1 || kc[0].Count != 1 || kc[0].Key == Unknown {
+			t.Errorf("%s = %+v, want only the attested install", name, kc)
+		}
 	}
 }

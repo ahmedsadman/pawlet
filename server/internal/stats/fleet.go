@@ -73,7 +73,8 @@ func numericDesc(m map[string]int64) []KeyCount {
 }
 
 // BuildFleet describes non-banned installs active (ModeAny) in the last
-// FleetWindowDays, and version adoption per day from session rows.
+// FleetWindowDays, and version adoption per day from activity rows. Verdict
+// charts cover attested installs only.
 func BuildFleet(installs []store.Install, recent Activity, sessions []store.DayRow, adoptionDays []string, today string) Fleet {
 	active := map[string]bool{}
 	for _, d := range Days(AddDays(today, -(FleetWindowDays-1)), today) {
@@ -90,9 +91,13 @@ func BuildFleet(installs []store.Install, recent Activity, sessions []store.DayR
 		}
 		f.ActiveInstalls++
 		versions[intKey(in.Meta.AppVersionCode)]++
-		tiers[strKey(in.Meta.DeviceTier)]++
-		licensing[strKey(in.Meta.Licensing)]++
-		sdk[intKey(in.Meta.SDKVersion)]++
+		// Tier, licensing and SDK come only from a Play Integrity verdict, so
+		// an install that never attested would only add "unknown".
+		if in.Attested {
+			tiers[strKey(in.Meta.DeviceTier)]++
+			licensing[strKey(in.Meta.Licensing)]++
+			sdk[intKey(in.Meta.SDKVersion)]++
+		}
 	}
 	f.Versions = numericDesc(versions)
 	f.SDK = numericDesc(sdk)

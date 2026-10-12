@@ -28,6 +28,9 @@ func TestBuildOverview(t *testing.T) {
 		install("b", "2026-10-09"),
 		install("c", "2026-10-01"), // previous 7d window
 	}
+	installs[0].Attested = true
+	installs[1].Attested = true
+	installs[2].Attested = true
 	installs[2].Banned = true
 	usage := []store.UsageRow{
 		{IDHash: "a", Day: "2026-10-08", Calls: 4, Tokens: 40},
@@ -44,7 +47,7 @@ func TestBuildOverview(t *testing.T) {
 		CountersToday: map[string]int64{"ok": 3, "upstream_retryable": 1},
 	})
 	k := ov.KPIs
-	if k.AttestedInstalls != 3 || k.Banned != 1 || k.NewInstalls != 2 || k.NewInstallsPrev != 1 {
+	if k.Installs != 3 || k.AttestedInstalls != 3 || k.Banned != 1 || k.NewInstalls != 2 || k.NewInstallsPrev != 1 {
 		t.Fatalf("install KPIs = %+v", k)
 	}
 	if k.DAU != 2 || k.WAU != 2 || k.MAU != 3 {
@@ -98,5 +101,17 @@ func TestBuildOverviewMessages(t *testing.T) {
 	empty := BuildOverview(OverviewInput{Range: rng, Today: "2026-10-09", Activity: BuildActivity(nil, nil, ModeAny)})
 	if empty.KPIs.MessagesPerActiveInstallDay != nil {
 		t.Fatalf("no model stats = %v, want nil", *empty.KPIs.MessagesPerActiveInstallDay)
+	}
+}
+
+func TestBuildOverviewCountsAttestedSeparately(t *testing.T) {
+	rng := Range{From: "2026-10-09", To: "2026-10-09"}
+	ov := BuildOverview(OverviewInput{
+		Range: rng, Today: "2026-10-09",
+		Installs: []store.Install{{IDHash: "a", Attested: true}, {IDHash: "b"}},
+		Activity: BuildActivity(nil, nil, ModeAny),
+	})
+	if ov.KPIs.Installs != 2 || ov.KPIs.AttestedInstalls != 1 {
+		t.Fatalf("installs/attested = %d/%d, want 2/1", ov.KPIs.Installs, ov.KPIs.AttestedInstalls)
 	}
 }
