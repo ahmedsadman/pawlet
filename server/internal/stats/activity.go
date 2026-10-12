@@ -7,9 +7,13 @@ type Mode string
 
 // Activity modes.
 const (
-	// ModeAny counts a classify call or a minted session: closest to "the
-	// user opened the app".
+	// ModeAny counts any sign the app ran that day: a heartbeat (opened or
+	// running in the background), a minted session, or a classify call.
 	ModeAny Mode = "any"
+	// ModeOpened counts days the app came to the foreground. A session day
+	// counts too: sessions are only minted in the foreground, and app builds
+	// without heartbeats report nothing else.
+	ModeOpened Mode = "opened"
 	// ModeClassify counts only classify calls: closest to "the user cost
 	// tokens".
 	ModeClassify Mode = "classify"
@@ -20,6 +24,8 @@ func ParseMode(s string) (Mode, error) {
 	switch s {
 	case "", string(ModeAny):
 		return ModeAny, nil
+	case string(ModeOpened):
+		return ModeOpened, nil
 	case string(ModeClassify):
 		return ModeClassify, nil
 	}
@@ -63,18 +69,22 @@ func (a Activity) activeBetween(hash, from, to string) bool {
 	return false
 }
 
-// BuildActivity marks a usage day with calls as active, plus every session
-// day in ModeAny.
-func BuildActivity(usage []store.UsageRow, sessions []store.DayRow, mode Mode) Activity {
+// BuildActivity marks the days each install was active under mode. Classify
+// calls count in ModeAny and ModeClassify. In ModeAny every install_days row
+// counts, whatever its flags: a row only exists once some signal arrived.
+func BuildActivity(usage []store.UsageRow, days []store.DayRow, mode Mode) Activity {
 	a := Activity{}
-	for _, u := range usage {
-		if u.Calls > 0 {
-			a.mark(u.Day, u.IDHash)
+	if mode != ModeOpened {
+		for _, u := range usage {
+			if u.Calls > 0 {
+				a.mark(u.Day, u.IDHash)
+			}
 		}
 	}
-	if mode == ModeAny {
-		for _, s := range sessions {
-			a.mark(s.Day, s.IDHash)
+	for _, d := range days {
+		switch {
+		case mode == ModeAny, mode == ModeOpened && (d.Opened || d.Session):
+			a.mark(d.Day, d.IDHash)
 		}
 	}
 	return a

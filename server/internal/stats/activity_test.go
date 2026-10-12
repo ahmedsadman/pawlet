@@ -12,20 +12,38 @@ func TestBuildActivityModes(t *testing.T) {
 		{IDHash: "a", Day: "2026-10-01", Calls: 2},
 		{IDHash: "b", Day: "2026-10-01", Calls: 0}, // zero calls is not activity
 	}
-	sessions := []store.DayRow{{IDHash: "c", Day: "2026-10-01"}}
-
-	classify := BuildActivity(usage, sessions, ModeClassify)
-	if !classify.Active("2026-10-01", "a") || classify.Active("2026-10-01", "b") || classify.Active("2026-10-01", "c") {
-		t.Fatalf("classify activity wrong: %v", classify)
+	days := []store.DayRow{
+		{IDHash: "c", Day: "2026-10-01", Session: true},
+		{IDHash: "d", Day: "2026-10-01", Alive: true},
+		{IDHash: "e", Day: "2026-10-01", Opened: true, Alive: true},
 	}
-	anyMode := BuildActivity(usage, sessions, ModeAny)
-	if !anyMode.Active("2026-10-01", "a") || !anyMode.Active("2026-10-01", "c") || anyMode.Active("2026-10-01", "b") {
-		t.Fatalf("any activity wrong: %v", anyMode)
+
+	classify := BuildActivity(usage, days, ModeClassify)
+	for h, want := range map[string]bool{"a": true, "b": false, "c": false, "d": false, "e": false} {
+		if classify.Active("2026-10-01", h) != want {
+			t.Errorf("classify %s = %v, want %v", h, !want, want)
+		}
+	}
+	anyMode := BuildActivity(usage, days, ModeAny)
+	for h, want := range map[string]bool{"a": true, "b": false, "c": true, "d": true, "e": true} {
+		if anyMode.Active("2026-10-01", h) != want {
+			t.Errorf("any %s = %v, want %v", h, !want, want)
+		}
+	}
+	// A session day counts as opened: sessions are only minted in the
+	// foreground, and builds without heartbeats report nothing else.
+	opened := BuildActivity(usage, days, ModeOpened)
+	for h, want := range map[string]bool{"a": false, "b": false, "c": true, "d": false, "e": true} {
+		if opened.Active("2026-10-01", h) != want {
+			t.Errorf("opened %s = %v, want %v", h, !want, want)
+		}
 	}
 }
 
 func TestParseMode(t *testing.T) {
-	for in, want := range map[string]Mode{"": ModeAny, "any": ModeAny, "classify": ModeClassify} {
+	for in, want := range map[string]Mode{
+		"": ModeAny, "any": ModeAny, "opened": ModeOpened, "classify": ModeClassify,
+	} {
 		if got, err := ParseMode(in); err != nil || got != want {
 			t.Errorf("ParseMode(%q) = %v, %v", in, got, err)
 		}
