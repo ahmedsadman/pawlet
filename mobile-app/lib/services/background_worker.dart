@@ -7,6 +7,8 @@ import 'app_services.dart';
 
 const String _processTask = 'pawlet.process';
 const String _catchUpName = 'pawlet.process.catchup';
+const String _heartbeatTask = 'pawlet.heartbeat';
+const String _heartbeatName = 'pawlet.heartbeat.daily';
 
 /// WorkManager entry point. Best-effort catch-up when the app is killed (a
 /// backlog queued while offline, or a message in retry backoff). Must be
@@ -32,7 +34,9 @@ void callbackDispatcher() {
 
 /// Adaptive background scheduling: instead of an always-on periodic task, a
 /// single one-off catch-up is (re)scheduled only when there is pending work, so
-/// an idle app never wakes in the background.
+/// an idle app never wakes for processing. The one exception is the daily
+/// heartbeat ([scheduleHeartbeat]): one short wake a day is what tells the
+/// server the app is still installed.
 class BackgroundWorker {
   const BackgroundWorker._();
 
@@ -67,4 +71,19 @@ class BackgroundWorker {
   /// Cancels the pending catch-up (nothing left to process).
   static Future<void> cancelCatchUp() =>
       Workmanager().cancelByUniqueName(_catchUpName);
+
+  /// Registers the daily heartbeat: marks the day alive and uploads, with no
+  /// processing pass. [ExistingPeriodicWorkPolicy.keep], so re-registering on
+  /// every launch never resets its schedule.
+  static Future<void> scheduleHeartbeat() => Workmanager().registerPeriodicTask(
+    _heartbeatName,
+    _heartbeatTask,
+    frequency: const Duration(hours: 24),
+    constraints: Constraints(networkType: NetworkType.connected),
+    existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+  );
+
+  /// Cancels the daily heartbeat (no-LLM mode).
+  static Future<void> cancelHeartbeat() =>
+      Workmanager().cancelByUniqueName(_heartbeatName);
 }
