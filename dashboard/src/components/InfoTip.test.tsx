@@ -7,12 +7,12 @@ import { statCopy } from "../copy/stats";
 describe("InfoTip", () => {
   it("opens on focus, links the tooltip, and closes on Escape", async () => {
     const user = userEvent.setup();
-    render(<InfoTip id="attestedInstalls" />);
-    const button = screen.getByRole("button", { name: /about attested installs/i });
+    render(<InfoTip id="installs" />);
+    const button = screen.getByRole("button", { name: /about installs/i });
     await user.tab();
     expect(button).toHaveFocus();
     const tip = screen.getByRole("tooltip");
-    expect(tip).toHaveTextContent(statCopy.attestedInstalls.meaning);
+    expect(tip).toHaveTextContent(statCopy.installs.meaning);
     expect(button).toHaveAttribute("aria-describedby", tip.id);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();

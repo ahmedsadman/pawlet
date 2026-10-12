@@ -66,7 +66,7 @@ export const api = {
   overview: (range: RangeKey) => _request<OverviewResponse>(`/api/overview${query({ range })}`),
   installs: (q: InstallsQuery) =>
     _request<InstallsResponse>(
-      `/api/installs${query({ sort: q.sort, order: q.order, q: q.q, status: q.status, page: q.page })}`,
+      `/api/installs${query({ sort: q.sort, order: q.order, q: q.q, status: q.status, attested: q.attested, page: q.page })}`,
     ),
   install: (hash: string) => _request<InstallDetailResponse>(`/api/installs/${hash}`),
   ban: (hash: string, reason: string) => post<void>(`/api/installs/${hash}/ban`, { reason }),

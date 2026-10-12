@@ -20,6 +20,13 @@ const STATUSES = [
 ] as const;
 type Status = (typeof STATUSES)[number]["key"];
 
+const ATTESTED = [
+  { key: "all", label: "All" },
+  { key: "yes", label: "Attested" },
+  { key: "no", label: "Unattested" },
+] as const;
+type Attested = (typeof ATTESTED)[number]["key"];
+
 interface Column {
   key: string;
   label: string;
@@ -64,6 +71,12 @@ const COLUMNS: Column[] = [
     statId: "col.version",
     sort: "appVersionCode",
     cell: (r) => r.appVersionCode ?? "—",
+  },
+  {
+    key: "attested",
+    label: "Attested",
+    statId: "col.attested",
+    cell: (r) => (r.attested ? "Yes" : "No"),
   },
   { key: "tier", label: "Tier", statId: "col.tier", cell: (r) => r.deviceTier ?? "—" },
   {
@@ -119,13 +132,22 @@ export default function InstallsPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const status = (STATUSES.find((s) => s.key === params.get("status"))?.key ?? "all") as Status;
+  const attested = (ATTESTED.find((a) => a.key === params.get("attested"))?.key ??
+    "all") as Attested;
   const validSorts = COLUMNS.filter((c) => c.sort).map((c) => c.sort!);
   const rawSort = params.get("sort");
   const sort = rawSort && validSorts.includes(rawSort) ? rawSort : "lastSeen";
   const order = params.get("order") === "asc" ? "asc" : "desc";
   const q = params.get("q") ?? "";
   const page = Math.max(1, Number(params.get("page")) || 1);
-  const query = useInstalls({ status, sort, order, q, page });
+  const query = useInstalls({
+    status,
+    attested: attested === "all" ? undefined : attested,
+    sort,
+    order,
+    q,
+    page,
+  });
 
   const update = (changes: Record<string, string | null>) =>
     setParams(
@@ -167,6 +189,12 @@ export default function InstallsPage() {
           options={[...STATUSES]}
           value={status}
           onChange={(s) => update({ status: s === "all" ? null : s })}
+        />
+        <Segmented
+          label="Attestation"
+          options={[...ATTESTED]}
+          value={attested}
+          onChange={(a) => update({ attested: a === "all" ? null : a })}
         />
       </PageHeader>
       <Async query={query} skeleton={<Skeleton className="h-96" />}>

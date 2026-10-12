@@ -17,14 +17,16 @@ import { useRange } from "../lib/range";
 import { SERIES } from "../theme/tokens";
 
 const MODES: { key: ActiveMode; label: string }[] = [
-  { key: "any", label: "Any activity" },
+  { key: "any", label: "Running" },
+  { key: "opened", label: "Opened" },
   { key: "classify", label: "Classify only" },
 ];
 
 export default function EngagementPage() {
   const [range] = useRange();
   const [params, setParams] = useSearchParams();
-  const mode: ActiveMode = params.get("active") === "classify" ? "classify" : "any";
+  const raw = params.get("active");
+  const mode: ActiveMode = raw === "opened" || raw === "classify" ? raw : "any";
   const query = useEngagement(range, mode);
   const setMode = (m: ActiveMode) =>
     setParams(
@@ -46,14 +48,11 @@ export default function EngagementPage() {
       <Async query={query} skeleton={<Skeleton className="h-96" />}>
         {(d) => (
           <div className="space-y-6">
-            {mode === "any" && (
+            {mode !== "classify" && (
               <CollectingNote since={d.collectingSince.sessions} rangeFrom={d.range.from} />
             )}
             <div className="grid gap-4 lg:grid-cols-2">
-              <Card
-                title="Active installs"
-                statId={mode === "any" ? "chart.active.any" : "chart.active.classify"}
-              >
+              <Card title="Active installs" statId={`chart.active.${mode}` as const}>
                 <TimeSeriesChart
                   data={d.daily.map(({ day, dau, wau, mau }) => ({ day, dau, wau, mau }))}
                   series={[
@@ -63,10 +62,7 @@ export default function EngagementPage() {
                   ]}
                 />
               </Card>
-              <Card
-                title="Stickiness"
-                statId={mode === "any" ? "chart.stickiness.any" : "chart.stickiness.classify"}
-              >
+              <Card title="Stickiness" statId={`chart.stickiness.${mode}` as const}>
                 <TimeSeriesChart
                   data={d.daily.map(({ day, stickiness }) => ({ day, stickiness }))}
                   kind="area"
@@ -76,10 +72,7 @@ export default function EngagementPage() {
                 />
               </Card>
             </div>
-            <Card
-              title="Weekly retention"
-              statId={mode === "any" ? "chart.cohorts.any" : "chart.cohorts.classify"}
-            >
+            <Card title="Weekly retention" statId={`chart.cohorts.${mode}` as const}>
               <CohortHeatmap cohorts={d.cohorts} />
             </Card>
             <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">

@@ -97,6 +97,7 @@ export default function InstallDetailPage() {
                 value={r.appVersionCode?.toString() ?? "—"}
               />
               <Fact label="Device tier" statId="col.tier" value={r.deviceTier ?? "—"} />
+              <Fact label="Attested" statId="col.attested" value={r.attested ? "Yes" : "No"} />
               <Fact label="Licensing" statId="detail.licensing" value={r.licensing ?? "—"} />
               <Fact
                 label="Android SDK"

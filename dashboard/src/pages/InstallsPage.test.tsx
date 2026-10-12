@@ -42,6 +42,7 @@ describe("InstallsPage", () => {
                 tokensTotal: 5000,
                 quotaHitDays: 0,
                 isBanned: false,
+                attested: false,
                 isDormant: false,
               },
             ],
@@ -109,5 +110,48 @@ describe("InstallsPage", () => {
       expect.stringMatching(/\/api\/installs\?.*sort=messagesTotal/),
       expect.any(Object),
     );
+  });
+
+  it("filters by attested parameter", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          rows: [
+            {
+              hash: "a".repeat(64),
+              firstSeen: "2024-01-01T00:00:00Z",
+              lastSeen: "2024-01-02T00:00:00Z",
+              appVersionCode: 1,
+              deviceTier: null,
+              callsToday: 0,
+              calls7d: 0,
+              callsTotal: 0,
+              messagesToday: 0,
+              messages7d: 0,
+              messagesTotal: 0,
+              hasModelStats: false,
+              tokensTotal: 0,
+              quotaHitDays: 0,
+              isBanned: false,
+              attested: false,
+              isDormant: false,
+            },
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderInstallsPage("/installs?attested=no");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/attested=no/),
+      expect.any(Object),
+    );
+    await screen.findByText("No");
   });
 });

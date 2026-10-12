@@ -9,10 +9,14 @@ export interface StatCopy {
   caveat?: string;
 }
 
-const PROXY_ONLY =
-  "Only Play installs that passed attestation are visible; sideloaded and bring-your-own-key installs never reach the server.";
-const SESSION_UNDERCOUNT =
-  "Session days undercount daily opens: the 24-hour token is only refreshed near expiry, so an install opened every day can skip days. Weekly and monthly numbers are robust.";
+const WHO_REPORTS =
+  "Installs using Pawlet's server or their own API key report; installs with no AI service never do. Installs that never passed Play Integrity are included and marked unattested.";
+/**
+ * The app release that first sends heartbeats. The release owner replaces
+ * this with "app version <versionCode>" when that release is cut.
+ */
+export const HEARTBEAT_RELEASE = "the first app release that sends heartbeats";
+const HEARTBEAT_LAG = `Heartbeats are recorded since ${HEARTBEAT_RELEASE}; older installs count only their sessions until they update. Today can lag by about an hour, and days spent offline arrive late.`;
 const SMS_DRIVEN =
   "Classify activity follows bank SMS volume, not engagement: background classification counts, messages handled on the phone never do.";
 const COUNTERS_SINCE = "Recorded since the capture deploy; earlier days are empty.";
@@ -25,33 +29,37 @@ export const MESSAGE_COUNTS_RELEASE = "the first app release that reports messag
 const MESSAGES_REPORTED = `Only Play installs on ${MESSAGE_COUNTS_RELEASE} or later report message counts; earlier installs show calls only.`;
 
 export const statCopy = {
-  attestedInstalls: {
-    title: "Attested installs",
-    meaning: "Installs that passed Play Integrity attestation at least once.",
-    computation: "Count of install records. A reinstall gets a new install ID, so it counts again.",
-    caveat: `${PROXY_ONLY} Play Console has the real install count.`,
+  installs: {
+    title: "Installs",
+    meaning: "Installs that have reported at least once, with how many passed Play Integrity.",
+    computation:
+      "Count of install records; attested = has minted a session at least once. A reinstall gets a new install ID, so it counts again.",
+    caveat: `${WHO_REPORTS} Play Console has the real install count.`,
   },
   newInstalls: {
     title: "New installs",
     meaning: "Installs first seen in the selected range.",
     computation:
-      "Installs whose first attestation falls in the range, compared with the same-length range before it.",
+      "Installs whose first report (heartbeat or session) falls in the range, compared with the same-length range before it.",
+    caveat: `The week ${HEARTBEAT_RELEASE} rolls out, installs that never attested (own API key, sideloaded) appear for the first time and count as new.`,
   },
   "dau.any": {
     title: "Daily active installs",
-    meaning: "Installs active today: they made a classify call or minted a session.",
-    computation: "Distinct installs with a usage row or a session day today (UTC).",
-    caveat: SESSION_UNDERCOUNT,
+    meaning: "Installs that ran today: opened, ran in the background, or made a classify call.",
+    computation: "Distinct installs with an activity row or a classify call today (UTC).",
+    caveat: HEARTBEAT_LAG,
   },
   "wau.any": {
     title: "Weekly active installs",
-    meaning: "Installs active at least once in the last 7 days.",
-    computation: "Distinct installs with a classify call or a session in the 7 days ending today.",
+    meaning: "Installs that ran at least once in the last 7 days.",
+    computation:
+      "Distinct installs with an activity row or a classify call in the 7 days ending today.",
   },
   "mau.any": {
     title: "Monthly active installs",
-    meaning: "Installs active at least once in the last 30 days.",
-    computation: "Distinct installs with a classify call or a session in the 30 days ending today.",
+    meaning: "Installs that ran at least once in the last 30 days.",
+    computation:
+      "Distinct installs with an activity row or a classify call in the 30 days ending today.",
   },
   callsToday: {
     title: "Calls today",
@@ -74,9 +82,9 @@ export const statCopy = {
   },
   "chart.activeInstallsPerDay": {
     title: "Active installs per day",
-    meaning: "Installs that classified or minted a session each day.",
-    computation: 'Distinct installs active each day (the "Any" definition).',
-    caveat: SESSION_UNDERCOUNT,
+    meaning: "Installs that ran each day: opened, in the background, or classifying.",
+    computation: 'Distinct installs active each day (the "Running" definition).',
+    caveat: HEARTBEAT_LAG,
   },
   "chart.newInstallsPerDay": {
     title: "New installs per day",
@@ -95,26 +103,34 @@ export const statCopy = {
   },
   "col.firstSeen": {
     title: "First seen",
-    meaning: "When the install first attested.",
-    computation: "Time of its first successful session.",
+    meaning: "When the install first reported.",
+    computation: "Time of its first heartbeat or session, whichever came first.",
   },
   "col.lastSeen": {
     title: "Last seen",
-    meaning: "When the install last attested.",
-    computation: "Time of its most recent successful session (about daily while the app is used).",
+    meaning: "When the install last reported.",
+    computation:
+      "Time the server last received a heartbeat or session from it (about hourly while the app runs).",
   },
   "col.version": {
     title: "Version",
-    meaning: "App versionCode from the install's latest attestation.",
-    computation: "Read from the Play Integrity verdict on each session.",
-    caveat: "Empty until the install attests again after the capture deploy.",
+    meaning: "The app versionCode the install last reported.",
+    computation: "From its newest heartbeat day, or its latest Play Integrity verdict.",
+  },
+  "col.attested": {
+    title: "Attested",
+    meaning: "Whether the install has ever passed Play Integrity.",
+    computation:
+      "Yes once it mints a session. Heartbeat-only installs (own API key, sideloaded) say No.",
+    caveat:
+      "Heartbeats are unauthenticated: an install that never attested could be faked. Filter to attested installs to exclude them.",
   },
   "col.tier": {
     title: "Device tier",
     meaning:
       "STRONG: hardware-backed integrity and a recent security patch. DEVICE: a genuine Play-certified device.",
     computation:
-      "Strongest device verdict in the latest attestation. Devices below DEVICE never get a session.",
+      "Strongest device verdict in the latest attestation. Empty for installs that never attested.",
   },
   "col.callsTotal": {
     title: "Total calls",
@@ -134,8 +150,10 @@ export const statCopy = {
   "col.status": {
     title: "Status",
     meaning: "Active, dormant (nothing for over 14 days) or banned.",
-    computation: "Dormant: not banned and no session or classify call in more than 14 days.",
-    caveat: "The server cannot see uninstalls; dormancy stands in for churn.",
+    computation:
+      "Dormant: not banned and no heartbeat, session or classify call in more than 14 days.",
+    caveat:
+      "The server cannot see uninstalls. With the daily heartbeat, dormant mostly means uninstalled, force-stopped, or switched to no AI service.",
   },
   "detail.licensing": {
     title: "Licensing",
@@ -152,9 +170,11 @@ export const statCopy = {
   },
   "detail.activity": {
     title: "Activity",
-    meaning: "Each day since the install appeared: classified, opened only, or idle.",
-    computation: "Classified = at least one call; opened only = a session day without calls.",
-    caveat: SESSION_UNDERCOUNT,
+    meaning:
+      "Each day since the install appeared: classified, opened, ran in the background only, or idle.",
+    computation:
+      "Classified = at least one call; opened = the app came to the screen (or minted a session); background only = the app ran without being opened.",
+    caveat: HEARTBEAT_LAG,
   },
   "chart.installTokens": {
     title: "Tokens per day",
@@ -163,10 +183,18 @@ export const statCopy = {
   },
   "chart.active.any": {
     title: "Active installs",
-    meaning: "Daily, weekly and monthly active installs, counting classify calls and sessions.",
+    meaning:
+      "Running: daily, weekly and monthly installs whose app ran, in the foreground or the background.",
     computation:
-      "For each day: distinct installs active that day, in the 7 days, and in the 30 days ending that day.",
-    caveat: SESSION_UNDERCOUNT,
+      "For each day: distinct installs with an activity row or a classify call that day, in the 7 days, and in the 30 days ending that day.",
+    caveat: HEARTBEAT_LAG,
+  },
+  "chart.active.opened": {
+    title: "Active installs",
+    meaning: "Opened: daily, weekly and monthly installs whose app came to the screen.",
+    computation:
+      "For each day: distinct installs that reported an open or minted a session (only done in the foreground) that day, in the 7 days, and in the 30 days ending that day.",
+    caveat: HEARTBEAT_LAG,
   },
   "chart.active.classify": {
     title: "Active installs",
@@ -177,9 +205,15 @@ export const statCopy = {
   },
   "chart.stickiness.any": {
     title: "Stickiness",
-    meaning: "How many days a month the typical monthly user shows up. 30% ≈ 9 days.",
-    computation: "Daily active ÷ monthly active, each day.",
-    caveat: SESSION_UNDERCOUNT,
+    meaning: "How many days a month the typical monthly install runs. 30% ≈ 9 days.",
+    computation: "Daily running ÷ monthly running, each day.",
+    caveat: HEARTBEAT_LAG,
+  },
+  "chart.stickiness.opened": {
+    title: "Stickiness",
+    meaning: "How many days a month the typical monthly user opens the app. 30% ≈ 9 days.",
+    computation: "Daily opened ÷ monthly opened, each day.",
+    caveat: HEARTBEAT_LAG,
   },
   "chart.stickiness.classify": {
     title: "Stickiness",
@@ -189,9 +223,17 @@ export const statCopy = {
   },
   "chart.cohorts.any": {
     title: "Weekly retention",
-    meaning: "Of the installs that appeared in a week, the share active in each later week.",
+    meaning: "Of the installs that appeared in a week, the share still running in each later week.",
     computation:
-      "Cohort = UTC week (Monday start) of first attestation. Cell = share with a classify call or session in that week. Last 12 cohorts.",
+      "Cohort = UTC week (Monday start) of first report. Cell = share with any activity in that week. Last 12 cohorts.",
+    caveat: "The current week is partial.",
+  },
+  "chart.cohorts.opened": {
+    title: "Weekly retention",
+    meaning:
+      "Of the installs that appeared in a week, the share that opened the app in each later week.",
+    computation:
+      "Cohort = UTC week (Monday start) of first report. Cell = share that reported an open or minted a session in that week. Last 12 cohorts.",
     caveat: "The current week is partial.",
   },
   "chart.cohorts.classify": {
@@ -204,10 +246,10 @@ export const statCopy = {
   },
   dormant: {
     title: "Dormant installs",
-    meaning: "Installs with no session or classify call for more than 14 days.",
-    computation:
-      "Not banned, and the latest of last session and last call day is over 14 days ago.",
-    caveat: "Includes uninstalls and reinstalls (which get new IDs).",
+    meaning: "Installs with no heartbeat, session or classify call for more than 14 days.",
+    computation: "Not banned, and last seen over 14 days ago.",
+    caveat:
+      "Mostly uninstalls, force-stopped apps, and installs switched to no AI service. Reinstalls get new IDs.",
   },
   "chart.successRate": {
     title: "LLM success rate",
@@ -263,36 +305,38 @@ export const statCopy = {
   fleetActive: {
     title: "Recently active installs",
     meaning: "The installs the fleet page describes.",
-    computation: "Not banned, with a classify call or session in the last 30 days.",
+    computation: "Not banned, and ran (heartbeat, session or classify call) in the last 30 days.",
   },
   "chart.versions": {
     title: "App versions",
     meaning: "Which app version recently active installs run.",
-    computation: "versionCode from each install's latest attestation.",
-    caveat: "unknown = not attested since the capture deploy.",
+    computation: "The versionCode each install last reported.",
+    caveat: "unknown = never reported a version.",
   },
   "chart.adoption": {
     title: "Version adoption",
-    meaning: "Which versions attested each day over the last 90 days.",
-    computation: "Session days per versionCode; the five most common versions, the rest as Other.",
-    caveat: COUNTERS_SINCE,
+    meaning: "Which versions installs ran each day over the last 90 days.",
+    computation: "Activity days per versionCode; the five most common versions, the rest as Other.",
+    caveat: HEARTBEAT_LAG,
   },
   "chart.tier": {
     title: "Device tier",
     meaning:
       "STRONG: hardware-backed integrity and a recent patch. DEVICE: genuine but older or unpatched.",
-    computation: "Strongest device verdict from each recently active install's latest attestation.",
+    computation:
+      "Strongest device verdict from each recently active install's latest attestation. Attested installs only.",
     caveat: "Shows what tightening policy to STRONG would cost.",
   },
   "chart.licensing": {
     title: "Licensing",
     meaning: "LICENSED: from Play. UNLICENSED: copied APK. UNEVALUATED: undecided.",
-    computation: "Play's licensing verdict from each recently active install's latest attestation.",
+    computation:
+      "Play's licensing verdict from each recently active install's latest attestation. Attested installs only.",
   },
   "chart.sdk": {
     title: "Android SDK",
     meaning: "Android API levels of recently active installs.",
-    computation: "From the verdict's device attributes.",
+    computation: "From the verdict's device attributes. Attested installs only.",
     caveat: 'unknown unless "device attributes" is enabled in Play Console.',
   },
   "chart.localModel": {
