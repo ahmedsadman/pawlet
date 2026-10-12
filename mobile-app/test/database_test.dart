@@ -697,5 +697,24 @@ void main() {
       expect(stored['reported_at'], isNull);
       await db.close();
     });
+
+    test('a version-skipping upgrade from v5 to v8 still preserves data', () async {
+      // A device that skipped releases v6, v7, and v8 arrives as (5, 8) and
+      // must still migrate rather than get wiped.
+      final db = await openV5();
+      await db.insert('banks', {
+        'name': 'My Card',
+        'account_type': 'credit',
+        'card_digits': '4238|3241',
+        'created_at': 1,
+      });
+
+      await AppDatabase.onUpgrade(db, 5, 8);
+
+      expect((await db.query('banks')).single['name'], 'My Card');
+      expect(await _columnNames(db, 'sms_records'), contains('local_verdict'));
+      expect(await _tableNames(db), contains('heartbeat_days'));
+      await db.close();
+    });
   });
 }
