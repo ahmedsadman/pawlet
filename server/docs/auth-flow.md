@@ -95,8 +95,10 @@ through these steps in order, and stops at the first failure:
    - the app is signed with Pawlet's Play app-signing certificate (see below);
    - the device passes Google's device-integrity check.
 4. **Check the ban list.** A banned install is refused here.
-5. **Record the install.** The server saves the install ID's SHA-256 hash and when it was
-   first and last seen. Nothing else about the install or the user is stored.
+5. **Record the install.** The server saves the install ID's SHA-256 hash, when it was first
+   and last seen, and what the verdict said about the app version, device tier, licensing and
+   SDK level; marks the install attested; and records today as a session day (see
+   [Stored metrics](metrics.md)). Nothing about the user is stored.
 6. **Issue a session token.** A JWT valid for 24 hours whose subject is the install hash.
 
 The checks live in `internal/attest/verify.go`; the endpoint is `internal/httpapi/session.go`.
@@ -148,6 +150,16 @@ validation rule broken), `500 internal`.
 ### 6. Renewing
 
 After 24 hours, or whenever the server answers 401, the app starts again from step 1.
+
+## Outside this flow: heartbeats
+
+`POST /v1/heartbeat` (`internal/httpapi/heartbeat.go`) needs no session. The app reports which
+days it was opened or ran, from proxy and bring-your-own-key installs alike, so install analytics
+do not depend on attestation. It carries the install ID, which the server hashes exactly as
+`/v1/session` does; an install first seen there is stored unattested. Because it needs no login,
+it is rate-limited per client IP per clock hour (`HEARTBEAT_PER_IP_HOUR`), with IPv6 addresses
+sharing one bucket per /64. It never grants access to anything. What it stores and how it
+answers are in [Stored metrics](metrics.md#heartbeats).
 
 ## The signing-certificate check
 
@@ -212,6 +224,7 @@ Values as of the last update of this page. Verify against the source before rely
 | Challenge lifetime | 2 minutes | `cmd/pawletd/main.go` |
 | Challenge size | 32 random bytes (64 hex characters) | `internal/attest/challenge.go` |
 | Challenges per IP | 60 per hour (`CHALLENGE_PER_IP_HOUR`) | `internal/config/config.go` |
+| Heartbeats per IP | 120 per hour (`HEARTBEAT_PER_IP_HOUR`), IPv6 per /64 | `internal/config/config.go` |
 | Maximum integrity-token age | 5 minutes | `cmd/pawletd/main.go` |
 | Session token lifetime | 24 hours | `cmd/pawletd/main.go` |
 | Session token signing | HS256, key from `JWT_SECRET` | `internal/token/token.go` |

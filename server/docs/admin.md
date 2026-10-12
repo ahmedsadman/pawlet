@@ -120,17 +120,17 @@ container restart.
 All `/api/*` routes return JSON; `/healthz` returns plain text. Days are UTC `YYYY-MM-DD`,
 timestamps unix seconds. `range` is `7d`, `30d` (default), `90d` or `all`.
 
-| Route                                                                           | Purpose                                                                                                                               |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /healthz`                                                                  | 200 when the database answers                                                                                                         |
-| `POST /api/login`, `POST /api/logout`, `GET /api/me`                            | session                                                                                                                               |
-| `GET /api/overview?range=`                                                      | headline numbers, daily messages/calls/active/new installs, messages and calls per active install-day, server info                    |
-| `GET /api/installs?sort=&order=&q=&status=&page=`                               | installs table (50 per page; `q` is a hash prefix; `status` is `all`, `active`, `dormant` or `banned`); an invalid `page` returns 400 |
-| `GET /api/installs/{hash}`                                                      | one install with its daily history, including messages and on-device counts                                                           |
-| `POST /api/installs/{hash}/ban` `{"reason"}`, `POST /api/installs/{hash}/unban` | ban control; pawletd checks the flag on every request, so a ban applies to the install's next call                                    |
-| `GET /api/engagement?range=&active=any\|classify`                               | active installs, stickiness, cohorts, messages per active day distribution, dormant count                                             |
-| `GET /api/reliability?range=`                                                   | outcomes, success rate, latency percentiles, models, categories, tokens per call, local-model card                                    |
-| `GET /api/fleet`                                                                | app version, device tier, licensing and SDK of recently active installs; version adoption                                             |
+| Route                                                                           | Purpose                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /healthz`                                                                  | 200 when the database answers                                                                                                                                                                                                    |
+| `POST /api/login`, `POST /api/logout`, `GET /api/me`                            | session                                                                                                                                                                                                                          |
+| `GET /api/overview?range=`                                                      | headline numbers (including `installs` and `attestedInstalls`), daily messages/calls/active/new installs, messages and calls per active install-day, server info                                                                 |
+| `GET /api/installs?sort=&order=&q=&status=&attested=&page=`                     | installs table (50 per page; `q` is a hash prefix; `status` is `all`, `active`, `dormant` or `banned`; `attested` is `yes`, `no` or empty for all); rows carry `attested`; an invalid `page`, `status` or `attested` returns 400 |
+| `GET /api/installs/{hash}`                                                      | one install with its daily history: calls, tokens, the `opened`, `alive` and `session` flags, messages and on-device counts                                                                                                      |
+| `POST /api/installs/{hash}/ban` `{"reason"}`, `POST /api/installs/{hash}/unban` | ban control; pawletd checks the flag on every request, so a ban applies to the install's next call                                                                                                                               |
+| `GET /api/engagement?range=&active=any\|opened\|classify`                       | active installs, stickiness, cohorts, messages per active day distribution, dormant count                                                                                                                                        |
+| `GET /api/reliability?range=`                                                   | outcomes, success rate, latency percentiles, models, categories, tokens per call, local-model card                                                                                                                               |
+| `GET /api/fleet`                                                                | app version of recently active installs, device tier, licensing and SDK of the attested ones; version adoption                                                                                                                   |
 
 Unknown asset paths under `/assets/` return 404.
 
@@ -162,16 +162,16 @@ How each number is defined — active days, cohorts, dormancy, success rate, per
 
 Snapshot as of this writing — verify against the named source files.
 
-| Constant                   | Value                                | Source                                                          |
-| -------------------------- | ------------------------------------ | --------------------------------------------------------------- |
-| Minimum database schema    | version 3 (local-model stats tables) | `internal/store/migrate.go` (`SchemaVersion`)                   |
-| Session lifetime           | 7 days                               | `internal/admin/sessions.go`                                    |
-| Failed logins per address  | 5 per 15 minutes                     | `internal/admin/loginlimit.go`                                  |
-| Failed logins overall      | 100 per hour                         | `internal/admin/loginlimit.go`                                  |
-| Concurrent password checks | 2                                    | `internal/admin/server.go`                                      |
-| argon2id parameters        | 64 MiB, 2 passes, 1 thread           | `internal/admin/password.go`                                    |
-| Installs page size         | 50                                   | `internal/stats/installs.go`                                    |
-| Dormant after              | 14 days without activity             | `internal/stats/installs.go`                                    |
-| Weekly cohorts shown       | 12, each tracked to week 12          | `internal/admin/handlers_stats.go`, `internal/stats/cohorts.go` |
-| Fleet window               | last 30 days; adoption over 90 days  | `internal/stats/fleet.go`, `internal/admin/handlers_stats.go`   |
-| Ban reason limit           | 200 characters                       | `internal/admin/handlers_stats.go`                              |
+| Constant                   | Value                               | Source                                                          |
+| -------------------------- | ----------------------------------- | --------------------------------------------------------------- |
+| Minimum database schema    | version 4 (heartbeat flags)         | `internal/store/migrate.go` (`SchemaVersion`)                   |
+| Session lifetime           | 7 days                              | `internal/admin/sessions.go`                                    |
+| Failed logins per address  | 5 per 15 minutes                    | `internal/admin/loginlimit.go`                                  |
+| Failed logins overall      | 100 per hour                        | `internal/admin/loginlimit.go`                                  |
+| Concurrent password checks | 2                                   | `internal/admin/server.go`                                      |
+| argon2id parameters        | 64 MiB, 2 passes, 1 thread          | `internal/admin/password.go`                                    |
+| Installs page size         | 50                                  | `internal/stats/installs.go`                                    |
+| Dormant after              | 14 days without activity            | `internal/stats/installs.go`                                    |
+| Weekly cohorts shown       | 12, each tracked to week 12         | `internal/admin/handlers_stats.go`, `internal/stats/cohorts.go` |
+| Fleet window               | last 30 days; adoption over 90 days | `internal/stats/fleet.go`, `internal/admin/handlers_stats.go`   |
+| Ban reason limit           | 200 characters                      | `internal/admin/handlers_stats.go`                              |
