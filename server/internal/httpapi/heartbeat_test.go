@@ -48,8 +48,12 @@ func newHeartbeatHarness(t *testing.T, perHour int) *heartbeatHarness {
 }
 
 func (h *heartbeatHarness) post(body string) *httptest.ResponseRecorder {
+	return h.postFrom(body, "203.0.113.7:5000")
+}
+
+func (h *heartbeatHarness) postFrom(body, remoteAddr string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, "/v1/heartbeat", strings.NewReader(body))
-	req.RemoteAddr = "203.0.113.7:5000"
+	req.RemoteAddr = remoteAddr
 	rec := httptest.NewRecorder()
 	h.handler.Heartbeat(rec, req)
 	return rec
@@ -111,18 +115,55 @@ func TestHeartbeatRateLimitsPerIP(t *testing.T) {
 	}
 }
 
+func TestHeartbeatIPv6RateLimitsPer64(t *testing.T) {
+	h := newHeartbeatHarness(t, 1)
+	// Two addresses in the same /64 share a bucket.
+	if rec := h.postFrom(validHeartbeatBody, "[2001:db8::1]:5000"); rec.Code != http.StatusNoContent {
+		t.Fatalf("first status = %d", rec.Code)
+	}
+	rec := h.postFrom(validHeartbeatBody, "[2001:db8::2]:5000")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("second IPv6 in same /64 status = %d, want 429", rec.Code)
+	}
+}
+
+func TestHeartbeatIPv4RateLimitsPerAddress(t *testing.T) {
+	h := newHeartbeatHarness(t, 1)
+	// Different IPv4 addresses have separate buckets.
+	if rec := h.postFrom(validHeartbeatBody, "203.0.113.7:5000"); rec.Code != http.StatusNoContent {
+		t.Fatalf("first status = %d", rec.Code)
+	}
+	rec := h.postFrom(validHeartbeatBody, "203.0.113.8:5000")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("different IPv4 status = %d, want 204", rec.Code)
+	}
+}
+
 func TestHeartbeatRejectsBadBodies(t *testing.T) {
 	cases := map[string]string{
 		"not json":      `nope`,
-		"unknown field": `{"installId":"` + heartbeatID + `","days":[],"extra":1}`,
+		"unknown field": `{"installId":"` + heartbeatID + `","days":[{"day":"2026-10-09","appVersionCode":28,"opened":true,"alive":true}],"extra":1}`,
 		"trailing data": validHeartbeatBody + `{}`,
 		"invalid":       `{"installId":"short","days":[{"day":"2026-10-09","appVersionCode":28,"opened":true,"alive":true}]}`,
+		"oversize body": `{"installId":"` + heartbeatID + `","days":[{"day":"2026-10-09","appVersionCode":28,"opened":true,"alive":true,"padding":"` + strings.Repeat("x", 4096) + `"}]}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
 			h := newHeartbeatHarness(t, 10)
 			h.assertOutcome(t, h.post(body), http.StatusBadRequest, metrics.BadRequest)
 		})
+	}
+}
+
+func TestHeartbeatStoreError(t *testing.T) {
+	h := newHeartbeatHarness(t, 10)
+	_ = h.store.Close()
+	rec := h.post(validHeartbeatBody)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	if got := h.counter.n(metrics.HeartbeatOutcome, metrics.Internal); got != 1 {
+		t.Errorf("internal counted %d times, want 1", got)
 	}
 }
 
@@ -168,8 +209,33 @@ func TestValidateHeartbeat(t *testing.T) {
 		"duplicate day":    {InstallID: heartbeatID, Days: []heartbeatEntry{hbEntry("2026-10-10"), hbEntry("2026-10-10")}},
 	}
 	for name, req := range bad {
-		if _, err := validateHeartbeat(req, heartbeatToday); err == nil {
-			t.Errorf("%s: validateHeartbeat() error = nil, want an error", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			if _, err := validateHeartbeat(req, heartbeatToday); err == nil {
+				t.Errorf("validateHeartbeat() error = nil, want an error")
+			}
+		})
+	}
+}
+
+func TestHeartbeatLimitKey(t *testing.T) {
+	cases := []struct {
+		name string
+		ip   string
+		want string
+	}{
+		{"IPv4", "203.0.113.7", "203.0.113.7"},
+		{"IPv6 same /64", "2001:db8::1", "2001:db8::/64"},
+		{"IPv6 same /64 different host", "2001:db8::2", "2001:db8::/64"},
+		{"IPv6 different /64", "2001:db8:1::1", "2001:db8:1::/64"},
+		{"unparseable", "invalid", "invalid"},
+		{"empty", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := heartbeatLimitKey(tc.ip)
+			if got != tc.want {
+				t.Errorf("heartbeatLimitKey(%q) = %q, want %q", tc.ip, got, tc.want)
+			}
+		})
 	}
 }
