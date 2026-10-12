@@ -16,7 +16,7 @@ const WHO_REPORTS =
  * this with "app version <versionCode>" when that release is cut.
  */
 export const HEARTBEAT_RELEASE = "the first app release that sends heartbeats";
-const HEARTBEAT_LAG = `Heartbeats are recorded since ${HEARTBEAT_RELEASE}; older installs count only their sessions until they update. Today can lag by about an hour, and days spent offline arrive late.`;
+const HEARTBEAT_LAG = `Heartbeats are recorded since ${HEARTBEAT_RELEASE}; older installs count only their sessions until they update. Today is usually current within minutes but can lag up to a day; days spent offline arrive late.`;
 const SMS_DRIVEN =
   "Classify activity follows bank SMS volume, not engagement: background classification counts, messages handled on the phone never do.";
 const COUNTERS_SINCE = "Recorded since the capture deploy; earlier days are empty.";
@@ -110,7 +110,7 @@ export const statCopy = {
     title: "Last seen",
     meaning: "When the install last reported.",
     computation:
-      "Time the server last received a heartbeat or session from it (about hourly while the app runs).",
+      "Time the server last received a heartbeat or session from it (usually once or twice a day while the app is in use or running).",
   },
   "col.version": {
     title: "Version",
@@ -153,7 +153,7 @@ export const statCopy = {
     computation:
       "Dormant: not banned and no heartbeat, session or classify call in more than 14 days.",
     caveat:
-      "The server cannot see uninstalls. With the daily heartbeat, dormant mostly means uninstalled, force-stopped, or switched to no AI service.",
+      "The server cannot see uninstalls. On app versions that send heartbeats, dormant mostly means uninstalled, force-stopped, or switched to no AI service.",
   },
   "detail.licensing": {
     title: "Licensing",
@@ -247,9 +247,10 @@ export const statCopy = {
   dormant: {
     title: "Dormant installs",
     meaning: "Installs with no heartbeat, session or classify call for more than 14 days.",
-    computation: "Not banned, and last seen over 14 days ago.",
+    computation:
+      "Not banned, and the later of last seen and the last classify-call day is over 14 days ago.",
     caveat:
-      "Mostly uninstalls, force-stopped apps, and installs switched to no AI service. Reinstalls get new IDs.",
+      "On app versions that send heartbeats, mostly uninstalls, force-stopped apps, and installs switched to no AI service. Reinstalls get new IDs.",
   },
   "chart.successRate": {
     title: "LLM success rate",
