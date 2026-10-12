@@ -199,6 +199,10 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 			statsVersion := int64(statsVersionOld)
 			lastSeen := firstSeen
 
+			// A fifth use their own API key or a sideloaded build: heartbeats
+			// only, never a session or a verdict.
+			attested := r.Float64() >= 0.2
+
 			for dd := d; dd < Days; dd++ {
 				if dd > d && r.Float64() < churn {
 					break
@@ -208,10 +212,15 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 				}
 				key := dayKey(dd)
 				if dd == d || r.Float64() < 0.55 {
-					if _, err := tx.Exec(`INSERT INTO install_days (id_hash, day, app_version_code) VALUES (?,?,?)`, hash, key, version); err != nil {
+					session := attested && (dd == d || r.Float64() < 0.5)
+					if _, err := tx.Exec(`INSERT INTO install_days
+					    (id_hash, day, app_version_code, opened, alive, session) VALUES (?,?,?,?,1,?)`,
+						hash, key, version, boolToInt(dd == d || r.Float64() < 0.7), boolToInt(session)); err != nil {
 						return Summary{}, err
 					}
-					add(key, "session_outcome", "ok", 1)
+					if session {
+						add(key, "session_outcome", "ok", 1)
+					}
 					if ts := start.AddDate(0, 0, dd).Add(time.Duration(r.Intn(86400)) * time.Second); ts.After(lastSeen) {
 						lastSeen = ts
 					}
@@ -265,10 +274,14 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 			if r.Float64() < 0.02 {
 				banned, reason = 1, "abuse: scripted calls"
 			}
+			var tier, lic, sdkVal any = pick(r, tiers), pick(r, licensing), sdk
+			if !attested {
+				tier, lic, sdkVal = nil, nil, nil
+			}
 			if _, err := tx.Exec(`INSERT INTO installs (id_hash, first_seen, last_seen, banned, ban_reason,
-			    app_version_code, device_tier, licensing, sdk_version) VALUES (?,?,?,?,?,?,?,?,?)`,
-				hash, firstSeen.Unix(), lastSeen.Unix(), banned, reason, version,
-				pick(r, tiers), pick(r, licensing), sdk); err != nil {
+			    attested, app_version_code, device_tier, licensing, sdk_version) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+				hash, firstSeen.Unix(), lastSeen.Unix(), banned, reason,
+				boolToInt(attested), version, tier, lic, sdkVal); err != nil {
 				return Summary{}, err
 			}
 		}
@@ -329,4 +342,11 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 		}
 	}
 	return sum, nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
