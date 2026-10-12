@@ -155,6 +155,14 @@ func TestTouchInstallOverwritesMetaWithNull(t *testing.T) {
 	if versionNull || !tierNull || !licensingNull || !sdkNull {
 		t.Fatalf("NULLs = %v %v %v %v, want false true true true", versionNull, tierNull, licensingNull, sdkNull)
 	}
+
+	rec, err := s.Install(ctx, "hash-n")
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if rec.Meta.AppVersionCode != full.AppVersionCode {
+		t.Fatalf("AppVersionCode = %d, want %d", rec.Meta.AppVersionCode, full.AppVersionCode)
+	}
 }
 
 func TestTouchInstallRecordsSessionDays(t *testing.T) {
@@ -287,5 +295,28 @@ func TestInstallReadsAttested(t *testing.T) {
 	}
 	if rec.Attested {
 		t.Error("Attested = true, want false")
+	}
+}
+
+func TestSessionAttestsHeartbeatOnlyInstall(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if _, err := s.write.ExecContext(ctx,
+		`INSERT INTO installs (id_hash, first_seen, last_seen, attested) VALUES ('hash-u2', 1, 1, 0)`); err != nil {
+		t.Fatalf("seed install: %v", err)
+	}
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	if err := s.TouchInstall(ctx, "hash-u2", now, InstallMeta{}); err != nil {
+		t.Fatalf("TouchInstall() error = %v", err)
+	}
+	rec, err := s.Install(ctx, "hash-u2")
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if !rec.Attested {
+		t.Error("Attested = false, want true after session")
+	}
+	if !rec.LastSeen.Equal(now) {
+		t.Errorf("LastSeen = %v, want %v", rec.LastSeen, now)
 	}
 }
