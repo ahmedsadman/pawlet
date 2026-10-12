@@ -56,10 +56,10 @@
 <main>
 
 <h1>Pawlet Privacy Policy</h1>
-<p class="meta">Last updated: 10 October 2026 &middot; Applies to the Pawlet Android app (<code>com.pastabyte.pawlet</code>)</p>
+<p class="meta">Last updated: 13 October 2026 &middot; Applies to the Pawlet Android app (<code>com.pastabyte.pawlet</code>)</p>
 
 <div class="callout">
-<p><strong>In short:</strong> Pawlet has no user accounts and no third-party analytics. It reads your bank SMS messages on your device to build a personal finance ledger, and that ledger is stored only on your phone. The one time message content leaves your device is when an unrecognised message has to be classified by an AI model. That text is handled in transit and is never written to a database or a log file by us. We keep no copy of your messages, transactions, or balances &mdash; only an anonymous installation identifier and a few counts about it: when it was seen and active, its app version and device integrity verdict, how many classification requests it made, and how many messages the on-device model handled by itself versus sent to the cloud model. Those counts are what prevent the service being abused and tell us how well the on-device model works.</p>
+<p><strong>In short:</strong> Pawlet has no user accounts and no third-party analytics. It reads your bank SMS messages on your device to build a personal finance ledger, and that ledger is stored only on your phone. The one time message content leaves your device is when an unrecognised message has to be classified by an AI model. That text is handled in transit and is never written to a database or a log file by us. We keep no copy of your messages, transactions, or balances &mdash; only an anonymous installation identifier and a few counts about it: which days it was opened or ran, its app version and device integrity verdict, how many classification requests it made, and how many messages the on-device model handled by itself versus sent to the cloud model. Those counts are what prevent the service being abused, tell us how many installations are in use, and tell us how well the on-device model works.</p>
 </div>
 
 <h2>1. Who we are and what this covers</h2>
@@ -75,15 +75,15 @@
 <p>From the messages, Pawlet extracts and stores transaction amounts, dates, merchant or description text, bank and card names, and bill due dates. You may also enter this information manually. This data is used only to display your balances, spending, and bills inside the app.</p>
 
 <h3>Installation identifier and usage counts</h3>
-<p>When Pawlet uses our classification service (see section 4), the app generates a random installation identifier. It is not your name, your phone number, your Google account, or any hardware identifier, and it is created by the app itself. Before it is stored, it is irreversibly hashed. Against that hash we record only:</p>
+<p>When Pawlet uses our classification service or your own API key (see section 4), the app generates a random installation identifier. It is not your name, your phone number, your Google account, or any hardware identifier, and it is created by the app itself. Before it is stored, it is irreversibly hashed. Against that hash we record only:</p>
 <ul>
-  <li>the dates the installation was first and last seen, and the days on which it was active;</li>
+  <li>the dates the installation was first and last seen, and, for each day, whether the app was opened and whether it ran at all;</li>
   <li>the number of classification requests it made each day, and the number of AI tokens those requests used;</li>
-  <li>its app version, the device integrity tier and Play licensing verdict reported by Google Play Integrity, and the Android SDK level;</li>
+  <li>its app version; and, if it uses our classification service, the device integrity tier and Play licensing verdict reported by Google Play Integrity, and the Android SDK level;</li>
   <li>for each day, how many messages the on-device model classified by itself, how many it passed on to the cloud model, and how many it could not process.</li>
 </ul>
 <p>None of this includes message content, senders, categories, amounts, balances, or anything else about your finances.</p>
-<p>This exists for two reasons: to enforce fair-use quotas and block abuse of a service we pay for, and to measure how well the on-device model works, so that fewer messages need to leave your phone. It is never linked to your messages or your financial data, because we do not retain those. A fresh identifier is generated if you reinstall the app, and we have no way to connect a new one to an old one.</p>
+<p>This exists for three reasons: to enforce fair-use quotas and block abuse of a service we pay for, to understand how many installations are in use and which app versions they run, and to measure how well the on-device model works, so that fewer messages need to leave your phone. It is never linked to your messages or your financial data, because we do not retain those. A fresh identifier is generated if you reinstall the app, and we have no way to connect a new one to an old one.</p>
 
 <h3>What Pawlet does <em>not</em> collect</h3>
 <ul>
@@ -129,6 +129,9 @@
 
 <h3>Daily message counts</h3>
 <p>If you use Pawlet's classification service, the app also sends our server, at most a few times a day, a short summary covering today and the previous 29 days: for each day and app version, how many messages the on-device model classified by itself, how many it passed on to the cloud model, and how many it could not process. The summary travels over HTTPS with the same session token as classification requests, so it is stored against the installation hash described in section 2. It contains no message text, sender, category, amount, or balance. Messages imported from your existing inbox are not counted. If you use your own API key, or no AI service at all, the app never sends it.</p>
+
+<h3>Daily activity heartbeat</h3>
+<p>If you use Pawlet's classification service or your own API key, the app tells our server which days it was opened or ran, and which app version it was running. It sends this only when that record changes, a few times a day at most, including from a short background check the app runs once a day. The message travels over HTTPS and carries the random installation identifier (stored only as a hash, see section 2), dates, the app version and two yes/no flags. It contains no message text, sender, category, amount, or balance. If you use no AI service at all, the app never sends it, and switching to that mode deletes anything not yet sent.</p>
 
 <h3>Currency exchange rates</h3>
 <p>Pawlet fetches public currency exchange rates from <code>open.er-api.com</code>. This is an anonymous request for public rate data. No personal, financial, or message data is included.</p>
@@ -192,7 +195,7 @@
 <h3>On our servers</h3>
 <ul>
   <li><strong>Message text and classification results: not retained at all.</strong> They exist only in memory for the duration of the request.</li>
-  <li><strong>Installation hash, request counts, active days, and app and device details: retained indefinitely</strong>, because historical request volume is what lets us detect and block abuse. This data cannot be used to identify you or to reconstruct anything about your finances.</li>
+  <li><strong>Installation hash, request counts, the days it was opened or ran, and app and device details: retained indefinitely</strong>, because historical request volume is what lets us detect and block abuse. This data cannot be used to identify you or to reconstruct anything about your finances.</li>
   <li><strong>Daily on-device message counts: kept against the installation hash for 90 days.</strong> After that they are added into daily totals that carry no installation hash, and the installation keeps only a single running total of the messages counted.</li>
   <li>Session tokens expire 24 hours after issue and are not stored.</li>
   <li>Attestation challenges are held in memory for 2 minutes and then discarded.</li>
@@ -207,7 +210,7 @@
 <p>Pawlet does not offer account creation. There is no sign-up, no login, and no user account associated with the app, and therefore no account for you to delete and no account data held by us.</p>
 
 <h2>9. Security</h2>
-<p>Pawlet stores data in Android's private per-app storage, keeps credentials in the hardware-backed Keystore, offers an optional PIN and biometric app lock, and uses HTTPS for every network request. On the server side, installation identifiers are irreversibly hashed before storage, message content is never persisted or logged, session tokens are cryptographically signed and short-lived, and access is gated behind Google Play Integrity attestation.</p>
+<p>Pawlet stores data in Android's private per-app storage, keeps credentials in the hardware-backed Keystore, offers an optional PIN and biometric app lock, and uses HTTPS for every network request. On the server side, installation identifiers are irreversibly hashed before storage, message content is never persisted or logged, session tokens are cryptographically signed and short-lived, and access to the classification service is gated behind Google Play Integrity attestation.</p>
 <p>No system is perfectly secure, and the security of your device &mdash; its screen lock, operating system updates, and where you store exported backups &mdash; remains an important part of protecting your information.</p>
 
 <h2>10. Children</h2>
