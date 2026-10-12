@@ -264,6 +264,9 @@ func TestInstallDailyCarriesFlags(t *testing.T) {
 		{Day: "2026-10-02", Alive: true},
 		{Day: "2026-10-03"},
 	}
+	if len(got) != len(want) {
+		t.Fatalf("InstallDaily() len = %d, want %d", len(got), len(want))
+	}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("InstallDaily() = %+v, want %+v", got, want)
