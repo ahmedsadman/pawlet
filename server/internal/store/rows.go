@@ -16,11 +16,18 @@ type UsageRow struct {
 	Tokens int64
 }
 
-// DayRow is one install's session day and the version it attested with.
+// DayRow is one install's activity on one UTC day: which signals arrived and
+// the latest app version any of them reported.
 type DayRow struct {
 	IDHash         string
 	Day            string
 	AppVersionCode int64
+	// Opened: the app came to the foreground that day.
+	Opened bool
+	// Alive: the app ran that day, in the foreground or the background.
+	Alive bool
+	// Session: the install minted a proxy session that day.
+	Session bool
 }
 
 // CounterRow is one daily aggregate counter.
@@ -116,12 +123,24 @@ func (s *Store) queryUsage(ctx context.Context, q string, args ...any) ([]UsageR
 	return out, nil
 }
 
-// InstallDaysBetween reads session days from..to inclusive. An unknown
+// InstallDaysBetween reads activity days from..to inclusive. An unknown
 // version reads as 0.
 func (s *Store) InstallDaysBetween(ctx context.Context, from, to string) ([]DayRow, error) {
-	const q = `SELECT id_hash, day, COALESCE(app_version_code, 0) FROM install_days
-	           WHERE day BETWEEN ? AND ? ORDER BY day, id_hash`
-	rows, err := s.read.QueryContext(ctx, q, from, to)
+	return s.queryDays(ctx, `SELECT `+dayColumns+` FROM install_days
+	           WHERE day BETWEEN ? AND ? ORDER BY day, id_hash`, from, to)
+}
+
+// InstallDays reads one install's activity days, oldest first.
+func (s *Store) InstallDays(ctx context.Context, idHash string) ([]DayRow, error) {
+	return s.queryDays(ctx, `SELECT `+dayColumns+` FROM install_days
+	           WHERE id_hash = ? ORDER BY day`, idHash)
+}
+
+// dayColumns is the column list queryDays expects, in order.
+const dayColumns = `id_hash, day, COALESCE(app_version_code, 0), opened, alive, session`
+
+func (s *Store) queryDays(ctx context.Context, q string, args ...any) ([]DayRow, error) {
+	rows, err := s.read.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query install days: %w", err)
 	}
@@ -129,10 +148,14 @@ func (s *Store) InstallDaysBetween(ctx context.Context, from, to string) ([]DayR
 
 	var out []DayRow
 	for rows.Next() {
-		var d DayRow
-		if err := rows.Scan(&d.IDHash, &d.Day, &d.AppVersionCode); err != nil {
+		var (
+			d                      DayRow
+			opened, alive, session int
+		)
+		if err := rows.Scan(&d.IDHash, &d.Day, &d.AppVersionCode, &opened, &alive, &session); err != nil {
 			return nil, fmt.Errorf("scan install day: %w", err)
 		}
+		d.Opened, d.Alive, d.Session = opened != 0, alive != 0, session != 0
 		out = append(out, d)
 	}
 	if err := rows.Err(); err != nil {

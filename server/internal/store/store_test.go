@@ -19,6 +19,15 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
+// dayKeys lists the days of rows, in order.
+func dayKeys(rows []DayRow) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = r.Day
+	}
+	return out
+}
+
 func TestTouchInstallCreatesThenUpdates(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -130,7 +139,7 @@ func TestTouchInstallOverwritesMetaWithNull(t *testing.T) {
 	if err := s.TouchInstall(ctx, "hash-n", now, full); err != nil {
 		t.Fatalf("TouchInstall() error = %v", err)
 	}
-	// The latest verdict is the truth: a field it omits is unknown now.
+	// The latest verdict is the truth for what only it reports; a version it omits keeps the last one known.
 	if err := s.TouchInstall(ctx, "hash-n", now.Add(time.Hour), InstallMeta{}); err != nil {
 		t.Fatalf("second TouchInstall() error = %v", err)
 	}
@@ -143,8 +152,8 @@ func TestTouchInstallOverwritesMetaWithNull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read meta columns: %v", err)
 	}
-	if !versionNull || !tierNull || !licensingNull || !sdkNull {
-		t.Fatalf("NULLs = %v %v %v %v, want all true", versionNull, tierNull, licensingNull, sdkNull)
+	if versionNull || !tierNull || !licensingNull || !sdkNull {
+		t.Fatalf("NULLs = %v %v %v %v, want false true true true", versionNull, tierNull, licensingNull, sdkNull)
 	}
 }
 
@@ -168,7 +177,7 @@ func TestTouchInstallRecordsSessionDays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstallDays() error = %v", err)
 	}
-	if len(days) != 2 || days[0] != "2026-10-08" || days[1] != "2026-10-09" {
+	if got := dayKeys(days); len(got) != 2 || got[0] != "2026-10-08" || got[1] != "2026-10-09" {
 		t.Fatalf("days = %v, want [2026-10-08 2026-10-09]", days)
 	}
 
@@ -200,7 +209,7 @@ func TestTouchInstallSessionDayIsUTC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstallDays() error = %v", err)
 	}
-	if len(days) != 1 || days[0] != "2026-10-08" {
+	if got := dayKeys(days); len(got) != 1 || got[0] != "2026-10-08" {
 		t.Fatalf("days = %v, want [2026-10-08]", days)
 	}
 }
@@ -214,5 +223,69 @@ func TestInstallDaysUnknownIsEmpty(t *testing.T) {
 	}
 	if len(days) != 0 {
 		t.Fatalf("days = %v, want empty", days)
+	}
+}
+
+func TestTouchInstallMarksSessionAndAttested(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
+
+	if err := s.TouchInstall(ctx, "hash-s", now, InstallMeta{AppVersionCode: 28}); err != nil {
+		t.Fatalf("TouchInstall() error = %v", err)
+	}
+	rec, err := s.Install(ctx, "hash-s")
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if !rec.Attested {
+		t.Error("Attested = false, want true after a session")
+	}
+	days, err := s.InstallDays(ctx, "hash-s")
+	if err != nil {
+		t.Fatalf("InstallDays() error = %v", err)
+	}
+	want := DayRow{IDHash: "hash-s", Day: "2026-10-09", AppVersionCode: 28, Session: true}
+	if len(days) != 1 || days[0] != want {
+		t.Fatalf("days = %+v, want [%+v]", days, want)
+	}
+}
+
+func TestTouchInstallKeepsHeartbeatFlags(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if _, err := s.write.ExecContext(ctx,
+		`INSERT INTO install_days (id_hash, day, app_version_code, opened, alive, session)
+		 VALUES ('hash-k', '2026-10-09', 27, 1, 1, 0)`); err != nil {
+		t.Fatalf("seed day: %v", err)
+	}
+	now := time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC)
+	if err := s.TouchInstall(ctx, "hash-k", now, InstallMeta{}); err != nil {
+		t.Fatalf("TouchInstall() error = %v", err)
+	}
+	days, err := s.InstallDays(ctx, "hash-k")
+	if err != nil {
+		t.Fatalf("InstallDays() error = %v", err)
+	}
+	// A verdict without a version keeps the heartbeat's.
+	want := DayRow{IDHash: "hash-k", Day: "2026-10-09", AppVersionCode: 27, Opened: true, Alive: true, Session: true}
+	if len(days) != 1 || days[0] != want {
+		t.Fatalf("days = %+v, want [%+v]", days, want)
+	}
+}
+
+func TestInstallReadsAttested(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if _, err := s.write.ExecContext(ctx,
+		`INSERT INTO installs (id_hash, first_seen, last_seen, attested) VALUES ('hash-h', 1, 1, 0)`); err != nil {
+		t.Fatalf("seed install: %v", err)
+	}
+	rec, err := s.Install(ctx, "hash-h")
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if rec.Attested {
+		t.Error("Attested = true, want false")
 	}
 }

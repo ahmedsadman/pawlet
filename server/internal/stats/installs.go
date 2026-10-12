@@ -260,7 +260,7 @@ type DetailDay struct {
 
 // InstallDaily lists every day from firstSeenDay to today for one install.
 func InstallDaily(
-	firstSeenDay, today string, usage []store.UsageRow, sessionDays []string,
+	firstSeenDay, today string, usage []store.UsageRow, days []store.DayRow,
 	model []store.ModelRow, hasModelStats bool,
 ) []DetailDay {
 	if firstSeenDay > today {
@@ -270,9 +270,9 @@ func InstallDaily(
 	for _, u := range usage {
 		byDay[u.Day] = u
 	}
-	sessions := make(map[string]bool, len(sessionDays))
-	for _, d := range sessionDays {
-		sessions[d] = true
+	sessions := make(map[string]store.DayRow, len(days))
+	for _, d := range days {
+		sessions[d.Day] = d
 	}
 	modelByDay := map[string]ModelCounts{}
 	for _, m := range model {
@@ -280,11 +280,11 @@ func InstallDaily(
 	}
 	modelFrom := AddDays(today, -(store.ModelStatsRetentionDays - 1))
 
-	days := Days(firstSeenDay, today)
-	out := make([]DetailDay, 0, len(days))
-	for _, d := range days {
+	allDays := Days(firstSeenDay, today)
+	out := make([]DetailDay, 0, len(allDays))
+	for _, d := range allDays {
 		u := byDay[d]
-		day := DetailDay{Day: d, Calls: u.Calls, Tokens: u.Tokens, Session: sessions[d]}
+		day := DetailDay{Day: d, Calls: u.Calls, Tokens: u.Tokens, Session: sessions[d].Session}
 		if hasModelStats && d >= modelFrom {
 			c := modelByDay[d]
 			messages, onDevice := c.Messages(), c.Accepted
