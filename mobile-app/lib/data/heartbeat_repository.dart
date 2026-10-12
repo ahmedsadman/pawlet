@@ -65,24 +65,56 @@ class HeartbeatRepository {
   /// on and the version is the running build's. `updated_at` moves only when
   /// the row actually changed, so a repeat mark (every resume) leaves nothing
   /// to report. Days outside the window are dropped in the same transaction.
+  ///
+  /// Plain insert/update rather than upsert: ON CONFLICT DO UPDATE needs
+  /// SQLite 3.24 (Android 11 / API 30+), but minSdk is 24 (Android 7).
   Future<void> mark({
     required bool opened,
     required int nowMs,
     required int appVersionCode,
   }) => _db.transaction((txn) async {
-    await txn.rawInsert(
-      'INSERT INTO $_table (day, app_version_code, opened, alive, updated_at) '
-      'VALUES (?, ?, ?, 1, ?) '
-      'ON CONFLICT(day) DO UPDATE SET '
-      'app_version_code = excluded.app_version_code, '
-      'opened = MAX($_table.opened, excluded.opened), '
-      'alive = 1, '
-      'updated_at = excluded.updated_at '
-      'WHERE $_table.app_version_code != excluded.app_version_code '
-      'OR $_table.opened < excluded.opened '
-      'OR $_table.alive = 0',
-      [utcDay(nowMs), appVersionCode, opened ? 1 : 0, nowMs],
+    final day = utcDay(nowMs);
+    final existing = await txn.query(
+      _table,
+      columns: ['app_version_code', 'opened', 'alive'],
+      where: 'day = ?',
+      whereArgs: [day],
+      limit: 1,
     );
+
+    if (existing.isEmpty) {
+      await txn.insert(_table, {
+        'day': day,
+        'app_version_code': appVersionCode,
+        'opened': opened ? 1 : 0,
+        'alive': 1,
+        'updated_at': nowMs,
+      });
+    } else {
+      final old = existing.single;
+      final oldOpened = old['opened'] == 1;
+      final newOpened = oldOpened || opened;
+      final oldAlive = old['alive'] == 1;
+      final oldVersion = old['app_version_code'] as int;
+
+      // Change nothing when the row is already up to date.
+      if (oldVersion == appVersionCode && oldOpened == newOpened && oldAlive) {
+        // Skip update: no change.
+      } else {
+        await txn.update(
+          _table,
+          {
+            'app_version_code': appVersionCode,
+            'opened': newOpened ? 1 : 0,
+            'alive': 1,
+            'updated_at': nowMs,
+          },
+          where: 'day = ?',
+          whereArgs: [day],
+        );
+      }
+    }
+
     await txn.rawDelete('DELETE FROM $_table WHERE day < ?', [
       oldestKeptDay(nowMs),
     ]);
