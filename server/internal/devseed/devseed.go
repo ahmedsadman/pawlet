@@ -225,6 +225,12 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 						lastSeen = ts
 					}
 				}
+				// Only attested installs classify through the proxy and report
+				// model stats. Unattested installs (BYOK, sideloaded) only send
+				// heartbeats.
+				if !attested {
+					continue
+				}
 				calls := poisson(r, sms)
 				var imported int64
 				if dd == d {
