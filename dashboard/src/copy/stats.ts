@@ -88,8 +88,8 @@ export const statCopy = {
   },
   "chart.newInstallsPerDay": {
     title: "New installs per day",
-    meaning: "Installs attesting for the first time each day.",
-    computation: "Installs grouped by the UTC day of their first attestation.",
+    meaning: "Installs reporting for the first time each day.",
+    computation: "Installs grouped by the UTC day of their first report (heartbeat or session).",
   },
   serverInfo: {
     title: "Server",
@@ -241,7 +241,7 @@ export const statCopy = {
     meaning:
       "Of the installs that appeared in a week, the share that made classify calls in each later week.",
     computation:
-      "Cohort = UTC week (Monday start) of first attestation. Cell = share with a classify call in that week. Last 12 cohorts.",
+      "Cohort = UTC week (Monday start) of first report (heartbeat or session). Cell = share with a classify call in that week. Last 12 cohorts.",
     caveat: SMS_DRIVEN,
   },
   dormant: {
