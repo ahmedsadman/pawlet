@@ -39,9 +39,9 @@ image tag stays safe.
 
 The verdict columns are taken from the latest Play Integrity verdict on every successful session
 (`internal/httpapi/install_meta.go`) and overwritten each time, except that a verdict without a
-version keeps the version already stored. A heartbeat never touches them. NULL means the verdict
-did not carry the field, the install has not attested since the column was added, or it has never
-attested at all.
+version keeps the version already stored. A heartbeat never touches device tier, licensing or SDK.
+NULL means the verdict did not carry the field, the install has not attested since the column was
+added, or it has never attested at all.
 
 | Column | Verdict field | Meaning |
 |---|---|---|
@@ -51,60 +51,6 @@ attested at all.
 | `sdk_version` | `deviceIntegrity.deviceAttributes.sdkVersion` | Android API level. Only present when "device attributes" is enabled for the app in Play Console's Integrity API settings; NULL otherwise. |
 | `messages_archived` | (not from verdict) | Total messages (accepted + declined + unavailable) folded into `model_stats_rollup`; updated by the rollup job (`internal/store/model_stats.go`). |
 | `attested` | (not from verdict) | 1 once the install has minted a session, which needs a passing verdict; 0 for an install first seen through a heartbeat that has never minted one (bring-your-own-key, sideloaded). A session sets it to 1; a heartbeat never changes it. |
-
-`first_seen` is when the server first heard from the install, by session or heartbeat. For an
-install first seen through a heartbeat that is when the batch arrived, even if the batch carries
-days up to 30 days old, so new-install counts follow arrival, not the oldest reported day.
-`last_seen` moves on every successful session and every accepted heartbeat.
-
-## Activity days
-
-`install_days` holds one row per install per UTC day on which any signal arrived, with three
-flags and the app version (`internal/store/store.go`, `internal/store/heartbeat.go`):
-
-| Column | Set by | Meaning |
-|---|---|---|
-| `opened` | heartbeat | The app came to the foreground that day. |
-| `alive` | heartbeat | The app ran that day, in the foreground or the background. Always set when `opened` is. |
-| `session` | `/v1/session` | The install minted a proxy session that day. Sessions are only minted in the foreground. |
-| `app_version_code` | both | The version reported for that day. A heartbeat only moves it up (Play never downgrades an install); a session overwrites it unless its verdict carries no version. |
-
-Flags only ever go from 0 to 1, so a resent or out-of-order heartbeat never clears one, and a
-session leaves the heartbeat flags as they are. Version adoption over time is built from these
-rows.
-
-Migration `004_heartbeat.sql` added the three flags and `installs.attested` with a default of
-**1**, not 0. Every row that existed before it came from a session minted in the foreground, so
-the install was opened, alive and attested, and `ADD COLUMN` fills that in. An older pawletd
-rolled back by image tag still only writes rows from foreground sessions, so its fresh inserts
-stay correct, and its upserts don't touch the new columns. Every writer in the current binary
-passes every flag explicitly.
-
-## Heartbeats
-
-`POST /v1/heartbeat` (`internal/httpapi/heartbeat.go`) is how the app reports which days it was
-opened or ran, independently of proxy sessions. It is **unauthenticated** by design: install
-analytics must not depend on sessions, and bring-your-own-key installs never attest. The app only
-sends it in proxy and bring-your-own-key modes, never in no-LLM mode.
-
-The body is the install ID and up to 31 days, each with `day` (UTC `YYYY-MM-DD`),
-`appVersionCode`, and the booleans `opened` and `alive`. The endpoint:
-
-1. **checks the per-IP limit** — a fixed number per client IP per clock hour, with IPv6 addresses
-   sharing one bucket per /64 network (`HEARTBEAT_PER_IP_HOUR`). Carrier NAT puts many phones
-   behind one address, so the limit is generous;
-2. **decodes strictly** — bounded size, no unknown fields, nothing after the JSON value;
-3. **validates** — the install ID is 64 lowercase hex characters (what the app generates); each
-   day is a real date inside the accepted window, has a version in range, sets at least one flag,
-   and appears once;
-4. **stores** the days under the install ID's SHA-256 hash (the same hash `/v1/session` uses),
-   in one transaction: the install is created unattested if it is new, otherwise only its
-   `last_seen` moves (plus the version, see above). Banned installs are still recorded: a ban
-   only refuses the LLM.
-
-Success is **204 No Content**. Responses: `429 rate_limited` with `Retry-After` of one hour,
-`400 bad_request` (malformed, too large or a validation rule broken), `503 internal` (the write
-failed). The client IP is used for rate limiting but never logged or stored in the database.
 
 ### Device tier
 
@@ -132,6 +78,62 @@ How the app got onto the device:
   met.
 
 The server records licensing but does not enforce it.
+
+`first_seen` is when the server first heard from the install, by session or heartbeat. For an
+install first seen through a heartbeat that is when the batch arrived, even if the batch carries
+days up to 30 days old, so new-install counts follow arrival, not the oldest reported day.
+`last_seen` moves on every successful session and every accepted heartbeat.
+
+## Activity days
+
+`install_days` holds one row per install per UTC day on which any signal arrived, with three
+flags and the app version (`internal/store/store.go`, `internal/store/heartbeat.go`):
+
+| Column | Set by | Meaning |
+|---|---|---|
+| `opened` | heartbeat | The app came to the foreground that day. |
+| `alive` | heartbeat | The app ran that day, in the foreground or the background. Always set when `opened` is. |
+| `session` | `/v1/session` | The install minted a proxy session that day. Sessions are only minted in the foreground. |
+| `app_version_code` | both | The version reported for that day. A heartbeat only moves it up (Play never downgrades an install); a session overwrites it unless its verdict carries no version. |
+
+Flags only ever go from 0 to 1, so a resent or out-of-order heartbeat never clears one, and a
+session leaves the heartbeat flags as they are. Version adoption over time is built from these
+rows.
+
+Migration `004_heartbeat.sql` added the three flags and `installs.attested` with a default of
+**1**, not 0. Every row that existed before it came from a session minted in the foreground, so
+the install was opened, alive and attested, and `ADD COLUMN` fills that in. An older pawletd
+rolled back by image tag still only writes rows from foreground sessions, so its fresh inserts
+stay correct, and its upserts don't touch the new columns. Every writer in the current binary
+passes every flag explicitly. Under a rolled-back pawletd, a session on a heartbeat-first install
+leaves `attested` = 0 until the next session after rolling forward, and a session on an existing
+heartbeat day leaves that day's `session` flag at 0 (harmless: the app marks the day opened).
+
+## Heartbeats
+
+`POST /v1/heartbeat` (`internal/httpapi/heartbeat.go`) is how the app reports which days it was
+opened or ran, independently of proxy sessions. It is **unauthenticated** by design: install
+analytics must not depend on sessions, and bring-your-own-key installs never attest. The app only
+sends it in proxy and bring-your-own-key modes, never in no-LLM mode.
+
+The body is the install ID and up to 31 days, each with `day` (UTC `YYYY-MM-DD`),
+`appVersionCode`, and the booleans `opened` and `alive`. The endpoint:
+
+1. **checks the per-IP limit** — a fixed number per client IP per clock hour, with IPv6 addresses
+   sharing one bucket per /64 network (`HEARTBEAT_PER_IP_HOUR`). Carrier NAT puts many phones
+   behind one address, so the limit is generous;
+2. **decodes strictly** — bounded size, no unknown fields, nothing after the JSON value;
+3. **validates** — the install ID is 64 lowercase hex characters (what the app generates); each
+   day is a real date inside the accepted window, has a version in range, sets at least one flag,
+   and appears once;
+4. **stores** the days under the install ID's SHA-256 hash (the same hash `/v1/session` uses),
+   in one transaction: the install is created unattested if it is new, otherwise only its
+   `last_seen` moves (plus the version, see above). Banned installs are still recorded: a ban
+   only refuses the LLM.
+
+Success is **204 No Content**. Responses: `429 rate_limited` with `Retry-After` of one hour,
+`400 bad_request` (malformed, too large or a validation rule broken), `503 internal` (the write
+failed). The client IP is used for rate limiting but never logged or stored in the database.
 
 ## Daily counters
 
