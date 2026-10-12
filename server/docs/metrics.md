@@ -104,8 +104,7 @@ The body is the install ID and up to 31 days, each with `day` (UTC `YYYY-MM-DD`)
 
 Success is **204 No Content**. Responses: `429 rate_limited` with `Retry-After` of one hour,
 `400 bad_request` (malformed, too large or a validation rule broken), `503 internal` (the write
-failed). The client IP appears in the warning logged for a refused or malformed request; it is
-never stored in the database.
+failed). The client IP is used for rate limiting but never logged or stored in the database.
 
 ### Device tier
 
