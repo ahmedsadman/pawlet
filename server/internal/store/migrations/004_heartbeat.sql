@@ -7,7 +7,10 @@
 -- that in. An older pawletd rolled back by image tag still only writes rows
 -- from foreground sessions, so its fresh INSERTs stay correct; its upserts
 -- don't touch the new flags, preserving heartbeat values. Every writer in
--- this binary passes all flags explicitly.
+-- this binary passes all flags explicitly. Under a rolled-back pawletd, a
+-- session on a heartbeat-first install leaves attested=0 until the next
+-- session after rolling forward, and a session on an existing heartbeat day
+-- leaves that day's session flag at 0 (harmless: the app marks the day opened).
 ALTER TABLE install_days ADD COLUMN opened  INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE install_days ADD COLUMN alive   INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE install_days ADD COLUMN session INTEGER NOT NULL DEFAULT 1;
