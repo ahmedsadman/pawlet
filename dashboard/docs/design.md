@@ -66,6 +66,25 @@ Every messages stat's tooltip names the first app release that reports message c
 `MESSAGE_COUNTS_RELEASE` in `src/copy/stats.ts`. Whoever cuts that release must set it to
 `"app version <versionCode>"`.
 
+## Activity and attestation
+
+Installs report which days the app was opened or ran (heartbeats), on top of sessions and classify
+calls. Installs first seen through a heartbeat (bring-your-own-key, sideloaded) never passed Play
+Integrity, and the UI marks them:
+
+- **Engagement**: the mode switch offers **Running** (any activity, including the background),
+  **Opened** (the app came to the screen) and **Classify only**, sent as `active=any|opened|classify`.
+  The collecting-since note shows for Running and Opened.
+- **Installs**: an **Attested** column and an **Attestation** filter (All, Attested, Unattested).
+- **Install detail**: an Attested fact, and an activity strip (`src/charts/ActivityStrip.tsx`) with
+  one square per day: classified, opened (a session day counts as opened), background only, or idle.
+- **Overview**: the first tile counts all **Installs**, with the attested and banned counts under it.
+- **Fleet**: the device tier, licensing and SDK charts cover attested installs only.
+
+Every activity tooltip that depends on heartbeats names the first app release that sends them
+through `HEARTBEAT_RELEASE` in `src/copy/stats.ts`. Whoever cuts that release must set it to
+`"app version <versionCode>"`.
+
 ## Snapshot of color values
 
 From `src/theme/tokens.ts` as of this writing; verify against the source.
