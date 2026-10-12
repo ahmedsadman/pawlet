@@ -97,10 +97,8 @@ class HeartbeatRepository {
       final oldAlive = old['alive'] == 1;
       final oldVersion = old['app_version_code'] as int;
 
-      // Change nothing when the row is already up to date.
-      if (oldVersion == appVersionCode && oldOpened == newOpened && oldAlive) {
-        // Skip update: no change.
-      } else {
+      // Update only when changed.
+      if (oldVersion != appVersionCode || oldOpened != newOpened || !oldAlive) {
         await txn.update(
           _table,
           {
