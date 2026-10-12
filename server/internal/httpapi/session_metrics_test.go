@@ -70,7 +70,7 @@ func TestSessionRecordsInstallMetaAndDay(t *testing.T) {
 		t.Fatalf("InstallDays() error = %v", err)
 	}
 	if len(days) != 1 || days[0].Day != "2026-10-03" || !days[0].Session {
-		t.Fatalf("days = %v, want [2026-10-03]", days)
+		t.Fatalf("days = %+v, want one session day on 2026-10-03", days)
 	}
 }
 
