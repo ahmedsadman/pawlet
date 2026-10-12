@@ -81,3 +81,11 @@ func (l *hourlyLimiter) Prune() {
 func NewChallengeLimiter(perHour int) *hourlyLimiter {
 	return newHourlyLimiter(perHour, time.Now)
 }
+
+// NewHeartbeatLimiter builds the per-IP limiter for the heartbeat endpoint,
+// using the real clock.
+//
+//nolint:revive // returns unexported type; callers only need to pass it through
+func NewHeartbeatLimiter(perHour int) *hourlyLimiter {
+	return newHourlyLimiter(perHour, time.Now)
+}

@@ -61,3 +61,7 @@ const ModelStatsOutcome = "model_stats_outcome"
 // classify_outcome splits its limits into RateLimitedDaily and
 // RateLimitedBurst instead.
 const RateLimited = "rate_limited"
+
+// HeartbeatOutcome counts every /v1/heartbeat response, one key per request:
+// OK, RateLimited, BadRequest or Internal.
+const HeartbeatOutcome = "heartbeat_outcome"
