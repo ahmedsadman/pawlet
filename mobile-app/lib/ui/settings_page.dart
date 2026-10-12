@@ -98,9 +98,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             'where they are never stored or logged. No identifying information is '
             'recorded externally.',
       LlmMode.byok =>
-        'Messages are sent to OpenRouter with your own API key. '
-            "Pawlet's service never sees them. The app tells Pawlet's server "
-            'only which days it was opened or ran and its app version.',
+        'Messages the on-device model cannot categorize are sent to OpenRouter '
+            "with your own API key; Pawlet's service never sees them. The app "
+            "tells Pawlet's server only which days it was opened or ran and its "
+            'app version.',
       LlmMode.none =>
         'Your messages never leave your phone. The on-device model is the only '
             'classifier, and a message it cannot read is marked failed in Messages, '
