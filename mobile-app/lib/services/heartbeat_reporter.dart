@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:http/http.dart' as http;
 
 import '../data/heartbeat_repository.dart';
-import '../data/model_stats_repository.dart' show oldestKeptDay;
+import '../data/model_stats_repository.dart' show oldestKeptDay, utcDay;
 import 'upload_backoff.dart';
 
 /// Sends the heartbeat log to Pawlet's server (`POST /v1/heartbeat`), so the
@@ -89,7 +89,11 @@ class HeartbeatReporter {
 
     final minDay = oldestKeptDay(startedAt);
     await _repository.pruneBefore(minDay);
-    final rows = await _repository.unreported(minDay: minDay, limit: maxDays);
+    final rows = await _repository.unreported(
+      minDay: minDay,
+      maxDay: utcDay(startedAt + Duration.millisecondsPerDay),
+      limit: maxDays,
+    );
     if (rows.isEmpty) return;
 
     final newBuild =
@@ -130,6 +134,7 @@ class HeartbeatReporter {
       // A rejected payload is a bug; resending it would loop forever.
       if (kDebugMode) debugPrint('heartbeat: rejected (400): ${resp.body}');
       await _repository.markReported(rows, startedAt);
+      await _repository.setReportedVersion(rows.last.appVersionCode);
       await schedule.clearBackoff();
     } else if (code == 429) {
       await _failed(

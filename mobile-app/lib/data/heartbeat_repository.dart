@@ -118,17 +118,19 @@ class HeartbeatRepository {
     ]);
   });
 
-  /// Rows never acknowledged or changed since, on or after [minDay]. When
-  /// more than [limit] qualify the oldest are left for a later flush.
-  /// Returned oldest first.
+  /// Rows never acknowledged or changed since, on or after [minDay] and on or
+  /// before [maxDay]. When more than [limit] qualify the oldest are left for a
+  /// later flush. Returned oldest first.
   Future<List<HeartbeatRow>> unreported({
     required String minDay,
+    required String maxDay,
     required int limit,
   }) async {
     final rows = await _db.query(
       _table,
-      where: 'day >= ? AND (reported_at IS NULL OR updated_at > reported_at)',
-      whereArgs: [minDay],
+      where:
+          'day >= ? AND day <= ? AND (reported_at IS NULL OR updated_at > reported_at)',
+      whereArgs: [minDay, maxDay],
       orderBy: 'day DESC',
       limit: limit,
     );
