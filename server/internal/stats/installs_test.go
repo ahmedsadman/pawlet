@@ -2,6 +2,7 @@ package stats
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -217,6 +218,55 @@ func TestInstallDailyMessages(t *testing.T) {
 	for _, d := range InstallDaily("2026-10-01", "2026-10-09", nil, nil, nil, false) {
 		if d.Messages != nil || d.OnDevice != nil {
 			t.Fatalf("install without model stats = %+v, want null", d)
+		}
+	}
+}
+
+func TestBuildInstallRowsCarriesAttested(t *testing.T) {
+	installs := []store.Install{
+		{IDHash: "a", Attested: true},
+		{IDHash: "b", Attested: false},
+	}
+	rows := BuildInstallRows(installs, nil, "2026-10-09", 0)
+	if !rows[0].Attested || rows[1].Attested {
+		t.Fatalf("attested = %v %v, want true false", rows[0].Attested, rows[1].Attested)
+	}
+}
+
+func TestQueryInstallsFiltersAttested(t *testing.T) {
+	rows := []InstallRow{{Hash: "a", Attested: true}, {Hash: "b"}}
+	for attested, want := range map[string][]string{"": {"a", "b"}, "yes": {"a"}, "no": {"b"}} {
+		page, err := QueryInstalls(rows, InstallQuery{Attested: attested, Sort: "firstSeen", Order: "asc"})
+		if err != nil {
+			t.Fatalf("QueryInstalls(%q) error = %v", attested, err)
+		}
+		var got []string
+		for _, r := range page.Rows {
+			got = append(got, r.Hash)
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("attested=%q rows = %v, want %v", attested, got, want)
+		}
+	}
+	if _, err := QueryInstalls(rows, InstallQuery{Attested: "maybe"}); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("attested=maybe err = %v, want ErrBadRequest", err)
+	}
+}
+
+func TestInstallDailyCarriesFlags(t *testing.T) {
+	days := []store.DayRow{
+		{Day: "2026-10-01", Opened: true, Alive: true},
+		{Day: "2026-10-02", Alive: true},
+	}
+	got := InstallDaily("2026-10-01", "2026-10-03", nil, days, nil, false)
+	want := []DetailDay{
+		{Day: "2026-10-01", Opened: true, Alive: true},
+		{Day: "2026-10-02", Alive: true},
+		{Day: "2026-10-03"},
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("InstallDaily() = %+v, want %+v", got, want)
 		}
 	}
 }

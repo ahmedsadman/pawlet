@@ -36,6 +36,7 @@ type InstallRow struct {
 	QuotaHitDays   int     `json:"quotaHitDays"`
 	Banned         bool    `json:"banned"`
 	BanReason      string  `json:"banReason"`
+	Attested       bool    `json:"attested"`
 	Dormant        bool    `json:"dormant"`
 }
 
@@ -70,6 +71,7 @@ func BuildInstallRows(installs []store.Install, usage []store.UsageRow, today st
 			SDKVersion:     optInt(in.Meta.SDKVersion),
 			Banned:         in.Banned,
 			BanReason:      in.BanReason,
+			Attested:       in.Attested,
 		}
 		byHash[in.IDHash] = &rows[i]
 	}
@@ -137,10 +139,12 @@ func ApplyModelStats(rows []InstallRow, model []store.ModelRow, archived map[str
 
 // InstallQuery is the installs table's sort, filter and page.
 type InstallQuery struct {
-	Sort     string
-	Order    string
-	Q        string
-	Status   string
+	Sort   string
+	Order  string
+	Q      string
+	Status string
+	// Attested filters on the attested flag: "" for all, "yes" or "no".
+	Attested string
 	Page     int
 	PageSize int
 }
@@ -183,6 +187,16 @@ func matchesStatus(r InstallRow, status string) bool {
 	return true
 }
 
+func matchesAttested(r InstallRow, attested string) bool {
+	switch attested {
+	case "yes":
+		return r.Attested
+	case "no":
+		return !r.Attested
+	}
+	return true
+}
+
 // QueryInstalls filters, sorts (default lastSeen desc, ties by hash) and
 // pages the table. Unknown sort, order or status values are ErrBadRequest.
 func QueryInstalls(rows []InstallRow, q InstallQuery) (InstallPage, error) {
@@ -207,11 +221,16 @@ func QueryInstalls(rows []InstallRow, q InstallQuery) (InstallPage, error) {
 	default:
 		return InstallPage{}, ErrBadRequest
 	}
+	switch q.Attested {
+	case "", "yes", "no":
+	default:
+		return InstallPage{}, ErrBadRequest
+	}
 
 	prefix := strings.ToLower(strings.TrimSpace(q.Q))
 	filtered := make([]InstallRow, 0, len(rows))
 	for _, r := range rows {
-		if matchesStatus(r, q.Status) && strings.HasPrefix(r.Hash, prefix) {
+		if matchesStatus(r, q.Status) && matchesAttested(r, q.Attested) && strings.HasPrefix(r.Hash, prefix) {
 			filtered = append(filtered, r)
 		}
 	}
@@ -253,6 +272,8 @@ type DetailDay struct {
 	Day      string `json:"day"`
 	Calls    int64  `json:"calls"`
 	Tokens   int64  `json:"tokens"`
+	Opened   bool   `json:"opened"`
+	Alive    bool   `json:"alive"`
 	Session  bool   `json:"session"`
 	Messages *int64 `json:"messages"`
 	OnDevice *int64 `json:"onDevice"`
@@ -270,9 +291,9 @@ func InstallDaily(
 	for _, u := range usage {
 		byDay[u.Day] = u
 	}
-	sessions := make(map[string]store.DayRow, len(days))
+	dayFlags := make(map[string]store.DayRow, len(days))
 	for _, d := range days {
-		sessions[d.Day] = d
+		dayFlags[d.Day] = d
 	}
 	modelByDay := map[string]ModelCounts{}
 	for _, m := range model {
@@ -283,8 +304,11 @@ func InstallDaily(
 	allDays := Days(firstSeenDay, today)
 	out := make([]DetailDay, 0, len(allDays))
 	for _, d := range allDays {
-		u := byDay[d]
-		day := DetailDay{Day: d, Calls: u.Calls, Tokens: u.Tokens, Session: sessions[d].Session}
+		u, f := byDay[d], dayFlags[d]
+		day := DetailDay{
+			Day: d, Calls: u.Calls, Tokens: u.Tokens,
+			Opened: f.Opened, Alive: f.Alive, Session: f.Session,
+		}
 		if hasModelStats && d >= modelFrom {
 			c := modelByDay[d]
 			messages, onDevice := c.Messages(), c.Accepted

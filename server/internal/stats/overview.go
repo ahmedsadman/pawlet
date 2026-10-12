@@ -43,6 +43,7 @@ func ParseServerInfo(m map[string]string) ServerInfo {
 
 // OverviewKPIs are the overview page's tiles.
 type OverviewKPIs struct {
+	Installs                    int      `json:"installs"`
 	AttestedInstalls            int      `json:"attestedInstalls"`
 	Banned                      int      `json:"banned"`
 	NewInstalls                 int      `json:"newInstalls"`
@@ -94,11 +95,14 @@ func BuildOverview(in OverviewInput) Overview {
 	prevFrom := AddDays(in.Range.From, -len(days))
 	prevTo := AddDays(in.Range.From, -1)
 
-	k := OverviewKPIs{AttestedInstalls: len(in.Installs)}
+	k := OverviewKPIs{Installs: len(in.Installs)}
 	newByDay := map[string]int{}
 	for _, inst := range in.Installs {
 		d := inst.FirstSeen.UTC().Format(DayLayout)
 		newByDay[d]++
+		if inst.Attested {
+			k.AttestedInstalls++
+		}
 		if inst.Banned {
 			k.Banned++
 		}

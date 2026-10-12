@@ -82,8 +82,7 @@ func BuildActivity(usage []store.UsageRow, days []store.DayRow, mode Mode) Activ
 		}
 	}
 	for _, d := range days {
-		switch {
-		case mode == ModeAny, mode == ModeOpened && (d.Opened || d.Session):
+		if mode == ModeAny || (mode == ModeOpened && (d.Opened || d.Session)) {
 			a.mark(d.Day, d.IDHash)
 		}
 	}
