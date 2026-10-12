@@ -80,7 +80,7 @@ void main() {
     // version pair it has no branch for, so a bump that forgets its branch
     // ships a database the app queries with the wrong schema and no failing
     // test. Update this only together with the branch and its parity test.
-    expect(AppDatabase.version, 7);
+    expect(AppDatabase.version, 8);
   });
 
   test('schema creates all tables', () async {
@@ -592,6 +592,108 @@ void main() {
         [stored['accepted'], stored['declined'], stored['unavailable']],
         [0, 0, 0],
       );
+      expect(stored['reported_at'], isNull);
+      await db.close();
+    });
+  });
+
+  group('heartbeat log migration (v7 -> v8)', () {
+    // v7 is v6 plus local_verdict and model_stats. Built by hand rather than
+    // through onUpgrade(6, 7), which now runs the v8 step as well.
+    Future<Database> openV7() async {
+      final db = await openV5();
+      await db.execute(
+        'ALTER TABLE sms_records '
+        'ADD COLUMN needs_llm INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute('ALTER TABLE sms_records ADD COLUMN local_verdict TEXT');
+      await db.execute('''
+        CREATE TABLE model_stats (
+          day TEXT NOT NULL,
+          app_version_code INTEGER NOT NULL,
+          accepted INTEGER NOT NULL DEFAULT 0,
+          declined INTEGER NOT NULL DEFAULT 0,
+          unavailable INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL,
+          reported_at INTEGER,
+          PRIMARY KEY (day, app_version_code)
+        )
+      ''');
+      return db;
+    }
+
+    test('preserves messages, accounts and model stats', () async {
+      final db = await openV7();
+      await db.insert('sms_records', {
+        'sender': 'CHK',
+        'content': 'debit 50',
+        'timestamp': 1,
+        'status': 'queued',
+        'updated_at': 1,
+      });
+      await db.insert('banks', {
+        'name': 'My Card',
+        'account_type': 'credit',
+        'created_at': 1,
+      });
+      await db.insert('model_stats', {
+        'day': '2026-10-10',
+        'app_version_code': 25,
+        'updated_at': 1,
+      });
+
+      await AppDatabase.onUpgrade(db, 7, 8);
+
+      expect((await db.query('sms_records')).single['content'], 'debit 50');
+      expect((await db.query('banks')).single['name'], 'My Card');
+      expect((await db.query('model_stats')).single['app_version_code'], 25);
+      expect(await db.query('heartbeat_days'), isEmpty);
+      await db.close();
+    });
+
+    test('lands on the same shape as a fresh v8 create', () async {
+      final migrated = await openV7();
+      await AppDatabase.onUpgrade(migrated, 7, 8);
+      final fresh = await openTestDb();
+
+      for (final table in const [
+        'sms_records',
+        'banks',
+        'transactions',
+        'bills',
+        'app_meta',
+        'model_stats',
+        'heartbeat_days',
+      ]) {
+        expect(
+          await _columnSpecs(migrated, table),
+          await _columnSpecs(fresh, table),
+          reason: 'columns of $table drifted from a fresh create',
+        );
+        expect(
+          await _indexDdl(migrated, table),
+          await _indexDdl(fresh, table),
+          reason: 'indexes of $table drifted from a fresh create',
+        );
+      }
+      await migrated.close();
+      await fresh.close();
+    });
+
+    test('heartbeat_days is keyed on day', () async {
+      final db = await openTestDb();
+      final row = {
+        'day': '2026-10-13',
+        'app_version_code': 28,
+        'updated_at': 1,
+      };
+      await db.insert('heartbeat_days', row);
+      await expectLater(
+        db.insert('heartbeat_days', {...row, 'app_version_code': 29}),
+        throwsA(isA<Exception>()),
+      );
+      final stored = (await db.query('heartbeat_days')).single;
+      expect([stored['opened'], stored['alive']], [0, 0]);
       expect(stored['reported_at'], isNull);
       await db.close();
     });
