@@ -86,7 +86,7 @@ The flag is also the reason the mode function is pure rather than reading the ch
 Settings shows different controls depending on the mode. The bring-your-own-key section, when shown, sits directly above the Privacy section:
 
 - **`proxy`:** No bring-your-own-key section. A short privacy paragraph explains the LLM runs server-side on Pawlet's infrastructure.
-- **`byok`:** The bring-your-own-key section is shown (`lib/ui/settings/byok_section.dart`). The user enters a key, which is validated before storage. The privacy paragraph notes the on-device model handles most messages, with the LLM used only for tricky ones.
+- **`byok`:** The bring-your-own-key section is shown (`lib/ui/settings/byok_section.dart`). The user enters a key, which is validated before storage. The privacy paragraph explains that messages are sent to OpenRouter with the user's own key, Pawlet's service never sees them, and the app tells Pawlet's server only which days it was opened or ran and its app version.
 - **`none`:** The bring-your-own-key section is shown, identical to `byok`. The privacy paragraph states **your messages never leave your phone** (narrow claim, accurate — currency exchange rates are still fetched over the network).
 
 When `attestationIneligible` is true and the mode is `byok` or `none`, an additional warning paragraph appears in peach, explaining that this device did not pass Google's integrity check and a personal key is the only way to restore LLM parsing.
