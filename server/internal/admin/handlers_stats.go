@@ -273,10 +273,17 @@ func (s *Server) installDetail(w http.ResponseWriter, r *http.Request) {
 	rows := stats.BuildInstallRows([]store.Install{in}, usage, today, limit)
 	stats.ApplyModelStats(rows, model, map[string]int64{in.IDHash: archived}, today)
 	row := rows[0]
+	// Start the detail list at the earlier of first_seen and the install's
+	// first install_days row (heartbeat-first installs can carry days up to
+	// 30 days earlier).
+	startDay := in.FirstSeen.UTC().Format(stats.DayLayout)
+	if len(days) > 0 && days[0].Day < startDay {
+		startDay = days[0].Day
+	}
 	writeJSON(w, http.StatusOK, installDetailResponse{
 		Install: row,
 		Daily: stats.InstallDaily(
-			in.FirstSeen.UTC().Format(stats.DayLayout), today, usage, days, model, row.HasModelStats,
+			startDay, today, usage, days, model, row.HasModelStats,
 		),
 	})
 }
