@@ -121,11 +121,13 @@ func run(logger *slog.Logger) error {
 		runModelStatsRollup(ctx, db, rollupInterval, time.Now, logger)
 	}()
 
-	// 10. Build the challenge store, its per-IP rate limiter and the
-	// per-install model stats limiter. Start a janitor that cleans all three.
+	// 10. Build the challenge store, its per-IP rate limiter, the
+	// per-install model stats limiter and the per-IP heartbeat limiter.
+	// Start a janitor that cleans all four.
 	challenges := attest.NewChallenges(2*time.Minute, time.Now)
 	challengeLimiter := httpapi.NewChallengeLimiter(cfg.ChallengePerIPHour)
 	modelStatsLimiter := httpapi.NewModelStatsLimiter(time.Now)
+	heartbeatLimiter := httpapi.NewHeartbeatLimiter(cfg.HeartbeatPerIPHour)
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
@@ -135,6 +137,7 @@ func run(logger *slog.Logger) error {
 				challenges.Prune()
 				challengeLimiter.Prune()
 				modelStatsLimiter.Prune()
+				heartbeatLimiter.Prune()
 			case <-ctx.Done():
 				return
 			}
@@ -189,6 +192,14 @@ func run(logger *slog.Logger) error {
 			Now:     time.Now,
 			Logger:  logger,
 			Metrics: recorder,
+		},
+		Heartbeat: &httpapi.HeartbeatHandler{
+			Store:        db,
+			Limiter:      heartbeatLimiter,
+			TrustedProxy: trustedProxy,
+			Now:          time.Now,
+			Logger:       logger,
+			Metrics:      recorder,
 		},
 		Bundle: httpapi.NewBundleHandler(cfg.Models),
 		Health: db,

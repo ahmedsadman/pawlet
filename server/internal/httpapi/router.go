@@ -24,6 +24,7 @@ type Handlers struct {
 	Session    *SessionHandler
 	Classify   *ClassifyHandler
 	ModelStats *ModelStatsHandler
+	Heartbeat  *HeartbeatHandler
 	Bundle     *BundleHandler
 	Health     HealthChecker
 	Logger     *slog.Logger
@@ -38,6 +39,7 @@ func NewRouter(h Handlers) http.Handler {
 	mux.HandleFunc("POST /v1/session", h.Session.Session)
 	mux.HandleFunc("POST /v1/classify", h.Classify.Classify)
 	mux.HandleFunc("POST /v1/model-stats", h.ModelStats.ModelStats)
+	mux.HandleFunc("POST /v1/heartbeat", h.Heartbeat.Heartbeat)
 	mux.HandleFunc("GET /v1/prompt-bundle", h.Bundle.Bundle)
 
 	return mux

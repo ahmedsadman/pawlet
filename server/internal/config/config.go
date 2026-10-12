@@ -36,6 +36,8 @@ type Config struct {
 	BurstPerMin        int
 	GlobalDailyCap     int
 	ChallengePerIPHour int
+	// HeartbeatPerIPHour caps /v1/heartbeat calls per client IP per hour.
+	HeartbeatPerIPHour int
 	TrustedProxyCIDR   string
 	Env                string
 	DevSharedSecret    string
@@ -90,6 +92,9 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 	if cfg.ChallengePerIPHour, err = parseInt(get("CHALLENGE_PER_IP_HOUR", "60")); err != nil {
 		return Config{}, fmt.Errorf("CHALLENGE_PER_IP_HOUR: %w", err)
+	}
+	if cfg.HeartbeatPerIPHour, err = parseInt(get("HEARTBEAT_PER_IP_HOUR", "120")); err != nil {
+		return Config{}, fmt.Errorf("HEARTBEAT_PER_IP_HOUR: %w", err)
 	}
 
 	return cfg, cfg.validate()
