@@ -81,7 +81,14 @@ void main() {
         },
       ],
     });
-    expect(await repo.unreported(minDay: '2026-09-14', limit: 31), isEmpty);
+    expect(
+      await repo.unreported(
+        minDay: '2026-09-14',
+        maxDay: '9999-12-31',
+        limit: 31,
+      ),
+      isEmpty,
+    );
     expect(await repo.schedule.flushedAt(), start);
     expect(await repo.reportedVersion(), 28);
   });
@@ -120,7 +127,11 @@ void main() {
     await reporter().maybeFlush();
     expect(requests, isEmpty);
     expect(
-      await repo.unreported(minDay: '2026-09-14', limit: 31),
+      await repo.unreported(
+        minDay: '2026-09-14',
+        maxDay: '9999-12-31',
+        limit: 31,
+      ),
       hasLength(1),
     );
   });
@@ -132,7 +143,11 @@ void main() {
     expect(requests, isEmpty);
     expect(await repo.schedule.retryAt(), isNull);
     expect(
-      await repo.unreported(minDay: '2026-09-14', limit: 31),
+      await repo.unreported(
+        minDay: '2026-09-14',
+        maxDay: '9999-12-31',
+        limit: 31,
+      ),
       hasLength(1),
     );
   });
@@ -141,7 +156,14 @@ void main() {
     script = [http.Response('{"error":"bad_request"}', 400)];
     await mark();
     await reporter().maybeFlush();
-    expect(await repo.unreported(minDay: '2026-09-14', limit: 31), isEmpty);
+    expect(
+      await repo.unreported(
+        minDay: '2026-09-14',
+        maxDay: '9999-12-31',
+        limit: 31,
+      ),
+      isEmpty,
+    );
     expect(await repo.schedule.retryAt(), isNull);
   });
 
@@ -153,7 +175,11 @@ void main() {
     await reporter().maybeFlush();
     expect(await repo.schedule.retryAt(), start + 10 * minute);
     expect(
-      await repo.unreported(minDay: '2026-09-14', limit: 31),
+      await repo.unreported(
+        minDay: '2026-09-14',
+        maxDay: '9999-12-31',
+        limit: 31,
+      ),
       hasLength(1),
     );
 
@@ -195,6 +221,39 @@ void main() {
       (_) => start + 2 * kUploadBackoffCap.inMilliseconds,
     );
     await mark();
+    await reporter().maybeFlush();
+    expect(requests, hasLength(1));
+  });
+
+  test('a future-dated row is held back until valid', () async {
+    const day = Duration.millisecondsPerDay;
+    await mark();
+    // A row 3 days ahead: invalid.
+    await repo.mark(opened: true, nowMs: now + 3 * day, appVersionCode: 29);
+    await reporter().maybeFlush();
+    expect(requests, hasLength(1));
+    expect(jsonDecode(requests.single.body)['days'], [
+      {
+        'day': '2026-10-13',
+        'appVersionCode': 28,
+        'opened': true,
+        'alive': true,
+      },
+    ]);
+  });
+
+  test('two concurrent maybeFlush calls share one request', () async {
+    await mark();
+    final r = reporter();
+    final a = r.maybeFlush();
+    final b = r.maybeFlush();
+    await Future.wait([a, b]);
+    expect(requests, hasLength(1));
+  });
+
+  test('a flushedAt stamp in the future does not throttle', () async {
+    await mark();
+    await repo.schedule.setFlushedAt(start + 10 * minute);
     await reporter().maybeFlush();
     expect(requests, hasLength(1));
   });
