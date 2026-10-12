@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import InstallsPage from "./InstallsPage";
@@ -41,9 +41,10 @@ describe("InstallsPage", () => {
                 hasModelStats: true,
                 tokensTotal: 5000,
                 quotaHitDays: 0,
-                isBanned: false,
+                banned: false,
+                banReason: "",
                 attested: false,
-                isDormant: false,
+                dormant: false,
               },
             ],
             total: 1,
@@ -132,9 +133,10 @@ describe("InstallsPage", () => {
               hasModelStats: false,
               tokensTotal: 0,
               quotaHitDays: 0,
-              isBanned: false,
+              banned: false,
+              banReason: "",
               attested: false,
-              isDormant: false,
+              dormant: false,
             },
           ],
           total: 1,
@@ -152,6 +154,11 @@ describe("InstallsPage", () => {
       expect.stringMatching(/attested=no/),
       expect.any(Object),
     );
-    await screen.findByText("No");
+    const row = await screen.findByRole("link", { name: /aaaaaa/i });
+    const tableRow = row.closest("tr");
+    expect(tableRow).not.toBeNull();
+    const cells = within(tableRow!).getAllByRole("cell");
+    // Attested column is the 5th column (index 4)
+    expect(cells[4]).toHaveTextContent("No");
   });
 });

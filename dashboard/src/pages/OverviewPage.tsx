@@ -41,7 +41,7 @@ export default function OverviewPage() {
                   value={fmtCount(k.installs)}
                   sub={[
                     `${fmtCount(k.attestedInstalls)} attested`,
-                    k.banned > 0 ? `${k.banned} banned` : null,
+                    k.banned > 0 ? `${fmtCount(k.banned)} banned` : null,
                   ]
                     .filter(Boolean)
                     .join(" · ")}
