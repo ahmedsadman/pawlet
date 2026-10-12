@@ -3,9 +3,12 @@
 // ignore_for_file: prefer_initializing_formals
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/build_config.dart';
+import '../data/database.dart';
 import '../data/heartbeat_repository.dart';
+import 'app_services.dart';
 import 'app_version.dart';
 import 'background_worker.dart';
 import 'heartbeat_reporter.dart';
@@ -95,4 +98,27 @@ Future<void> syncHeartbeatMode({
   } catch (e) {
     if (kDebugMode) debugPrint('heartbeat: mode sync failed: $e');
   }
+}
+
+/// The daily WorkManager heartbeat: marks today alive and uploads, without a
+/// processing pass. Always reports success, so WorkManager never retries it;
+/// a failed upload is retried by the reporter's own backoff on the next mark.
+Future<bool> runHeartbeatTask() async {
+  try {
+    final database = await AppDatabase.open();
+    final prefs = await SharedPreferences.getInstance();
+    final heartbeat = await AppServices.standaloneHeartbeat(
+      database: database,
+      prefs: prefs,
+    );
+    if (heartbeat == null) return true;
+    try {
+      await heartbeat.markAlive();
+    } finally {
+      heartbeat.close();
+    }
+  } catch (e) {
+    if (kDebugMode) debugPrint('heartbeat: task failed: $e');
+  }
+  return true;
 }

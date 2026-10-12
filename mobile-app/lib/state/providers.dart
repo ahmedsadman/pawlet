@@ -7,12 +7,14 @@ import 'package:sqflite/sqflite.dart';
 import '../config/build_config.dart';
 import '../data/banks_repository.dart';
 import '../data/finance_repository.dart';
+import '../data/heartbeat_repository.dart';
 import '../data/secure_store.dart';
 import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
 import '../services/app_services.dart';
 import '../services/app_update_service.dart';
 import '../services/backup_service.dart';
+import '../services/heartbeat.dart';
 import '../services/llm/key_validator.dart';
 import '../services/llm/llm_mode.dart';
 import '../services/processing_service.dart';
@@ -146,11 +148,18 @@ final keyValidatorProvider = Provider<OpenRouterKeyValidator>((ref) {
 /// Bundles the SMS capture + processing pipeline for the UI isolate. Rebuilds
 /// when the API key changes so the change takes effect without a restart.
 final appServicesProvider = Provider<AppServices>((ref) {
+  final database = ref.watch(databaseProvider);
+  final mode = ref.watch(llmModeProvider);
   final services = AppServices.from(
-    database: ref.watch(databaseProvider),
+    database: database,
     prefs: ref.watch(sharedPreferencesProvider),
     apiKey: ref.watch(apiKeyProvider),
-    mode: ref.watch(llmModeProvider),
+    mode: mode,
+  );
+  // Rebuilt on every mode change, so the daily task and the unsent log
+  // follow the mode (see syncHeartbeatMode).
+  unawaited(
+    syncHeartbeatMode(mode: mode, repository: HeartbeatRepository(database)),
   );
   ref.onDispose(services.dispose);
   return services;
