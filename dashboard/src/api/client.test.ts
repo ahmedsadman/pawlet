@@ -22,6 +22,13 @@ describe("api client", () => {
     expect(url).toBe("/api/installs?status=dormant&page=2");
   });
 
+  it("passes the attested filter", async () => {
+    mockFetch(200, { rows: [], total: 0, page: 1, pageSize: 50 });
+    await api.installs({ status: "active", attested: "no", page: 1 });
+    const url = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toBe("/api/installs?status=active&attested=no&page=1");
+  });
+
   it("sends JSON on POST and resolves 204", async () => {
     const fn = mockFetch(204);
     await expect(api.ban("a".repeat(64), "abuse")).resolves.toBeUndefined();

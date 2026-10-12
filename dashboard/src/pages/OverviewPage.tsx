@@ -36,10 +36,15 @@ export default function OverviewPage() {
             <div className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <StatTile
-                  label="Attested installs"
-                  statId="attestedInstalls"
-                  value={fmtCount(k.attestedInstalls)}
-                  sub={k.banned > 0 ? `${k.banned} banned` : undefined}
+                  label="Installs"
+                  statId="installs"
+                  value={fmtCount(k.installs)}
+                  sub={[
+                    `${fmtCount(k.attestedInstalls)} attested`,
+                    k.banned > 0 ? `${k.banned} banned` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 />
                 <StatTile
                   label="New installs"

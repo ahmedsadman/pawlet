@@ -1,5 +1,5 @@
 export type RangeKey = "7d" | "30d" | "90d" | "all";
-export type ActiveMode = "any" | "classify";
+export type ActiveMode = "any" | "opened" | "classify";
 
 export interface Range {
   from: string;
@@ -25,6 +25,7 @@ export interface Bucket {
 export interface OverviewResponse {
   range: Range;
   kpis: {
+    installs: number;
     attestedInstalls: number;
     banned: number;
     newInstalls: number;
@@ -70,6 +71,7 @@ export interface InstallRow {
   quotaHitDays: number;
   banned: boolean;
   banReason: string;
+  attested: boolean;
   dormant: boolean;
 }
 export interface InstallsResponse {
@@ -83,6 +85,7 @@ export interface InstallsQuery {
   order?: "asc" | "desc";
   q?: string;
   status?: string;
+  attested?: string;
   page?: number;
 }
 export interface InstallDetailResponse {
@@ -91,6 +94,8 @@ export interface InstallDetailResponse {
     day: string;
     calls: number;
     tokens: number;
+    opened: boolean;
+    alive: boolean;
     session: boolean;
     /** null outside the last 90 days and for installs that never reported model stats. */
     messages: number | null;
