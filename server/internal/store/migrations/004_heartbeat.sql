@@ -5,7 +5,8 @@
 -- came from a session minted in the foreground (the app could not mint in the
 -- background), so it was opened, alive and attested, and ADD COLUMN fills
 -- that in. An older pawletd rolled back by image tag still only writes rows
--- from foreground sessions, so its INSERTs stay correct too. Every writer in
+-- from foreground sessions, so its fresh INSERTs stay correct; its upserts
+-- don't touch the new flags, preserving heartbeat values. Every writer in
 -- this binary passes all flags explicitly.
 ALTER TABLE install_days ADD COLUMN opened  INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE install_days ADD COLUMN alive   INTEGER NOT NULL DEFAULT 1;
