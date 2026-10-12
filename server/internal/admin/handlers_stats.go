@@ -117,9 +117,9 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "load usage", err)
 		return
 	}
-	sessions, err := s.store.InstallDaysBetween(ctx, activityFrom, today)
+	days, err := s.store.InstallDaysBetween(ctx, activityFrom, today)
 	if err != nil {
-		s.fail(w, "load sessions", err)
+		s.fail(w, "load install days", err)
 		return
 	}
 	counters, err := s.store.CountersBetween(ctx, today, today)
@@ -145,7 +145,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 
 	ov := stats.BuildOverview(stats.OverviewInput{
 		Range: rng, Today: today, Installs: installs, Usage: usage,
-		Activity:      stats.BuildActivity(usage, sessions, stats.ModeAny),
+		Activity:      stats.BuildActivity(usage, days, stats.ModeAny),
 		CountersToday: classifyCounts(counters, today),
 		Model:         model,
 		ModelRollup:   rollup,
@@ -200,7 +200,8 @@ func (s *Server) installs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := stats.QueryInstalls(rows, stats.InstallQuery{
-		Sort: q.Get("sort"), Order: q.Get("order"), Q: q.Get("q"), Status: q.Get("status"), Page: page,
+		Sort: q.Get("sort"), Order: q.Get("order"), Q: q.Get("q"), Status: q.Get("status"),
+		Attested: q.Get("attested"), Page: page,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request")
@@ -366,9 +367,9 @@ func (s *Server) engagement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	activityFrom := min(stats.AddDays(rng.From, -29), stats.AddDays(stats.WeekStart(today), -7*(cohortCount-1)))
-	sessions, err := s.store.InstallDaysBetween(ctx, activityFrom, today)
+	days, err := s.store.InstallDaysBetween(ctx, activityFrom, today)
 	if err != nil {
-		s.fail(w, "load sessions", err)
+		s.fail(w, "load install days", err)
 		return
 	}
 	limit, err := s.dailyLimit(r)
@@ -383,7 +384,7 @@ func (s *Server) engagement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activity := stats.BuildActivity(usage, sessions, mode)
+	activity := stats.BuildActivity(usage, days, mode)
 	dormant := 0
 	for _, row := range stats.BuildInstallRows(installs, usage, today, limit) {
 		if row.Dormant {
@@ -485,14 +486,14 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "load usage", err)
 		return
 	}
-	sessions, err := s.store.InstallDaysBetween(ctx, adoptionFrom, today)
+	days, err := s.store.InstallDaysBetween(ctx, adoptionFrom, today)
 	if err != nil {
-		s.fail(w, "load sessions", err)
+		s.fail(w, "load install days", err)
 		return
 	}
-	recent := stats.BuildActivity(usage, sessions, stats.ModeAny)
+	recent := stats.BuildActivity(usage, days, stats.ModeAny)
 	writeJSON(w, http.StatusOK, fleetResponse{
-		Fleet:           stats.BuildFleet(installs, recent, sessions, stats.Days(adoptionFrom, today), today),
+		Fleet:           stats.BuildFleet(installs, recent, days, stats.Days(adoptionFrom, today), today),
 		CollectingSince: newCollectingSince(earliest),
 	})
 }
