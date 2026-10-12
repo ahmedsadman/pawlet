@@ -77,23 +77,46 @@ void main() {
     await repo.mark(opened: true, nowMs: now - day, appVersionCode: 28);
     await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
 
-    final first = await repo.unreported(minDay: '2026-09-14', limit: 31);
+    final first = await repo.unreported(
+      minDay: '2026-09-14',
+      maxDay: '9999-12-31',
+      limit: 31,
+    );
     expect(first.map((r) => r.day), ['2026-10-11', '2026-10-12', '2026-10-13']);
     await repo.markReported(first, now + 10);
-    expect(await repo.unreported(minDay: '2026-09-14', limit: 31), isEmpty);
+    expect(
+      await repo.unreported(
+        minDay: '2026-09-14',
+        maxDay: '9999-12-31',
+        limit: 31,
+      ),
+      isEmpty,
+    );
 
     await repo.mark(opened: true, nowMs: now + 20, appVersionCode: 29);
-    final changed = await repo.unreported(minDay: '2026-09-14', limit: 31);
+    final changed = await repo.unreported(
+      minDay: '2026-09-14',
+      maxDay: '9999-12-31',
+      limit: 31,
+    );
     expect(changed.single.appVersionCode, 29);
   });
 
   test('a row changed mid-upload stays unreported', () async {
     await repo.mark(opened: false, nowMs: now, appVersionCode: 28);
-    final sent = await repo.unreported(minDay: '2026-09-14', limit: 31);
+    final sent = await repo.unreported(
+      minDay: '2026-09-14',
+      maxDay: '9999-12-31',
+      limit: 31,
+    );
     await repo.mark(opened: true, nowMs: now + 1, appVersionCode: 28);
     await repo.markReported(sent, now + 2);
     expect(
-      (await repo.unreported(minDay: '2026-09-14', limit: 31)).single.opened,
+      (await repo.unreported(
+        minDay: '2026-09-14',
+        maxDay: '9999-12-31',
+        limit: 31,
+      )).single.opened,
       isTrue,
     );
   });
@@ -102,8 +125,33 @@ void main() {
     for (var i = 0; i < 3; i++) {
       await repo.mark(opened: false, nowMs: now - i * day, appVersionCode: 28);
     }
-    final rows = await repo.unreported(minDay: '2026-09-14', limit: 2);
+    final rows = await repo.unreported(
+      minDay: '2026-09-14',
+      maxDay: '9999-12-31',
+      limit: 2,
+    );
     expect(rows.map((r) => r.day), ['2026-10-12', '2026-10-13']);
+  });
+
+  test('unreported excludes days after maxDay', () async {
+    await db.insert('heartbeat_days', {
+      'day': '2026-10-12',
+      'app_version_code': 28,
+      'alive': 1,
+      'updated_at': now - day,
+    });
+    await db.insert('heartbeat_days', {
+      'day': '2026-10-15',
+      'app_version_code': 28,
+      'alive': 1,
+      'updated_at': now + 2 * day,
+    });
+    final rows = await repo.unreported(
+      minDay: '2026-09-14',
+      maxDay: '2026-10-13',
+      limit: 31,
+    );
+    expect(rows.map((r) => r.day), ['2026-10-12']);
   });
 
   test('toJson matches the server contract', () {
