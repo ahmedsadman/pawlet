@@ -176,6 +176,13 @@ func nullInt(v int64) sql.NullInt64 { return sql.NullInt64{Int64: v, Valid: v !=
 
 func nullString(v string) sql.NullString { return sql.NullString{String: v, Valid: v != ""} }
 
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // installColumns is the column list scanInstall expects, in order.
 const installColumns = `id_hash, first_seen, last_seen, banned, ban_reason, attested,
 	app_version_code, device_tier, licensing, sdk_version`

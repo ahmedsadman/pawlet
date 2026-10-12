@@ -136,3 +136,96 @@ func TestRecordHeartbeatEmptyIsNoOp(t *testing.T) {
 		t.Fatalf("Install() err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestRecordHeartbeatThenSessionSameDay(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+
+	if err := s.RecordHeartbeat(ctx, "hash-m", now,
+		[]HeartbeatDay{{Day: "2026-10-13", AppVersionCode: 28, Opened: true}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+	if err := s.TouchInstall(ctx, "hash-m", now.Add(time.Hour),
+		InstallMeta{AppVersionCode: 28}); err != nil {
+		t.Fatalf("TouchInstall() error = %v", err)
+	}
+
+	rec, err := s.Install(ctx, "hash-m")
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if !rec.Attested {
+		t.Error("Attested = false, want true after TouchInstall")
+	}
+	days, err := s.InstallDays(ctx, "hash-m")
+	if err != nil {
+		t.Fatalf("InstallDays() error = %v", err)
+	}
+	want := DayRow{IDHash: "hash-m", Day: "2026-10-13", AppVersionCode: 28, Opened: true, Alive: true, Session: true}
+	if len(days) != 1 || days[0] != want {
+		t.Fatalf("days = %+v, want [%+v]", days, want)
+	}
+}
+
+func TestRecordHeartbeatNullVersionPath(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+
+	if err := s.RecordHeartbeat(ctx, "hash-n", now,
+		[]HeartbeatDay{{Day: "2026-10-12", AppVersionCode: 27, Alive: true}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+	// TouchInstall with NULL version (InstallMeta{} means all fields are 0/empty).
+	if err := s.TouchInstall(ctx, "hash-n", now.Add(time.Hour), InstallMeta{}); err != nil {
+		t.Fatalf("TouchInstall() error = %v", err)
+	}
+	// Late batch with only an older day.
+	if err := s.RecordHeartbeat(ctx, "hash-n", now.Add(2*time.Hour),
+		[]HeartbeatDay{{Day: "2026-10-11", AppVersionCode: 26, Alive: true}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+
+	rec, err := s.Install(ctx, "hash-n")
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if rec.Meta.AppVersionCode != 27 {
+		t.Errorf("version = %d, want 27 (newest day WITH a version)", rec.Meta.AppVersionCode)
+	}
+}
+
+func TestRecordHeartbeatSameDayVersionMonotonic(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+
+	if err := s.RecordHeartbeat(ctx, "hash-p", now,
+		[]HeartbeatDay{{Day: "2026-10-13", AppVersionCode: 28, Opened: true}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+	// Late batch with older build for the same day.
+	if err := s.RecordHeartbeat(ctx, "hash-p", now.Add(time.Hour),
+		[]HeartbeatDay{{Day: "2026-10-13", AppVersionCode: 27, Alive: true}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+
+	rec, err := s.Install(ctx, "hash-p")
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if rec.Meta.AppVersionCode != 28 {
+		t.Errorf("install version = %d, want 28", rec.Meta.AppVersionCode)
+	}
+	days, err := s.InstallDays(ctx, "hash-p")
+	if err != nil {
+		t.Fatalf("InstallDays() error = %v", err)
+	}
+	if len(days) != 1 {
+		t.Fatalf("len(days) = %d, want 1", len(days))
+	}
+	if days[0].AppVersionCode != 28 {
+		t.Errorf("day version = %d, want 28 (monotonic)", days[0].AppVersionCode)
+	}
+}
