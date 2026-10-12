@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import '../config/build_config.dart';
 import '../data/banks_repository.dart';
 import '../data/database.dart';
+import '../data/heartbeat_repository.dart';
 import '../data/model_stats_repository.dart';
 import '../data/secure_store.dart';
 import '../data/settings_repository.dart';
@@ -20,6 +21,8 @@ import 'connectivity_service.dart';
 import 'exchange_rate_service.dart';
 import 'finance/finance_matcher.dart';
 import 'finance/finance_writer.dart';
+import 'heartbeat.dart';
+import 'heartbeat_reporter.dart';
 import 'llm/llm_mode.dart';
 import 'llm/llm_provider.dart';
 import 'llm/openrouter_provider.dart';
@@ -47,6 +50,7 @@ class AppServices {
     required this.processingService,
     required this.exchangeRate,
     required this.modelStatsReporter,
+    required this.heartbeat,
   });
 
   final Database database;
@@ -78,6 +82,68 @@ class AppServices {
   /// neither count nor send, which keeps BYOK usage off Pawlet's server and
   /// no-LLM's "nothing leaves the phone" promise.
   final ModelStatsReporter? modelStatsReporter;
+
+  /// Records days the app ran or was opened and uploads them. Present in
+  /// proxy and BYOK modes in a build pointed at a server; null in no-LLM,
+  /// which keeps its "nothing leaves the phone" promise.
+  final Heartbeat? heartbeat;
+
+  /// The mode a background isolate runs in, from fresh prefs and the
+  /// keystore. Reads the cached install source rather than the channel:
+  /// MainActivity does not exist in a background isolate, so the channel
+  /// would always answer "not from Play" and resolve a different mode from
+  /// the UI isolate.
+  static Future<({LlmMode mode, String apiKey})> standaloneMode(
+    SharedPreferences prefs,
+  ) async {
+    // The background-SMS isolate reuses its engine, so its cached prefs would
+    // otherwise keep a stale mode/flag for the life of the process.
+    await prefs.reload();
+    final apiKey = await SecureStore().readApiKey();
+    final settings = SettingsRepository(prefs);
+    final mode = resolveLlmMode(
+      fromPlay: settings.installedFromPlay,
+      proxyConfigured: BuildConfig.proxyConfigured,
+      hasKey: apiKey.isNotEmpty,
+      attestationIneligible: settings.attestationIneligible,
+    );
+    return (mode: mode, apiKey: apiKey);
+  }
+
+  /// A heartbeat for an install that may send one (proxy or BYOK, in a build
+  /// pointed at a server), whose sends re-check that from fresh prefs: the
+  /// mode can move in another isolate while this object lives on.
+  static Heartbeat _heartbeat({
+    required Database database,
+    required SharedPreferences prefs,
+  }) {
+    final repository = HeartbeatRepository(database);
+    return Heartbeat(
+      repository: repository,
+      reporter: HeartbeatReporter(
+        apiBase: BuildConfig.apiBase,
+        repository: repository,
+        installId: SecureStore().installId,
+        isAllowed: () async =>
+            (await standaloneMode(prefs)).mode != LlmMode.none,
+      ),
+    );
+  }
+
+  static bool _sendsHeartbeat(LlmMode mode) =>
+      mode != LlmMode.none && BuildConfig.apiBaseConfigured;
+
+  /// For the daily WorkManager task: a heartbeat when this install may send
+  /// one, else null.
+  static Future<Heartbeat?> standaloneHeartbeat({
+    required Database database,
+    required SharedPreferences prefs,
+  }) async {
+    final (:mode, apiKey: _) = await standaloneMode(prefs);
+    return _sendsHeartbeat(mode)
+        ? _heartbeat(database: database, prefs: prefs)
+        : null;
+  }
 
   factory AppServices.from({
     required Database database,
@@ -148,6 +214,10 @@ class AppServices {
             isProxy: stillProxy,
           );
 
+    final heartbeat = _sendsHeartbeat(mode)
+        ? _heartbeat(database: database, prefs: prefs)
+        : null;
+
     final matcher = FinanceMatcher(database);
     final localClassifier = TfliteLocalClassifier();
     final exchangeRate = ExchangeRateService(prefs);
@@ -175,7 +245,11 @@ class AppServices {
       // resolution the reporter uses before each send.
       modelStats: modelStats,
       isProxy: attestation == null ? null : stillProxy,
-      onPassEnd: modelStatsReporter?.maybeFlush,
+      // Every pass, in any isolate, means the app ran today.
+      onPassEnd: () async {
+        await modelStatsReporter?.maybeFlush();
+        await heartbeat?.markAlive();
+      },
     );
     return AppServices(
       database: database,
@@ -191,6 +265,7 @@ class AppServices {
       processingService: processingService,
       exchangeRate: exchangeRate,
       modelStatsReporter: modelStatsReporter,
+      heartbeat: heartbeat,
     );
   }
 
@@ -199,20 +274,7 @@ class AppServices {
   static Future<AppServices> bootstrap() async {
     final database = await AppDatabase.open();
     final prefs = await SharedPreferences.getInstance();
-    // The background-SMS isolate reuses its engine, so its cached prefs would
-    // otherwise keep a stale mode/flag for the life of the process.
-    await prefs.reload();
-    final apiKey = await SecureStore().readApiKey();
-    final settings = SettingsRepository(prefs);
-    // Reads the cached install source rather than the channel: MainActivity
-    // does not exist in this isolate, so the channel would always answer "not
-    // from Play" and resolve a different mode from the UI isolate.
-    final mode = resolveLlmMode(
-      fromPlay: settings.installedFromPlay,
-      proxyConfigured: BuildConfig.proxyConfigured,
-      hasKey: apiKey.isNotEmpty,
-      attestationIneligible: settings.attestationIneligible,
-    );
+    final (:mode, :apiKey) = await standaloneMode(prefs);
     final services = AppServices.from(
       database: database,
       prefs: prefs,
@@ -260,6 +322,7 @@ class AppServices {
     }
     attestation?.close();
     modelStatsReporter?.close();
+    heartbeat?.close();
     promptBundles.close();
   }
 

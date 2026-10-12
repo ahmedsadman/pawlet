@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'app_services.dart';
+import 'heartbeat.dart';
 
 const String _processTask = 'pawlet.process';
 const String _catchUpName = 'pawlet.process.catchup';
@@ -19,6 +20,7 @@ void callbackDispatcher() {
   Workmanager().executeTask((task, _) async {
     WidgetsFlutterBinding.ensureInitialized();
     DartPluginRegistrant.ensureInitialized();
+    if (task == _heartbeatTask) return runHeartbeatTask();
     AppServices? services;
     try {
       services = await AppServices.bootstrap();

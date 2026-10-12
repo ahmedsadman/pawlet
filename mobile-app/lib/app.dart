@@ -140,6 +140,9 @@ class _RootShellState extends ConsumerState<RootShell>
 
   Future<void> _bootstrap() async {
     if (kDebugMode) _installDebugInjector();
+    // The app came to the screen. Not awaited: analytics never hold up launch.
+    final heartbeat = ref.read(appServicesProvider).heartbeat;
+    if (heartbeat != null) unawaited(heartbeat.markOpened());
     // Not awaited: it can take a Play Integrity round trip, and nothing below
     // should wait on it. The first classify shares the same in-flight mint.
     unawaited(_refreshLlmNetwork());
@@ -289,6 +292,8 @@ class _RootShellState extends ConsumerState<RootShell>
         // pass commits, which the poller then picks up.
         ref.read(dataRevisionSyncProvider).resume();
         ref.read(dataRevisionProvider.notifier).bump();
+        final heartbeat = ref.read(appServicesProvider).heartbeat;
+        if (heartbeat != null) unawaited(heartbeat.markOpened());
         // The pass below flushes model stats when it ends, but a skipped pass
         // (one already running, or paused for the inbox import) would not.
         // The reporter's single-flight guard and throttle absorb the repeat.
