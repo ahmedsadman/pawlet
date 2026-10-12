@@ -589,3 +589,65 @@ func TestInstallsFilterByAttested(t *testing.T) {
 		t.Fatalf("attested=maybe = %d, want 400", rec.Code)
 	}
 }
+
+func TestInstallDetailShowsEarlierHeartbeatDays(t *testing.T) {
+	e := newTestEnv(t)
+	cookie := e.login(t)
+	ctx := context.Background()
+	hashC := strings.Repeat("c", 64)
+
+	// Install first seen on Oct 7 (by heartbeat)
+	firstSeen := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	if err := e.store.RecordHeartbeat(ctx, hashC, firstSeen, []store.HeartbeatDay{
+		{Day: "2026-10-01", AppVersionCode: 16, Opened: true, Alive: true},
+		{Day: "2026-10-02", AppVersionCode: 16, Opened: true, Alive: true},
+		{Day: "2026-10-07", AppVersionCode: 16, Opened: true, Alive: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var detail struct {
+		Install struct {
+			Hash      string `json:"hash"`
+			FirstSeen int64  `json:"firstSeen"`
+		} `json:"install"`
+		Daily []struct {
+			Day    string `json:"day"`
+			Opened bool   `json:"opened"`
+		} `json:"daily"`
+	}
+	if code := getJSON(t, e, "/api/installs/"+hashC, cookie, &detail); code != http.StatusOK {
+		t.Fatalf("install detail = %d", code)
+	}
+
+	// first_seen should be Oct 7
+	if detail.Install.FirstSeen != firstSeen.Unix() {
+		t.Fatalf("firstSeen = %d, want %d", detail.Install.FirstSeen, firstSeen.Unix())
+	}
+
+	// Daily list should start at Oct 1 (earliest heartbeat day), not Oct 7
+	if len(detail.Daily) == 0 {
+		t.Fatal("daily list is empty")
+	}
+	if detail.Daily[0].Day != "2026-10-01" {
+		t.Fatalf("first daily day = %s, want 2026-10-01", detail.Daily[0].Day)
+	}
+	if !detail.Daily[0].Opened {
+		t.Fatal("first daily day should be opened")
+	}
+
+	// Verify Oct 2 is also present
+	foundOct2 := false
+	for _, d := range detail.Daily {
+		if d.Day == "2026-10-02" {
+			foundOct2 = true
+			if !d.Opened {
+				t.Fatal("Oct 2 should be opened")
+			}
+			break
+		}
+	}
+	if !foundOct2 {
+		t.Fatal("Oct 2 should be in daily list")
+	}
+}
