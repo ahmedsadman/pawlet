@@ -314,7 +314,8 @@ Caveats that apply to every number: no-LLM installs are invisible, and verdict, 
 numbers cover attested proxy-mode installs only (see Scope). Heartbeats are unauthenticated, so an
 unattested install could be faked; filter to attested installs to exclude them. The app uploads a
 heartbeat only when a day's record changes, at most about once an hour, so `last_seen` usually
-moves once or twice a day and "today" can lag up to a day; days spent offline arrive late.
+moves once or twice a day and "today" can lag up to a day; days spent offline arrive late. A fresh
+install sends nothing for its first 6 hours, so it appears that much later or more.
 Installs on app versions without heartbeats count only their session days, which undercount daily
 opens because the 24-hour token is only refreshed near expiry. Classify activity follows SMS volume
 rather than engagement, and a reinstall appears as a new install.
