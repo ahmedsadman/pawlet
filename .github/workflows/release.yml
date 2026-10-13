@@ -14,7 +14,7 @@ on:
       - ".github/workflows/checks.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   checks:
@@ -75,24 +75,7 @@ jobs:
         run: |
           BASE=$(grep '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//' | cut -d'+' -f1)
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
-          echo "tag=v${BASE}+${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
-      # No OpenRouter key is baked in. Play installs reach the LLM through
-      # Pawlet's server; sideload users supply their own key in Settings.
-      - name: Build release APKs
-        run: |
-          flutter build apk --release --split-per-abi \
-            --build-name=${{ steps.version.outputs.base }} \
-            --build-number=${{ github.run_number }} \
-            --dart-define=PAWLET_API_BASE="$PAWLET_API_BASE" \
-            --dart-define=PLAY_CLOUD_PROJECT_NUMBER="$PLAY_CLOUD_PROJECT_NUMBER"
-          cd build/app/outputs/flutter-apk
-          for abi in arm64-v8a armeabi-v7a x86_64; do
-            cp "app-${abi}-release.apk" "Pawlet-${abi}.apk"
-          done
-
-      # Same build-name/build-number as the APKs above, so the bundle Play
-      # serves and the APKs on the GitHub release are one logical build.
       # No --split-per-abi: Play splits the bundle per device itself.
       - name: Build release bundle
         run: |
@@ -102,19 +85,6 @@ jobs:
             --dart-define=PAWLET_API_BASE="$PAWLET_API_BASE" \
             --dart-define=PLAY_CLOUD_PROJECT_NUMBER="$PLAY_CLOUD_PROJECT_NUMBER"
 
-      - name: Publish release
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
-          files: |
-            mobile-app/build/app/outputs/flutter-apk/Pawlet-arm64-v8a.apk
-            mobile-app/build/app/outputs/flutter-apk/Pawlet-armeabi-v7a.apk
-            mobile-app/build/app/outputs/flutter-apk/Pawlet-x86_64.apk
-
-      # Runs after the GitHub release so a rejected upload (most likely a
-      # versionCode Play has already seen) cannot cost us the sideload APKs.
       # One upload, two tracks: internal is unreviewed, so testers there get the
       # build within minutes; closed (`alpha`) gets the same build once Google's
       # review passes. A run dispatched on a branch goes to internal only, so
@@ -128,16 +98,3 @@ jobs:
           releaseFiles: mobile-app/build/app/outputs/bundle/release/app-release.aab
           tracks: ${{ github.ref == 'refs/heads/main' && 'internal,alpha' || 'internal' }}
           status: completed
-
-      - name: Prune old releases (keep newest 5)
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release list --limit 100 --json tagName,createdAt \
-            --jq 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' \
-          | while read -r tag; do
-              [ -z "$tag" ] && continue
-              echo "Deleting old release $tag"
-              gh release delete "$tag" --cleanup-tag --yes
-            done
