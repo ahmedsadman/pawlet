@@ -20,11 +20,12 @@ class BackupFormatException implements Exception {
 
 /// Serializes all local data to a single JSON document and restores it.
 ///
-/// Scope: the four SQLite tables plus user settings. Secrets (PIN, API key)
-/// live in SecureStore and are deliberately excluded. Restore is replace-all:
-/// existing rows are wiped and the backup's rows are re-inserted with their
-/// original ids (so `transactions`/`bills` references stay intact), inside one
-/// DB transaction. User settings are applied *after* that transaction commits
+/// Scope: the four core SQLite tables, the optional pairing rejections, plus
+/// user settings. Secrets (PIN, API key) live in SecureStore and are
+/// deliberately excluded. Restore is replace-all: existing rows are wiped and
+/// the backup's rows are re-inserted with their original ids (so
+/// `transactions`/`bills` references stay intact), inside one DB transaction.
+/// User settings are applied *after* that transaction commits
 /// (SharedPreferences has no shared transaction); they are non-referential, so
 /// a settings write failing after the DB restore leaves the DB intact.
 class BackupService {
@@ -47,11 +48,18 @@ class BackupService {
     AppDatabase.billsTable,
   ];
 
+  /// Restored when present, not required, so backups exported before these
+  /// tables existed still restore. Always wiped on restore: their rows
+  /// reference transaction ids, which restore replaces.
+  static const List<String> _optionalTables = [
+    AppDatabase.pairingRejectionsTable,
+  ];
+
   /// Builds the backup JSON string. [nowMs] is injectable for deterministic
   /// tests; production passes null and the current time is stamped.
   Future<String> exportJson({int? nowMs}) async {
     final database = <String, Object?>{};
-    for (final table in _tables) {
+    for (final table in [..._tables, ..._optionalTables]) {
       database[table] = await _db.query(table);
     }
     return jsonEncode({
@@ -101,8 +109,22 @@ class BackupService {
       ];
     }
 
+    for (final table in _optionalTables) {
+      final raw = db[table];
+      if (raw == null) {
+        tableRows[table] = const [];
+        continue;
+      }
+      if (raw is! List) {
+        throw BackupFormatException('Backup table "$table" is invalid.');
+      }
+      tableRows[table] = [
+        for (final row in raw) (row as Map).cast<String, Object?>(),
+      ];
+    }
+
     await _db.transaction((txn) async {
-      for (final table in _tables) {
+      for (final table in [..._tables, ..._optionalTables]) {
         await txn.delete(table);
         for (final row in tableRows[table]!) {
           await txn.insert(

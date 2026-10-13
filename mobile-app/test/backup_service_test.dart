@@ -128,4 +128,74 @@ void main() {
 
     await db.close();
   });
+
+  test('round-trips pairing rejections', () async {
+    final src = await openTestDb();
+    await src.insert('pairing_rejections', {
+      'tx_low': 1,
+      'tx_high': 2,
+      'expires_at': 99,
+    });
+    final settingsRepo = await settings();
+    final json = await BackupService(
+      db: src,
+      settings: settingsRepo,
+    ).exportJson(nowMs: 1);
+
+    final dst = await openTestDb();
+    await BackupService(db: dst, settings: settingsRepo).importJson(json);
+
+    expect(await dst.query('pairing_rejections'), [
+      {'tx_low': 1, 'tx_high': 2, 'expires_at': 99},
+    ]);
+  });
+
+  test(
+    'restores a backup without pairing rejections and clears local ones',
+    () async {
+      final src = await openTestDb();
+      final settingsRepo = await settings();
+      final exported = await BackupService(
+        db: src,
+        settings: settingsRepo,
+      ).exportJson(nowMs: 1);
+      // An export from before the table existed.
+      final root = jsonDecode(exported) as Map<String, dynamic>;
+      (root['database'] as Map<String, dynamic>).remove('pairing_rejections');
+
+      final dst = await openTestDb();
+      // Left over on the device; would point at unrelated restored ids.
+      await dst.insert('pairing_rejections', {
+        'tx_low': 7,
+        'tx_high': 8,
+        'expires_at': 99,
+      });
+      await BackupService(
+        db: dst,
+        settings: settingsRepo,
+      ).importJson(jsonEncode(root));
+
+      expect(await dst.query('pairing_rejections'), isEmpty);
+    },
+  );
+
+  test('rejects a pairing rejections section that is not a list', () async {
+    final src = await openTestDb();
+    final settingsRepo = await settings();
+    final exported = await BackupService(
+      db: src,
+      settings: settingsRepo,
+    ).exportJson(nowMs: 1);
+    final root = jsonDecode(exported) as Map<String, dynamic>;
+    (root['database'] as Map<String, dynamic>)['pairing_rejections'] = 'oops';
+
+    final dst = await openTestDb();
+    await expectLater(
+      BackupService(
+        db: dst,
+        settings: settingsRepo,
+      ).importJson(jsonEncode(root)),
+      throwsA(isA<BackupFormatException>()),
+    );
+  });
 }
