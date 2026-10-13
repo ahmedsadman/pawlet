@@ -21,8 +21,8 @@ Future<Decimal?> _noRate() async => null;
 /// 1. the Layer-1 sender/card gate — a miss is terminal `ignored`;
 /// 2. the on-device model — a confident verdict is terminal;
 /// 3. the cloud LLM, for anything the first two could not settle — when one is
-///    configured. With no LLM the on-device model runs ungated instead, and
-///    anything it cannot build becomes a terminal `failure`.
+///    configured. With no LLM, anything the on-device model declines becomes
+///    a terminal `failure`.
 ///
 /// The first two touch no network, so the pass runs offline and still drains
 /// everything they can decide. A record that reaches the third layer while
@@ -85,8 +85,8 @@ class ProcessingService {
 
   /// Where each message's on-device verdict is counted, once (see
   /// [ModelStatsRepository.recordVerdict]). Null skips counting. Used only
-  /// when the classifier has an LLM: with none, the model runs ungated and
-  /// its verdicts are not comparable.
+  /// when the classifier has an LLM: the counts measure how often the model
+  /// spares an LLM call, which a no-LLM install never makes.
   final ModelStatsRepository? modelStats;
 
   /// Whether the install is in proxy mode right now, asked before each
@@ -315,10 +315,10 @@ class ProcessingService {
       // never fires. The isolate's drain is wedged until app restart; other
       // isolates still drain.
 
-      // The flag is honoured only when an LLM can act on it. With no LLM it
-      // records that the GATED gate declined, which says nothing about the
-      // ungated pass [Classifier] now runs — and re-running it is also how
-      // legacy flagged rows drain without a migration.
+      // The flag is honoured only when an LLM can act on it. With no LLM,
+      // skipping would go straight to a terminal failure without asking the
+      // model again, while re-running lets a newer bundled model accept a row
+      // an older one declined.
       final skipInference = hasLlm && record.needsLlm;
       declined = skipInference;
       if (!skipInference) {
@@ -328,9 +328,8 @@ class ProcessingService {
           usdRate: usdRate,
         );
         final localOutcome = local.outcome;
-        // Only a gated verdict is comparable. With no LLM the model runs
-        // ungated (see Classifier.classifyLocal), so its answers say nothing
-        // about the on-device rate and are not counted.
+        // Counted only when an LLM exists: with none, a decline spares no
+        // LLM call, so it says nothing about the rate the stats measure.
         if (hasLlm) {
           await _recordVerdict(
             id,

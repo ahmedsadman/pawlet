@@ -65,10 +65,6 @@ class Classifier {
       local: _local,
       currency: currency,
       usdRate: usdRate,
-      // Derived rather than injected: with no provider there is nothing to
-      // defer to, so the thresholds would only throw away the one answer this
-      // install can produce.
-      acceptance: hasLlm ? GateAcceptance.gated : GateAcceptance.ungated,
     );
 
     if (!decision.accepted) {

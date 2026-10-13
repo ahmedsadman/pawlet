@@ -208,30 +208,8 @@ void main() {
     });
 
     test(
-      'classifyLocal runs ungated, so a weak prediction is accepted',
+      'classifyLocal still gates, so a weak prediction is declined',
       () async {
-        final local = _FakeLocal(
-          LocalPrediction(
-            classLabel: 'expense',
-            classConfidence: 0.10,
-            spans: [_lspan('AMOUNT', '50', 0.10, 6)],
-          ),
-        );
-        final outcome = (await Classifier(
-          null,
-          local: local,
-        ).classifyLocal(content: 'debit 50 BDT', currency: 'BDT')).outcome;
-
-        expect(outcome, isNotNull);
-        expect(outcome!.transaction!.amount, '50');
-        expect(outcome.parseSource, ParseSource.local);
-      },
-    );
-
-    test(
-      'the same weak prediction is still declined when an LLM exists',
-      () async {
-        final llm = _FakeLlm(const ClassifyResult.none());
         final local = _FakeLocal(
           LocalPrediction(
             classLabel: 'expense',
@@ -240,7 +218,7 @@ void main() {
           ),
         );
         final result = await Classifier(
-          llm,
+          null,
           local: local,
         ).classifyLocal(content: 'debit 50 BDT', currency: 'BDT');
 
@@ -248,5 +226,41 @@ void main() {
         expect(result.declined, isTrue);
       },
     );
+
+    test('a confident prediction is accepted', () async {
+      final local = _FakeLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.99,
+          spans: [_lspan('AMOUNT', '50', 0.99, 6)],
+        ),
+      );
+      final outcome = (await Classifier(
+        null,
+        local: local,
+      ).classifyLocal(content: 'debit 50 BDT', currency: 'BDT')).outcome;
+
+      expect(outcome, isNotNull);
+      expect(outcome!.transaction!.amount, '50');
+      expect(outcome.parseSource, ParseSource.local);
+    });
+
+    test('the same weak prediction is declined when an LLM exists', () async {
+      final llm = _FakeLlm(const ClassifyResult.none());
+      final local = _FakeLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.10,
+          spans: [_lspan('AMOUNT', '50', 0.10, 6)],
+        ),
+      );
+      final result = await Classifier(
+        llm,
+        local: local,
+      ).classifyLocal(content: 'debit 50 BDT', currency: 'BDT');
+
+      expect(result.outcome, isNull);
+      expect(result.declined, isTrue);
+    });
   });
 }
