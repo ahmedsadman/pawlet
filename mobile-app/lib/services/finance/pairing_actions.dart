@@ -16,7 +16,9 @@ class PairingDecision {
   final PairingSuggestion suggestion;
   final bool accepted;
 
-  /// The bill an accepted card payment linked, so undo touches only that link.
+  /// The bill this accept linked to the card payment, so undo clears only a
+  /// link it made. Null when the card leg was already bill-linked beforehand
+  /// (its bill was only copied onto the bank leg) or no bill matched.
   final int? linkedBillId;
 }
 
@@ -26,8 +28,10 @@ class PairingActions {
 
   final Database _db;
 
-  /// Pairs the two legs: both become `transfer` rows pointing at each other,
-  /// and an accepted card payment is linked to its bill straight away.
+  /// Pairs the two legs: both become `transfer` rows pointing at each other.
+  /// For a card payment, the bank leg takes the card leg's bill if it already
+  /// has one; otherwise the card payment is linked to its bill straight away,
+  /// which gives both legs the bill.
   ///
   /// Returns null, writing nothing, when either leg changed since the
   /// suggestion was built (e.g. a background pass auto-paired it).
@@ -53,10 +57,21 @@ class PairingActions {
           where: 'id = ?',
           whereArgs: [s.to.id],
         );
-        final billId = s.kind == PairingKind.cardPayment
-            ? await findAndLinkBillForPayment(txn, s.to.id)
-            : null;
-        return PairingDecision(s, accepted: true, linkedBillId: billId);
+        int? linkedBillId;
+        if (s.kind == PairingKind.cardPayment) {
+          final existing = await _billId(txn, s.to.id);
+          if (existing != null) {
+            await txn.update(
+              AppDatabase.transactionsTable,
+              {'bill_id': existing},
+              where: 'id = ?',
+              whereArgs: [s.from.id],
+            );
+          } else {
+            linkedBillId = await findAndLinkBillForPayment(txn, s.to.id);
+          }
+        }
+        return PairingDecision(s, accepted: true, linkedBillId: linkedBillId);
       });
 
   /// Records that the two legs are not a pair. The rejection expires when the
@@ -77,7 +92,9 @@ class PairingActions {
   }
 
   /// Reverses [d]. An accepted pairing is only reversed while the two legs
-  /// still point at each other.
+  /// still point at each other. Undoing a card payment always clears the bank
+  /// leg's bill, but clears the card leg's bill and the bill's `paid_at` only
+  /// when this accept made that link ([PairingDecision.linkedBillId]).
   Future<void> undo(PairingDecision d) async {
     final s = d.suggestion;
     if (!d.accepted) {
@@ -89,36 +106,37 @@ class PairingActions {
       return;
     }
     await _db.transaction((txn) async {
-      final rows = await txn.query(
-        AppDatabase.transactionsTable,
-        columns: ['paired_with_id'],
-        where: 'id = ?',
-        whereArgs: [s.from.id],
-      );
-      if (rows.isEmpty || rows.first['paired_with_id'] != s.to.id) return;
+      if (await _pairedWith(txn, s.from.id) != s.to.id ||
+          await _pairedWith(txn, s.to.id) != s.from.id) {
+        return;
+      }
 
-      final billId = d.linkedBillId;
+      final isCard = s.kind == PairingKind.cardPayment;
       await txn.update(
         AppDatabase.transactionsTable,
         {
           'type': 'expense',
           'paired_with_id': null,
-          if (billId != null) 'bill_id': null,
+          if (isCard) 'bill_id': null,
         },
         where: 'id = ?',
         whereArgs: [s.from.id],
       );
       await txn.update(
         AppDatabase.transactionsTable,
-        {
-          if (s.kind == PairingKind.transfer) 'type': 'income',
-          'paired_with_id': null,
-          if (billId != null) 'bill_id': null,
-        },
+        {if (!isCard) 'type': 'income', 'paired_with_id': null},
         where: 'id = ?',
         whereArgs: [s.to.id],
       );
-      if (billId != null) {
+      final billId = d.linkedBillId;
+      if (billId == null) return;
+      final unlinked = await txn.update(
+        AppDatabase.transactionsTable,
+        {'bill_id': null},
+        where: 'id = ? AND bill_id = ?',
+        whereArgs: [s.to.id, billId],
+      );
+      if (unlinked > 0) {
         await txn.update(
           AppDatabase.billsTable,
           {'paid_at': null},
@@ -127,6 +145,23 @@ class PairingActions {
         );
       }
     });
+  }
+
+  Future<int?> _pairedWith(DatabaseExecutor db, int id) =>
+      _column(db, id, 'paired_with_id');
+
+  Future<int?> _billId(DatabaseExecutor db, int id) =>
+      _column(db, id, 'bill_id');
+
+  Future<int?> _column(DatabaseExecutor db, int id, String column) async {
+    final rows = await db.query(
+      AppDatabase.transactionsTable,
+      columns: [column],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first[column] as int?;
   }
 
   Future<bool> _isUnpaired(DatabaseExecutor db, int id, String type) async {
