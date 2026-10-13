@@ -5,17 +5,15 @@
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../config/build_config.dart';
 import '../data/database.dart';
 import '../data/heartbeat_repository.dart';
 import 'app_services.dart';
 import 'app_version.dart';
 import 'background_worker.dart';
 import 'heartbeat_reporter.dart';
-import 'llm/llm_mode.dart';
 
 /// Records that the app ran today, and whether it was opened, then lets the
-/// reporter upload. Built only in proxy and BYOK modes (see `AppServices`).
+/// reporter upload. Built only when `AppServices.sendsHeartbeat` holds.
 ///
 /// Marks happen on launch and resume (opened), at the end of every
 /// processing pass in any isolate, and from the daily WorkManager task
@@ -63,23 +61,19 @@ class Heartbeat {
   void close() => _reporter.close();
 }
 
-/// Keeps the daily heartbeat task and the local log in step with [mode]:
-/// scheduled in proxy and BYOK; otherwise (no-LLM, or a build with no server)
+/// Keeps the daily heartbeat task and the local log in step with [sends]
+/// (`AppServices.sendsHeartbeat`): scheduled when the install sends;
+/// otherwise (no-LLM, a build with no server, or a Firebase Test Lab device)
 /// cancelled and the unsent log deleted, so nothing leaves the phone. Run by
 /// the UI isolate whenever the mode resolves. Never throws.
-///
-/// [apiBaseConfigured] defaults to [BuildConfig.apiBaseConfigured]; tests
-/// pass it explicitly.
 Future<void> syncHeartbeatMode({
-  required LlmMode mode,
+  required bool sends,
   required HeartbeatRepository repository,
-  bool? apiBaseConfigured,
   Future<void> Function() schedule = BackgroundWorker.scheduleHeartbeat,
   Future<void> Function() cancel = BackgroundWorker.cancelHeartbeat,
 }) async {
-  final configured = apiBaseConfigured ?? BuildConfig.apiBaseConfigured;
   try {
-    if (mode != LlmMode.none && configured) {
+    if (sends) {
       await schedule();
     } else {
       // Delete the log first (privacy-relevant), then cancel. Each in its own
