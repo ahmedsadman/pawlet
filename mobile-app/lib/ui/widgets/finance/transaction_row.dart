@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../models/finance/transaction.dart';
-import '../../../state/finance_providers.dart';
 import '../../../utils/time_format.dart';
-import '../skeleton.dart';
 import 'amount_text.dart';
+import 'backing_message.dart';
 import 'finance_badge.dart';
-import 'finance_placeholders.dart';
 
 /// A transaction list row. Tapping toggles an expanded panel showing the
 /// backing SMS message (and its paired counterpart for transfers). Manual rows
@@ -121,48 +118,13 @@ class _MessagePanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Message(id: tx.messageId!),
+          BackingMessage(id: tx.messageId!),
           if (tx.pairedWithMessageId != null) ...[
             const SizedBox(height: 12),
-            _Message(id: tx.pairedWithMessageId!),
+            BackingMessage(id: tx.pairedWithMessageId!),
           ],
         ],
       ),
-    );
-  }
-}
-
-class _Message extends ConsumerWidget {
-  const _Message({required this.id});
-
-  final int id;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final async = ref.watch(messageProvider(id));
-    return async.when(
-      loading: () => const MessageLinesSkeleton(),
-      error: (_, _) => FinanceError(
-        'Could not load the message.',
-        onRetry: () => ref.invalidate(messageProvider(id)),
-      ),
-      data: (result) {
-        final message = result.data;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              message.sender,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(message.content, style: theme.textTheme.bodySmall),
-          ],
-        );
-      },
     );
   }
 }
