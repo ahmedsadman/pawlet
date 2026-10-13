@@ -31,6 +31,15 @@ final pairingPromptAllowedProvider = Provider<bool>(
   ),
 );
 
+/// Waits until the prompt can trust [pairingPromptAllowedProvider]. On a
+/// resume after the screen went off, the status still reads unlocked until the
+/// platform answers whether to re-lock, while the resume's data refresh can
+/// already surface a new suggestion. A seam so tests can hold a resume open.
+final pairingPromptSettledProvider = Provider<Future<void> Function()>(
+  (ref) =>
+      () => ref.read(authControllerProvider.notifier).resumeSettled,
+);
+
 final pairingPromptTrackerProvider = Provider<PairingPromptTracker>(
   (ref) => PairingPromptTracker(),
 );
@@ -48,8 +57,15 @@ class PairingPromptTracker {
   /// user isn't prompted about the deck they are looking at.
   bool get reviewing => _reviewers > 0;
 
+  /// Set by the floating prompt while it is up, so a review page opened any
+  /// way (not only from the prompt's View) takes it down.
+  void Function()? dismissPrompt;
+
   /// Called when a review page opens; pair each call with [endReview].
-  void beginReview() => _reviewers++;
+  void beginReview() {
+    _reviewers++;
+    dismissPrompt?.call();
+  }
 
   /// Called when a review page closes.
   void endReview() {
