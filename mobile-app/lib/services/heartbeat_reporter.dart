@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 
 import '../data/heartbeat_repository.dart';
 import '../data/model_stats_repository.dart' show oldestKeptDay, utcDay;
+import 'app_version.dart';
 import 'upload_backoff.dart';
 
 /// Sends the heartbeat log to Pawlet's server (`POST /v1/heartbeat`), so the
@@ -20,6 +21,11 @@ import 'upload_backoff.dart';
 /// before storing, exactly as `/v1/session` does. Sent only while the install
 /// is in proxy or BYOK mode ([_isAllowed], re-read before every send).
 ///
+/// Nothing is sent in the first [firstUploadDelay] after install: devices that
+/// run each new build for a few minutes and are then wiped (Play's review and
+/// scanning) would otherwise show up as installs. The log keeps those days,
+/// so a real install sends them later.
+///
 /// Never blocks or fails its callers: every error is swallowed and rows stay
 /// unreported. A failed upload puts the next attempt off (see
 /// [kUploadBackoff]) across all isolates.
@@ -29,11 +35,13 @@ class HeartbeatReporter {
     required HeartbeatRepository repository,
     required Future<String> Function() installId,
     required Future<bool> Function() isAllowed,
+    Future<int?> Function() installedAt = readInstallTime,
     http.Client? client,
     int Function()? clock,
   }) : _repository = repository,
        _installId = installId,
        _isAllowed = isAllowed,
+       _installedAt = installedAt,
        _client = client ?? http.Client(),
        _ownsClient = client == null,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
@@ -42,6 +50,7 @@ class HeartbeatReporter {
   final HeartbeatRepository _repository;
   final Future<String> Function() _installId;
   final Future<bool> Function() _isAllowed;
+  final Future<int?> Function() _installedAt;
   final http.Client _client;
   final bool _ownsClient;
   final int Function() _clock;
@@ -49,6 +58,9 @@ class HeartbeatReporter {
   /// Least time between two acknowledged flushes, across all isolates,
   /// unless a new build is running.
   static const Duration minGap = Duration(hours: 1);
+
+  /// How long after install the first upload waits.
+  static const Duration firstUploadDelay = Duration(hours: 6);
 
   /// Most days one request carries; the server's limit.
   static const int maxDays = 31;
@@ -63,8 +75,9 @@ class HeartbeatReporter {
 
   /// Flushes unless a flush is already running in this isolate (the caller
   /// then shares it), a failed upload is being backed off, nothing changed,
-  /// or the last acknowledged flush was under [minGap] ago and the build is
-  /// the one last reported. Never throws.
+  /// the app was installed under [firstUploadDelay] ago, or the last
+  /// acknowledged flush was under [minGap] ago and the build is the one last
+  /// reported. Never throws.
   Future<void> maybeFlush() =>
       _inflight ??= _flushSafely().whenComplete(() => _inflight = null);
 
@@ -95,6 +108,7 @@ class HeartbeatReporter {
       limit: maxDays,
     );
     if (rows.isEmpty) return;
+    if (await _tooSoonAfterInstall(startedAt)) return;
 
     final newBuild =
         rows.last.appVersionCode != await _repository.reportedVersion();
@@ -153,6 +167,21 @@ class HeartbeatReporter {
       (failures) =>
           now + (fixed ?? kUploadBackoff.forFailures(failures)).inMilliseconds,
     );
+  }
+
+  /// Whether the app was installed under [firstUploadDelay] before [now]. An
+  /// unknown install time, or one in the future (the clock moved back),
+  /// holds nothing off: a real install must not stop reporting.
+  Future<bool> _tooSoonAfterInstall(int now) async {
+    final int? installed;
+    try {
+      installed = await _installedAt();
+    } catch (_) {
+      return false;
+    }
+    return installed != null &&
+        installed <= now &&
+        now - installed < firstUploadDelay.inMilliseconds;
   }
 
   /// [_isAllowed], with a failed check counted as "not allowed".
