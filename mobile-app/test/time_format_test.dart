@@ -223,4 +223,19 @@ void main() {
       expect(monthYearShort(DateTime(2005, 3, 1)), "Mar '05");
     });
   });
+
+  group('gapLabel', () {
+    test('formats compact durations', () {
+      expect(gapLabel(const Duration(seconds: 30)), '<1m');
+      expect(gapLabel(const Duration(minutes: 45)), '45m');
+      expect(gapLabel(const Duration(hours: 2, minutes: 14)), '2h 14m');
+      expect(gapLabel(const Duration(hours: 3)), '3h');
+      expect(gapLabel(const Duration(days: 1, hours: 3, minutes: 9)), '1d 3h');
+      expect(gapLabel(const Duration(days: 4)), '4d');
+    });
+
+    test('ignores the sign', () {
+      expect(gapLabel(const Duration(minutes: -45)), '45m');
+    });
+  });
 }
