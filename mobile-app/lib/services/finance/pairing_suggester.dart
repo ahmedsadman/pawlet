@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:decimal/decimal.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -127,15 +129,11 @@ class PairingSuggester {
       AppDatabase.pairingRejectionsTable,
       columns: ['tx_low', 'tx_high'],
     );
+    // Ordered here too, so a row ever written high-first still matches.
     return {
       for (final r in rows)
-        () {
-          final a = r['tx_low'] as int;
-          final b = r['tx_high'] as int;
-          final low = a < b ? a : b;
-          final high = a < b ? b : a;
-          return '$low-$high';
-        }(),
+        if ((r['tx_low'] as int, r['tx_high'] as int) case (final a, final b))
+          '${min(a, b)}-${max(a, b)}',
     };
   }
 
