@@ -13,8 +13,11 @@ import 'pairing_review_page.dart';
 /// this session hasn't seen. Silent while locked — the keys stay unseen, so
 /// the pill shows on unlock — and while the review page is open.
 ///
-/// The pill lives in this widget's own subtree, so the lock screen and any
-/// pushed route cover it: it can never surface above either.
+/// The pill is drawn inside the home route, so the lock overlay and any route
+/// pushed above the shell cover it. While another route is current (a pushed
+/// page, a sheet, a dialog) it waits: the keys stay unseen, and the pill shows
+/// once the home route is current again. It also hides when the app leaves
+/// the foreground.
 class PairingPromptListener extends ConsumerStatefulWidget {
   const PairingPromptListener({required this.child, super.key});
 
@@ -34,11 +37,21 @@ class _PairingPromptListenerState extends ConsumerState<PairingPromptListener> {
   /// The count on the pill; null while hidden.
   int? _count;
   Timer? _hideTimer;
+  late final AppLifecycleListener _lifecycle;
+
+  /// Whether the route holding the shell is the top one; null until the first
+  /// dependency read.
+  bool? _routeCurrent;
 
   @override
   void initState() {
     super.initState();
     _tracker = ref.read(pairingPromptTrackerProvider);
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) {
+        if (state != AppLifecycleState.resumed) _hide();
+      },
+    );
     // The list may already be loaded (another widget watched it first), in
     // which case no change arrives for the listeners below.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -47,7 +60,25 @@ class _PairingPromptListenerState extends ConsumerState<PairingPromptListener> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Registers a dependency that changes whenever the route gains or loses
+    // the top of the stack.
+    final current = ModalRoute.of(context)?.isCurrent ?? true;
+    final was = _routeCurrent;
+    _routeCurrent = current;
+    // The first read is covered by initState's evaluation.
+    if (was == null || was == current) return;
+    if (current) {
+      _evaluate();
+    } else {
+      _hide();
+    }
+  }
+
+  @override
   void dispose() {
+    _lifecycle.dispose();
     _hideTimer?.cancel();
     if (_tracker.dismissPrompt == _hide) _tracker.dismissPrompt = null;
     super.dispose();
@@ -67,6 +98,10 @@ class _PairingPromptListenerState extends ConsumerState<PairingPromptListener> {
 
     final suggestions = ref.read(pairingSuggestionsProvider).value;
     if (suggestions == null || !ref.read(pairingPromptAllowedProvider)) return;
+    // Another route is on top: leave the keys unseen for when it closes. A
+    // review page is the exception — what appears under it is absorbed, so
+    // closing the deck doesn't prompt about cards just shown in it.
+    if (_routeCurrent == false && !_tracker.reviewing) return;
     if (!_tracker.shouldPrompt(suggestions.map((s) => s.key))) return;
     _hideTimer?.cancel();
     _hideTimer = Timer(PairingPromptListener.promptDuration, _hide);
@@ -94,9 +129,12 @@ class _PairingPromptListenerState extends ConsumerState<PairingPromptListener> {
     }
   }
 
-  void _open() {
+  Future<void> _open() async {
     _hide();
+    // A tap can land during a resume, before the re-lock decision arrives.
+    await ref.read(pairingPromptSettledProvider)();
     if (!mounted || !ref.read(pairingPromptAllowedProvider)) return;
+    if (_routeCurrent == false) return;
     openPairingReview(context);
   }
 
@@ -114,7 +152,8 @@ class _PairingPromptListenerState extends ConsumerState<PairingPromptListener> {
       children: [
         widget.child,
         if (allowed)
-          // Above the Finance tab's FAB (56 px, 16 px margin).
+          // Clears the Finance tab's FAB (56 px, 16 px margin); on the other
+          // tabs it just sits a little higher.
           Positioned(
             left: 16,
             right: 16,
@@ -130,7 +169,17 @@ class _PairingPromptListenerState extends ConsumerState<PairingPromptListener> {
                       begin: const Offset(0, 0.5),
                       end: Offset.zero,
                     ).animate(animation),
-                    child: child,
+                    // A pill fading out no longer takes taps.
+                    child: AnimatedBuilder(
+                      animation: animation,
+                      builder: (_, child) => IgnorePointer(
+                        ignoring:
+                            animation.status == AnimationStatus.reverse ||
+                            animation.status == AnimationStatus.dismissed,
+                        child: child,
+                      ),
+                      child: child,
+                    ),
                   ),
                 ),
                 child: count == null
@@ -160,6 +209,7 @@ class _Pill extends StatelessWidget {
     final scheme = theme.colorScheme;
     final accent = AppTheme.flavor.peach;
     return Semantics(
+      container: true,
       liveRegion: true,
       child: Material(
         color: scheme.primaryContainer,
