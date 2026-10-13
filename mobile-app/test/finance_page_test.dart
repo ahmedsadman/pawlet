@@ -8,6 +8,7 @@ import 'package:pawlet/ui/finance_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/finance_overrides.dart';
+import 'support/pairing_fakes.dart';
 
 Bank _deposit(String name, String balance) => Bank(
   id: name.hashCode,
@@ -65,5 +66,28 @@ void main() {
 
     expect(find.text('Transaction'), findsOneWidget);
     expect(find.text('Banks & Cards'), findsOneWidget);
+  });
+
+  testWidgets('shows the review entry card above the balance', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          ...financeOverrides(
+            banks: [_deposit('Checking', '2000.00')],
+            pairings: [transferSuggestion(1, 2)],
+          ),
+          sharedPreferencesProvider.overrideWithValue(prefs),
+        ],
+        child: MaterialApp(theme: AppTheme.theme, home: const FinancePage()),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    final card = tester.getTopLeft(find.text('1 pairing to review'));
+    final balance = tester.getTopLeft(find.text('Total Balance'));
+    expect(card.dy, lessThan(balance.dy));
   });
 }

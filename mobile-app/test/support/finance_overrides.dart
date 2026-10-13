@@ -2,10 +2,12 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:pawlet/data/finance_repository.dart';
 import 'package:pawlet/models/finance/bank.dart';
 import 'package:pawlet/models/finance/bills_page.dart';
+import 'package:pawlet/models/finance/pairing_suggestion.dart';
 import 'package:pawlet/models/finance/summary.dart';
 import 'package:pawlet/models/finance/transactions_page.dart';
 import 'package:pawlet/models/finance/trends.dart';
 import 'package:pawlet/state/finance_providers.dart';
+import 'package:pawlet/state/pairing_providers.dart';
 
 import 'balance_test_overrides.dart';
 
@@ -40,6 +42,7 @@ List<Override> financeOverrides({
   List<Bank> banks = const [],
   String currency = 'BDT',
   bool hidden = false,
+  List<PairingSuggestion> pairings = const [],
 }) => [
   overrideBalanceHidden(hidden),
   banksProvider.overrideWith((ref) async => CachedResult(data: banks)),
@@ -64,4 +67,5 @@ List<Override> financeOverrides({
       data: BillsPage(bills: [], total: 0, page: 1, pageSize: 20),
     ),
   ),
+  pairingSuggestionsProvider.overrideWith((ref) async => pairings),
 ];
