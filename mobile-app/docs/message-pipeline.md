@@ -447,6 +447,7 @@ per 24 h, coordinated across every trigger and both isolates by a single timesta
 What it deletes:
 
 - **`ignored`** rows older than **7 days**.
+- **`pairing_rejections`** rows whose `expires_at` has passed (see [Pairing Review](pairing-review.md)).
 - Nothing else. **`success` and `failure` rows are permanent.**
 
 Keeping financial (`success`) rows forever also removes a class of bug: transactions/bills
