@@ -36,4 +36,18 @@ void main() {
     expect(t.reviewing, isFalse);
     expect(t.shouldPrompt(const ['3-4']), isTrue);
   });
+
+  test('beginning a review calls the dismiss hook', () {
+    final t = PairingPromptTracker();
+    var dismissed = 0;
+    t.dismissPrompt = () => dismissed++;
+    t.beginReview();
+    expect(dismissed, 1);
+    expect(t.reviewing, isTrue);
+  });
+
+  test('beginning a review without a hook is fine', () {
+    final t = PairingPromptTracker()..beginReview();
+    expect(t.reviewing, isTrue);
+  });
 }
