@@ -43,7 +43,7 @@ Snapshot — verify against the named source.
 | Transfer amount tolerance | ±10.00 | `pairing_suggester.dart` |
 | Card-payment amount tolerance | ±1.00 | `pairing_suggester.dart` (reuses `FinanceMatcher.tolerance`) |
 
-The 96-hour window catches transfers and card payments that clear slowly. The 30-day look-back is narrow enough to keep the suggestion pool fresh (older unpaired transactions are probably genuinely unrelated), while still catching payments that took weeks to clear or that the user delayed reviewing.
+The 96-hour window covers transfers and card payments whose two sides are reported days apart (an inter-bank credit can land well after the debit). The 30-day look-back keeps the review to recent activity, so importing years of old SMS history does not flood the deck.
 
 ## What happens on accept
 
@@ -54,7 +54,7 @@ Accepting a suggestion pairs the two legs:
 
 If either leg changed since the suggestion was built (e.g. a background pass auto-paired it), the accept writes nothing and returns null.
 
-A **snackbar with an Undo button** appears after every answer. Undo reverses an accept only while the two legs still point at each other. Undoing a card payment always clears the bank leg's bill, but clears the card leg's bill and the bill's `paid_at` only when this accept made that link (not when the card was already bill-linked beforehand).
+A **snackbar with an Undo button** appears after every saved answer. Undo reverses an accept only while the two legs still point at each other. Undoing a card payment always clears the bank leg's bill, but clears the card leg's bill and the bill's `paid_at` only when this accept made that link (not when the card was already bill-linked beforehand).
 
 ## What happens on reject
 
@@ -64,7 +64,7 @@ Rejecting a suggestion writes a row to `pairing_rejections` with `expires_at` se
 
 **Finance page entry card:** a peach card appears at the top of the Finance page while reviews are pending (`lib/ui/widgets/finance/review_entry_card.dart`). Tapping it opens the review deck.
 
-**Floating prompt:** a "N pairings to review" prompt appears on cold start and when a new suggestion appears mid-session (`lib/ui/pairing_prompt_listener.dart`). It is never shown while the device is locked, never while the review page is already open, and not on app resume (only on cold start or when the count increases).
+**Floating prompt:** a "N pairings to review" pill appears on cold start and when a new suggestion appears mid-session, whichever tab is open (`lib/ui/pairing_prompt_listener.dart`). It hides itself after a few seconds; tapping it opens the review deck. It is drawn inside the app shell rather than as a system-wide snackbar, so the lock screen and any page opened on top always cover it. It is never shown while the app is locked, never while the review page is open, and not merely because the app resumed. "New" means a pair this app session has not shown before, not a higher count; a new pair arriving while the pill is up updates its count.
 
 **Review deck:** one-at-a-time cards (`lib/ui/pairing_review_page.dart`, `lib/ui/widgets/finance/pairing_card.dart`). Each card shows both legs, the time gap, and the amount difference. The user taps Yes/No buttons or swipes right (Yes) or left (No). When hidden balances are enabled, the amount difference and the SMS texts are also hidden.
 
