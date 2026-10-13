@@ -940,5 +940,27 @@ void main() {
       expect(await countRows(db, 'ignored'), 0);
       await db.close();
     });
+
+    test('deletes expired pairing rejections and keeps live ones', () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final now = 100 * Duration.millisecondsPerDay;
+      await db.insert('pairing_rejections', {
+        'tx_low': 1,
+        'tx_high': 2,
+        'expires_at': now - 1,
+      });
+      await db.insert('pairing_rejections', {
+        'tx_low': 3,
+        'tx_high': 4,
+        'expires_at': now + 1,
+      });
+
+      await repo.pruneIfDue(now: now);
+
+      final left = await db.query('pairing_rejections');
+      expect(left.map((r) => r['tx_low']), [3]);
+      await db.close();
+    });
   });
 }

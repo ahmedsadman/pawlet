@@ -336,10 +336,10 @@ class SmsRepository {
   String _escapeLike(String s) =>
       s.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
 
-  /// Bounds local storage by deleting aged `ignored` rows, at most once per
-  /// [minGap] (a DB-backed throttle so all triggers and both isolates share one
-  /// budget). Success and failure rows are permanent. Deletes ignored rows whose
-  /// `updated_at` predates `now - ignoredRetention`.
+  /// Bounds local storage, at most once per [minGap] (a DB-backed throttle so
+  /// all triggers and both isolates share one budget). Deletes ignored rows
+  /// whose `updated_at` predates `now - ignoredRetention` — success and failure
+  /// rows are permanent — and pairing rejections past their `expires_at`.
   Future<void> pruneIfDue({
     required int now,
     Duration minGap = kPruneMinGap,
@@ -351,6 +351,11 @@ class SmsRepository {
     await _db.rawDelete(
       'DELETE FROM $_table WHERE status = ? AND updated_at < ?',
       [SmsStatus.ignored.name, now - ignoredRetention.inMilliseconds],
+    );
+    await _db.delete(
+      AppDatabase.pairingRejectionsTable,
+      where: 'expires_at < ?',
+      whereArgs: [now],
     );
     await _metaSetInt(kLastPruneAtKey, now);
   }
