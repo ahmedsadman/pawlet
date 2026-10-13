@@ -249,6 +249,56 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(PairingReviewPage), findsOneWidget);
     });
+
+    testWidgets('closing the deck does not prompt about what it showed', (
+      tester,
+    ) async {
+      final store = FakePairingStore([transferSuggestion(1, 2)]);
+      final container = await _pump(tester, store);
+
+      openPairingReview(tester.element(find.text('home')));
+      await tester.pumpAndSettle();
+      store.items.add(cardSuggestion(3, 4));
+      await _bump(container, tester);
+      await tester.pumpAndSettle();
+
+      Navigator.of(tester.element(find.byType(PairingReviewPage))).pop();
+      await _settleFrames(tester);
+      await tester.pumpAndSettle();
+      expect(find.byType(PairingReviewPage), findsNothing);
+      expect(_anyPrompt, findsNothing);
+    });
+
+    testWidgets('View waits for a resume to settle before opening', (
+      tester,
+    ) async {
+      await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
+
+      _settle = Completer<void>();
+      await tester.tap(find.text('View'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PairingReviewPage), findsNothing);
+      expect(_anyPrompt, findsNothing);
+
+      _settle.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(PairingReviewPage), findsOneWidget);
+    });
+
+    testWidgets('View opens nothing if the resume re-locks', (tester) async {
+      final container = await _pump(
+        tester,
+        FakePairingStore([transferSuggestion(1, 2)]),
+      );
+
+      _settle = Completer<void>();
+      await tester.tap(find.text('View'));
+      await tester.pump();
+      container.read(_unlocked.notifier).set(false);
+      _settle.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(PairingReviewPage), findsNothing);
+    });
   });
 
   testWidgets('the lock screen covers the pill', (tester) async {
@@ -268,7 +318,86 @@ void main() {
     expect(find.text('View'), findsNothing);
   });
 
-  testWidgets('any page over the shell covers the pill, even if allowed', (
+  group('another route on top', () {
+    Future<void> expectHeldUntilPopped(
+      WidgetTester tester,
+      void Function(BuildContext shell) cover,
+    ) async {
+      final store = FakePairingStore([transferSuggestion(1, 2)]);
+      final container = await _pump(tester, store);
+      await tester.pump(PairingPromptListener.promptDuration);
+      await tester.pumpAndSettle();
+      expect(_anyPrompt, findsNothing);
+
+      final shell = tester.element(find.text('home'));
+      cover(shell);
+      await tester.pumpAndSettle();
+
+      // A new suggestion arrives while the route is up: no pill under it.
+      store.items.add(cardSuggestion(3, 4));
+      await _bump(container, tester);
+      await tester.pumpAndSettle();
+      // Offstage too: a page route hides the shell once it has slid in.
+      expect(
+        find.textContaining('to review', skipOffstage: false),
+        findsNothing,
+      );
+      expect(find.text('View').hitTestable(), findsNothing);
+      // Long enough for a pill shown under the route to have timed out.
+      await tester.pump(PairingPromptListener.promptDuration);
+      await tester.pumpAndSettle();
+
+      // Popped: the keys were left unseen, so the pill shows now.
+      Navigator.of(shell).pop();
+      await _settleFrames(tester);
+      expect(find.text('2 pairings to review'), findsOneWidget);
+      expect(find.text('View').hitTestable(), findsOneWidget);
+    }
+
+    testWidgets('a pushed page holds the pill until it closes', (tester) async {
+      await expectHeldUntilPopped(tester, (shell) {
+        Navigator.of(shell).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('page')),
+          ),
+        );
+      });
+    });
+
+    testWidgets('a bottom sheet holds the pill until it closes', (
+      tester,
+    ) async {
+      await expectHeldUntilPopped(tester, (shell) {
+        showModalBottomSheet<void>(
+          context: shell,
+          builder: (_) => const SizedBox(height: 200, child: Text('sheet')),
+        );
+      });
+    });
+
+    testWidgets('a visible pill hides when a page is pushed over it', (
+      tester,
+    ) async {
+      await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
+      expect(find.text('1 pairing to review'), findsOneWidget);
+
+      Navigator.of(tester.element(find.text('home'))).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('page')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('page'), findsOneWidget);
+      expect(_anyPrompt, findsNothing);
+
+      // Shown once already: popping doesn't bring it back.
+      Navigator.of(tester.element(find.text('page'))).pop();
+      await tester.pumpAndSettle();
+      expect(_anyPrompt, findsNothing);
+    });
+  });
+
+  testWidgets('a full-screen overlay in the same route covers the pill', (
     tester,
   ) async {
     // The overlay alone, with the gate left open: coverage is structural.
@@ -294,6 +423,36 @@ void main() {
     await tester.pump();
     expect(find.text('View').hitTestable(), findsNothing);
     expect(find.text('1 pairing to review').hitTestable(), findsNothing);
+  });
+
+  testWidgets('backgrounding the app hides the pill', (tester) async {
+    addTearDown(
+      () => tester.binding.handleAppLifecycleStateChanged(
+        AppLifecycleState.resumed,
+      ),
+    );
+    await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
+    expect(find.text('1 pairing to review'), findsOneWidget);
+
+    // Leaving the foreground passes through inactive first; frames still run
+    // there, so the pill is gone before the app is hidden.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpAndSettle();
+    expect(_anyPrompt, findsNothing);
+  });
+
+  testWidgets('a fading pill no longer takes taps', (tester) async {
+    await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
+    final view = tester.getCenter(find.text('View'));
+
+    await tester.pump(PairingPromptListener.promptDuration);
+    await tester.pump(const Duration(milliseconds: 50));
+    // Still on screen, mid-fade.
+    expect(find.text('View'), findsOneWidget);
+
+    await tester.tapAt(view);
+    await tester.pumpAndSettle();
+    expect(find.byType(PairingReviewPage), findsNothing);
   });
 
   testWidgets('the pill does not block taps elsewhere', (tester) async {
