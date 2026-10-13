@@ -92,11 +92,13 @@ and still count as the same money movement), not polling intervals.
 
 Three passes run — bill linking runs in both directions — each match committed in **its own
 DB transaction**, so a two- or three-row link is all-or-nothing. Any **ambiguous tie is
-skipped** and left for manual reconciliation.
+skipped** and left unpaired; such pairs (along with payments that clear more than 15 minutes
+apart) are offered for user confirmation in [Pairing Review](pairing-review.md).
 
 - **Transfer pairing** — a credit-card `transfer` (the bill payment the issuer received) is
   paired with the bank `expense` debit that funded it. The closest-in-time candidate wins.
   The debit is retyped to `transfer` and both rows point at each other via `paired_with_id`.
+  Ties are never auto-paired.
 - **Bill linking** — a credit-card `transfer` is linked to the matching `bill` on that same
   card (credit accounts only), preferring a bill *received before* the payment and then
   closest in time. It sets `bill_id` on the transfer and its paired debit, and stamps
@@ -105,6 +107,11 @@ skipped** and left for manual reconciliation.
 
 The whole sweep is **look-back bounded to the bill window**: older rows can no longer
 acquire a new counterpart, so they are skipped.
+
+Transactions left unpaired by this automatic matching — because they fell outside the
+15-minute window, or tied inside it — are offered to the user for manual confirmation in
+[Pairing Review](pairing-review.md). That also covers internal transfers (money moved
+between the user's own deposit accounts), which are never auto-paired.
 
 ## Constants
 

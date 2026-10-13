@@ -12,6 +12,10 @@ the code disagree, trust the code.
 - [Matching](matching.md) — which account owns a record (card-digit matching, including
   partially-masked cards) and which records belong together (transfer pairing, bill
   linking).
+- [Pairing Review](pairing-review.md) — user confirmation of transaction pairs the
+  automatic matcher left unpaired (internal transfers, card payments outside the 15-minute
+  window or tied inside it), including the review UI, storage of rejections, and backup
+  behavior.
 - [Backup & Restore](backup-restore.md) — exporting all local data to a JSON file and
   restoring it (replace-all, IDs preserved), including the expected file format, plus
   the one-off import that back-fills records from the messages already on the phone.

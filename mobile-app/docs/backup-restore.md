@@ -54,7 +54,9 @@ messages.
 
 Included:
 
-- The four SQLite tables — `sms_records`, `banks`, `transactions`, `bills`.
+- The four core SQLite tables — `sms_records`, `banks`, `transactions`, `bills`.
+- The optional `pairing_rejections` table (exported always; restored when present;
+  backups from before this table existed restore fine). See [Pairing Review](pairing-review.md).
 - User settings (the finance-view preferences).
 
 Deliberately excluded:
@@ -71,12 +73,12 @@ Deliberately excluded:
 
 ## Restore is replace-all
 
-Restore is **not** a merge. It wipes every row in the four tables and re-inserts the
-file's rows **with their original IDs preserved**, all inside one database
-transaction. Preserving IDs is what keeps cross-table references valid — a
-transaction points at its backing message and bank, a bill at its message, a transfer
-at its paired transaction. Settings are replaced too: any managed key absent from the
-file is reset to its default.
+Restore is **not** a merge. It wipes every row in the four core tables and the optional
+`pairing_rejections` table (when present in the backup), then re-inserts the file's rows
+**with their original IDs preserved**, all inside one database transaction. Preserving IDs
+is what keeps cross-table references valid — a transaction points at its backing message
+and bank, a bill at its message, a transfer at its paired transaction. Settings are
+replaced too: any managed key absent from the file is reset to its default.
 
 Because the whole DB rewrite is one transaction, a failure part-way rolls back cleanly
 — you never end up with half-restored data. Settings are applied *after* that
@@ -109,10 +111,11 @@ The file is a UTF-8 JSON object with this shape:
   "pawlet_backup_version": 1,            // must match the supported version
   "exported_at": 1750000000000,          // epoch ms, informational only
   "database": {
-    "sms_records":  [ /* row objects */ ],
-    "banks":        [ /* row objects */ ],
-    "transactions": [ /* row objects */ ],
-    "bills":        [ /* row objects */ ]
+    "sms_records":        [ /* row objects */ ],
+    "banks":              [ /* row objects */ ],
+    "transactions":       [ /* row objects */ ],
+    "bills":              [ /* row objects */ ],
+    "pairing_rejections": [ /* row objects */ ]  // optional; omit or empty is fine
   },
   "settings": {                          // optional; omit to reset all settings
     "hide_balance": true,
@@ -123,7 +126,8 @@ The file is a UTF-8 JSON object with this shape:
 
 Rules that matter when reading or producing this file:
 
-- All four `database` tables must be present, each an array (empty array is fine).
+- The four core `database` tables must be present, each an array (empty array is fine).
+  `pairing_rejections` is optional; when omitted, it is cleared on restore.
 - Each row is a JSON object mapping **exact column name → value**. Column names must
   match the schema exactly; unknown columns are not tolerated (they'll fail the insert
   at restore time).
@@ -208,6 +212,16 @@ plus user-entered manual transactions (which have no backing SMS).
 | `statement_period` | INTEGER | nullable, epoch ms |
 | `paid_at` | INTEGER | nullable, epoch ms |
 | `created_at` | INTEGER | required, epoch ms |
+
+**`pairing_rejections`** — optional; user's "No" answers in pairing review. See
+[Pairing Review](pairing-review.md).
+
+| Column | Type | Notes |
+|---|---|---|
+| `tx_low` | INTEGER | required; → `transactions.id` (the lower of the two) |
+| `tx_high` | INTEGER | required; → `transactions.id` (the higher of the two) |
+| `expires_at` | INTEGER | required; epoch ms; pruned when reached |
+| (Primary key) | | `(tx_low, tx_high)` |
 
 ### Settings keys (snapshot)
 
