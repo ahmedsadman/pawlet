@@ -41,7 +41,7 @@ export const statCopy = {
     meaning: "Installs first seen in the selected range.",
     computation:
       "Installs whose first report (heartbeat or session) falls in the range, compared with the same-length range before it.",
-    caveat: `The week ${HEARTBEAT_RELEASE} rolls out, installs that never attested (own API key, sideloaded) appear for the first time and count as new.`,
+    caveat: `A fresh install reports nothing for its first 6 hours, so it appears at least that late. The week ${HEARTBEAT_RELEASE} rolls out, installs that never attested (own API key, sideloaded) appear for the first time and count as new.`,
   },
   "dau.any": {
     title: "Daily active installs",
