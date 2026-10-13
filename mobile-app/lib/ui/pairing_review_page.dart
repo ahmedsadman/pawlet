@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/finance/pairing_suggestion.dart';
+import '../services/finance/pairing_actions.dart';
 import '../state/pairing_providers.dart';
 import '../state/providers.dart';
 import '../theme/catppuccin_theme.dart';
@@ -48,12 +49,12 @@ class _PairingReviewPageState extends ConsumerState<PairingReviewPage> {
   @override
   void initState() {
     super.initState();
-    _tracker = ref.read(pairingPromptTrackerProvider)..reviewing = true;
+    _tracker = ref.read(pairingPromptTrackerProvider)..beginReview();
   }
 
   @override
   void dispose() {
-    _tracker.reviewing = false;
+    _tracker.endReview();
     _closeTimer?.cancel();
     super.dispose();
   }
@@ -69,6 +70,8 @@ class _PairingReviewPageState extends ConsumerState<PairingReviewPage> {
   }
 
   Future<void> _answer(PairingSuggestion s, bool yes) async {
+    // A swipe and a button tap can both land before the rebuild.
+    if (_hidden.contains(s.key)) return;
     final actions = ref.read(pairingActionsProvider);
     final revision = ref.read(dataRevisionProvider.notifier);
     final messenger = ScaffoldMessenger.of(context);
@@ -78,9 +81,24 @@ class _PairingReviewPageState extends ConsumerState<PairingReviewPage> {
       if (_pinned == s.key) _pinned = null;
     });
 
-    final decision = yes ? await actions.accept(s) : await actions.reject(s);
+    final PairingDecision? result;
+    try {
+      result = yes ? await actions.accept(s) : await actions.reject(s);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _hidden.remove(s.key);
+          _answered--;
+          // It was the top card; keep it there.
+          _pinned = s.key;
+        });
+      }
+      _showError(messenger, "Couldn't save that answer. Try again.");
+      return;
+    }
     revision.bump();
     // Null: a leg was settled elsewhere meanwhile; the card is gone anyway.
+    final decision = result;
     if (decision == null) return;
 
     messenger
@@ -94,8 +112,14 @@ class _PairingReviewPageState extends ConsumerState<PairingReviewPage> {
           content: Text(yes ? 'Paired' : 'Marked as not a pair'),
           action: SnackBarAction(
             label: 'Undo',
+            // May run after the page closed: only captured values below.
             onPressed: () async {
-              await actions.undo(decision);
+              try {
+                await actions.undo(decision);
+              } catch (_) {
+                _showError(messenger, "Couldn't undo. Try again.");
+                return;
+              }
               revision.bump();
               if (!mounted) return;
               setState(() {
@@ -109,6 +133,14 @@ class _PairingReviewPageState extends ConsumerState<PairingReviewPage> {
       );
   }
 
+  void _showError(ScaffoldMessengerState messenger, String message) {
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(behavior: SnackBarBehavior.floating, content: Text(message)),
+      );
+  }
+
   void _scheduleClose(bool done) {
     if (!done) {
       _closeTimer?.cancel();
@@ -116,7 +148,11 @@ class _PairingReviewPageState extends ConsumerState<PairingReviewPage> {
       return;
     }
     _closeTimer ??= Timer(PairingReviewPage.doneDelay, () {
-      if (mounted) Navigator.of(context).maybePop();
+      _closeTimer = null;
+      // Don't pop whatever was pushed on top of this page.
+      if (mounted && (ModalRoute.of(context)?.isCurrent ?? false)) {
+        Navigator.of(context).pop();
+      }
     });
   }
 
@@ -150,7 +186,12 @@ class _PairingReviewPageState extends ConsumerState<PairingReviewPage> {
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(3),
           child: LinearProgressIndicator(
-            value: total == 0 ? 1 : _answered / total,
+            // Empty until loaded; full only for "All caught up".
+            value: deck == null
+                ? 0
+                : total == 0
+                ? 1
+                : _answered / total,
             minHeight: 3,
             color: f.mauve,
             backgroundColor: f.surface0,

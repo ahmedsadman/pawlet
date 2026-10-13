@@ -41,9 +41,20 @@ final pairingPromptTrackerProvider = Provider<PairingPromptTracker>(
 class PairingPromptTracker {
   final Set<String> _seen = {};
 
-  /// True while the review page is open; new keys are absorbed silently so
-  /// the user isn't prompted about the deck they are looking at.
-  bool reviewing = false;
+  /// Open review pages; more than one can be stacked.
+  int _reviewers = 0;
+
+  /// True while a review page is open; new keys are absorbed silently so the
+  /// user isn't prompted about the deck they are looking at.
+  bool get reviewing => _reviewers > 0;
+
+  /// Called when a review page opens; pair each call with [endReview].
+  void beginReview() => _reviewers++;
+
+  /// Called when a review page closes.
+  void endReview() {
+    if (_reviewers > 0) _reviewers--;
+  }
 
   /// Marks [keys] seen and returns whether any of them were new.
   bool shouldPrompt(Iterable<String> keys) {
