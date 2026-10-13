@@ -6,6 +6,7 @@ import '../state/finance_providers.dart';
 import '../state/providers.dart';
 import 'banks_page.dart';
 import 'widgets/finance/credit_card_bills_section.dart';
+import 'widgets/finance/review_entry_card.dart';
 import 'widgets/finance/summary_graph_card.dart';
 import 'widgets/finance/total_balance_card.dart';
 import 'widgets/finance/transaction_entry_sheet.dart';
@@ -136,6 +137,7 @@ class _FinancePageState extends ConsumerState<FinancePage> {
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                ReviewEntryCard(),
                 TotalBalanceCard(),
                 SizedBox(height: 8),
                 TrendsCard(),
