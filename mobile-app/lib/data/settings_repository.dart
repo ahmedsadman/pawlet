@@ -1,8 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Local user settings backed by SharedPreferences: the finance-view
-/// preferences the UI persists, plus install-scoped flags the LLM mode and the
-/// heartbeat are resolved from. Secrets live in [SecureStore], never here.
+/// preferences the UI persists, plus two install-scoped flags the LLM mode is
+/// resolved from. Secrets live in [SecureStore], never here.
 class SettingsRepository {
   SettingsRepository(this._prefs);
 
@@ -20,7 +20,6 @@ class SettingsRepository {
   static const _kHistoryHintSeen = 'history_hint_seen_v2';
   static const _kBulkImportOffered = 'bulk_import_offered';
   static const _kInstalledFromPlay = 'installed_from_play';
-  static const _kTestLabDevice = 'test_lab_device';
   static const _kAttestationIneligible = 'attestation_ineligible';
   static const _kAttestationIneligibleSince = 'attestation_ineligible_since';
   static const _kLastSeenBuild = 'last_seen_build';
@@ -90,14 +89,6 @@ class SettingsRepository {
   bool get installedFromPlay => _prefs.getBool(_kInstalledFromPlay) ?? false;
   Future<void> setInstalledFromPlay(bool value) =>
       _prefs.setBool(_kInstalledFromPlay, value);
-
-  /// Whether this is a Firebase Test Lab device (Play's pre-launch report).
-  /// Such an install sends no heartbeat. Written by the UI isolate at launch
-  /// (see `main.dart`); background isolates read the cached value. Outside
-  /// Backup & Restore for the same reason as [installedFromPlay].
-  bool get testLabDevice => _prefs.getBool(_kTestLabDevice) ?? false;
-  Future<void> setTestLabDevice(bool value) =>
-      _prefs.setBool(_kTestLabDevice, value);
 
   /// Until when the automatic in-app update prompt stays quiet after the user
   /// says "Not now". Settings → Check for updates ignores it.

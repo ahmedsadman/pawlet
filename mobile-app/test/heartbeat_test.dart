@@ -4,6 +4,7 @@ import 'package:http/testing.dart';
 import 'package:pawlet/data/heartbeat_repository.dart';
 import 'package:pawlet/services/heartbeat.dart';
 import 'package:pawlet/services/heartbeat_reporter.dart';
+import 'package:pawlet/services/llm/llm_mode.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/db_test_helpers.dart';
@@ -80,33 +81,38 @@ void main() {
       cancelled = 0;
     });
 
-    Future<void> sync({required bool sends}) => syncHeartbeatMode(
-      sends: sends,
+    Future<void> sync(LlmMode mode, {bool apiBase = true}) => syncHeartbeatMode(
+      mode: mode,
       repository: repo,
+      apiBaseConfigured: apiBase,
       schedule: () async => scheduled++,
       cancel: () async => cancelled++,
     );
 
-    test('an install that sends schedules the daily task', () async {
-      await sync(sends: true);
-      expect([scheduled, cancelled], [1, 0]);
+    test('proxy and BYOK schedule the daily task', () async {
+      await sync(LlmMode.proxy);
+      await sync(LlmMode.byok);
+      expect([scheduled, cancelled], [2, 0]);
     });
 
-    test(
-      'an install that does not send cancels the task and deletes the log',
-      () async {
-        await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
-        await sync(sends: false);
-        expect([scheduled, cancelled], [0, 1]);
-        expect(await db.query('heartbeat_days'), isEmpty);
-      },
-    );
+    test('no-LLM cancels the task and deletes the log', () async {
+      await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
+      await sync(LlmMode.none);
+      expect([scheduled, cancelled], [0, 1]);
+      expect(await db.query('heartbeat_days'), isEmpty);
+    });
+
+    test('a build without a server never schedules', () async {
+      await sync(LlmMode.byok, apiBase: false);
+      expect([scheduled, cancelled], [0, 1]);
+    });
 
     test('cancel throws but log still emptied', () async {
       await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
       await syncHeartbeatMode(
-        sends: false,
+        mode: LlmMode.none,
         repository: repo,
+        apiBaseConfigured: true,
         schedule: () async {},
         cancel: () async => throw Exception('cancel failed'),
       );
@@ -115,8 +121,9 @@ void main() {
 
     test('never throws', () async {
       await syncHeartbeatMode(
-        sends: true,
+        mode: LlmMode.proxy,
         repository: repo,
+        apiBaseConfigured: true,
         schedule: () async => throw Exception('no plugin'),
         cancel: () async {},
       );

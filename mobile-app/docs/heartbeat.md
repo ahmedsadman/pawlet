@@ -52,20 +52,13 @@ Heartbeats are sent in **proxy** and **bring-your-own-key** modes, in builds tha
 server. They are never sent in **no-LLM** mode, which keeps its "nothing leaves the phone"
 promise ([LLM modes](llm-modes.md)).
 
-They are also never sent from a **Firebase Test Lab** device. Play's pre-launch report runs every uploaded build on
-those devices, which would otherwise show up as new installs. `MainActivity` reads the `firebase.test.lab` system
-setting over the `pawlet/install` channel (`lib/services/install_source.dart`). `main.dart` caches the answer in
-settings before the app starts, so background isolates, which have no `MainActivity`, read the cached flag. A failed
-read counts as a real device.
-
-- `AppServices.sendsHeartbeat` (`lib/services/app_services.dart`) is the single rule: proxy or bring-your-own-key, a
-  configured server, and not Test Lab. `AppServices` builds the `Heartbeat` only when it holds; otherwise there is
-  none, and nothing is marked.
-- Before every send the reporter re-checks that rule from freshly reloaded settings, since the mode can change in
-  another isolate while the services live on.
+- `AppServices` (`lib/services/app_services.dart`) builds the `Heartbeat` only in those modes; otherwise there is none,
+  and nothing is marked.
+- Before every send the reporter re-checks the mode from freshly reloaded settings, since it can change in another
+  isolate while the services live on.
 - `syncHeartbeatMode` runs whenever the UI isolate resolves the mode (`appServicesProvider` in
-  `lib/state/providers.dart`). When the install sends, it schedules the daily task. Otherwise it first **deletes the
-  whole local log**, then cancels the task, so moving to no-LLM drops anything not yet sent.
+  `lib/state/providers.dart`). In proxy or bring-your-own-key mode it schedules the daily task. Otherwise it first
+  **deletes the whole local log**, then cancels the task, so moving to no-LLM drops anything not yet sent.
 
 ## Uploading
 
