@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pawlet/data/settings_repository.dart';
 import 'package:pawlet/services/app_services.dart';
 import 'package:pawlet/services/llm/llm_mode.dart';
 import 'package:pawlet/services/llm/openrouter_provider.dart';
@@ -102,5 +103,39 @@ void main() {
         },
       );
     }
+  });
+
+  group('sendsHeartbeat', () {
+    Future<bool> sends(
+      LlmMode mode, {
+      bool apiBase = true,
+      bool testLab = false,
+    }) async {
+      SharedPreferences.setMockInitialValues({'test_lab_device': testLab});
+      return AppServices.sendsHeartbeat(
+        mode: mode,
+        settings: SettingsRepository(await SharedPreferences.getInstance()),
+        apiBaseConfigured: apiBase,
+      );
+    }
+
+    test('proxy and BYOK send', () async {
+      expect(await sends(LlmMode.proxy), isTrue);
+      expect(await sends(LlmMode.byok), isTrue);
+    });
+
+    test('no-LLM never sends', () async {
+      expect(await sends(LlmMode.none), isFalse);
+    });
+
+    test('a build without a server never sends', () async {
+      expect(await sends(LlmMode.byok, apiBase: false), isFalse);
+    });
+
+    test('a Firebase Test Lab device never sends', () async {
+      // Play's pre-launch report runs every uploaded build on these devices.
+      expect(await sends(LlmMode.proxy, testLab: true), isFalse);
+      expect(await sends(LlmMode.byok, testLab: true), isFalse);
+    });
   });
 }

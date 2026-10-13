@@ -83,9 +83,9 @@ class AppServices {
   /// no-LLM's "nothing leaves the phone" promise.
   final ModelStatsReporter? modelStatsReporter;
 
-  /// Records days the app ran or was opened and uploads them. Present in
-  /// proxy and BYOK modes in a build pointed at a server; null in no-LLM,
-  /// which keeps its "nothing leaves the phone" promise.
+  /// Records days the app ran or was opened and uploads them. Present when
+  /// [sendsHeartbeat] holds; null in no-LLM, which keeps its "nothing leaves
+  /// the phone" promise, and on Firebase Test Lab devices.
   final Heartbeat? heartbeat;
 
   /// The mode a background isolate runs in, from fresh prefs and the
@@ -110,9 +110,9 @@ class AppServices {
     return (mode: mode, apiKey: apiKey);
   }
 
-  /// A heartbeat for an install that may send one (proxy or BYOK, in a build
-  /// pointed at a server), whose sends re-check that from fresh prefs: the
-  /// mode can move in another isolate while this object lives on.
+  /// A heartbeat for an install that may send one ([sendsHeartbeat]), whose
+  /// sends re-check that from fresh prefs: the mode can move in another
+  /// isolate while this object lives on.
   static Heartbeat _heartbeat({
     required Database database,
     required SharedPreferences prefs,
@@ -124,14 +124,28 @@ class AppServices {
         apiBase: BuildConfig.apiBase,
         repository: repository,
         installId: SecureStore().installId,
-        isAllowed: () async =>
-            (await standaloneMode(prefs)).mode != LlmMode.none,
+        isAllowed: () async {
+          final (:mode, apiKey: _) = await standaloneMode(prefs);
+          return sendsHeartbeat(
+            mode: mode,
+            settings: SettingsRepository(prefs),
+          );
+        },
       ),
     );
   }
 
-  static bool _sendsHeartbeat(LlmMode mode) =>
-      mode != LlmMode.none && BuildConfig.apiBaseConfigured;
+  /// Whether this install sends heartbeats: proxy or BYOK mode, in a build
+  /// pointed at a server, on a device that is not Firebase Test Lab (Play's
+  /// pre-launch report runs every uploaded build there).
+  static bool sendsHeartbeat({
+    required LlmMode mode,
+    required SettingsRepository settings,
+    bool? apiBaseConfigured,
+  }) =>
+      mode != LlmMode.none &&
+      (apiBaseConfigured ?? BuildConfig.apiBaseConfigured) &&
+      !settings.testLabDevice;
 
   /// For the daily WorkManager task: a heartbeat when this install may send
   /// one, else null.
@@ -140,7 +154,7 @@ class AppServices {
     required SharedPreferences prefs,
   }) async {
     final (:mode, apiKey: _) = await standaloneMode(prefs);
-    return _sendsHeartbeat(mode)
+    return sendsHeartbeat(mode: mode, settings: SettingsRepository(prefs))
         ? _heartbeat(database: database, prefs: prefs)
         : null;
   }
@@ -214,7 +228,7 @@ class AppServices {
             isProxy: stillProxy,
           );
 
-    final heartbeat = _sendsHeartbeat(mode)
+    final heartbeat = sendsHeartbeat(mode: mode, settings: settings)
         ? _heartbeat(database: database, prefs: prefs)
         : null;
 
