@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import com.google.android.play.core.integrity.IntegrityManagerFactory
 import com.google.android.play.core.integrity.StandardIntegrityException
 import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIntegrityTokenRequest
@@ -79,6 +80,7 @@ class MainActivity : FlutterFragmentActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "installerPackage" -> result.success(installerPackage())
+                    "isTestLab" -> result.success(isTestLab())
                     else -> result.notImplemented()
                 }
             }
@@ -127,6 +129,14 @@ class MainActivity : FlutterFragmentActivity() {
         }
     } catch (_: PackageManager.NameNotFoundException) {
         null
+    }
+
+    // Firebase Test Lab, which runs Play's pre-launch report, sets this on
+    // every device it drives. Reading it needs no permission.
+    private fun isTestLab(): Boolean = try {
+        Settings.System.getString(contentResolver, "firebase.test.lab") == "true"
+    } catch (_: Exception) {
+        false
     }
 
     private fun requestIntegrityToken(project: Long, hash: String, result: MethodChannel.Result) {

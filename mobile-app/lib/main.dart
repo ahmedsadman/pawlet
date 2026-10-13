@@ -19,9 +19,11 @@ Future<void> main() async {
   final database = await AppDatabase.open();
   final apiKey = await SecureStore().readApiKey();
   final settings = SettingsRepository(prefs);
-  // Cached here because MainActivity serves this channel and background
+  // Cached here because MainActivity serves these calls and background
   // isolates have no MainActivity — they read the cache instead.
-  await settings.setInstalledFromPlay(await InstallSource().isFromPlayStore());
+  final installSource = InstallSource();
+  await settings.setInstalledFromPlay(await installSource.isFromPlayStore());
+  await settings.setTestLabDevice(await installSource.isTestLab());
   // Before runApp, so every provider and isolate sees the expired flag.
   // If version lookup fails, the flag stays until the next launch.
   try {
