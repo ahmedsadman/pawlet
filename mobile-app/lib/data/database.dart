@@ -27,9 +27,14 @@ class AppDatabase {
   /// running (see `HeartbeatRepository`).
   static const String heartbeatTable = 'heartbeat_days';
 
+  /// Transaction pairs the user said are not a pair, so the pairing review
+  /// never suggests them again. A row expires when its pair leaves the review
+  /// window (see `PairingSuggester`) and is pruned by `SmsRepository.pruneIfDue`.
+  static const String pairingRejectionsTable = 'pairing_rejections';
+
   /// Schema version. Every bump needs a matching [onUpgrade] branch and a
   /// parity test — see the guard in `test/database_test.dart`.
-  static const int version = 8;
+  static const int version = 9;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), fileName);
@@ -79,6 +84,7 @@ class AppDatabase {
     ''');
     await _createModelStatsTable(db);
     await _createHeartbeatTable(db);
+    await _createPairingRejectionsTable(db);
 
     await db.execute('''
       CREATE TABLE $banksTable (
@@ -202,6 +208,25 @@ class AppDatabase {
     ''');
   }
 
+  /// The pairing-review rejections. Shared by [createSchema] and the v9
+  /// upgrade so the two cannot drift. `tx_low`/`tx_high` are the pair's
+  /// transaction ids in ascending order; `expires_at` is the epoch-ms time the
+  /// pair can no longer be suggested.
+  static Future<void> _createPairingRejectionsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE $pairingRejectionsTable (
+        tx_low INTEGER NOT NULL,
+        tx_high INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY (tx_low, tx_high)
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX idx_pairing_rejections_expires
+      ON $pairingRejectionsTable (expires_at)
+    ''');
+  }
+
   /// Upgrade policy: walk forward one step at a time, preserving data from
   /// every released version; rebuild destructively only from versions that
   /// predate release and so have no migration path.
@@ -233,6 +258,7 @@ class AppDatabase {
         metaTable,
         modelStatsTable,
         heartbeatTable,
+        pairingRejectionsTable,
       ]) {
         // Dropping a table also drops its indexes.
         await db.execute('DROP TABLE IF EXISTS $table');
@@ -260,6 +286,11 @@ class AppDatabase {
     if (oldVersion < 8) {
       // Additive: a new, empty table.
       await _createHeartbeatTable(db);
+    }
+
+    if (oldVersion < 9) {
+      // Additive: a new, empty table.
+      await _createPairingRejectionsTable(db);
     }
   }
 }

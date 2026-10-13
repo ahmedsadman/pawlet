@@ -80,7 +80,7 @@ void main() {
     // version pair it has no branch for, so a bump that forgets its branch
     // ships a database the app queries with the wrong schema and no failing
     // test. Update this only together with the branch and its parity test.
-    expect(AppDatabase.version, 8);
+    expect(AppDatabase.version, 9);
   });
 
   test('schema creates all tables', () async {
@@ -724,6 +724,138 @@ void main() {
         expect(await _tableNames(db), contains('model_stats'));
         // v8 added heartbeat_days table
         expect(await _tableNames(db), contains('heartbeat_days'));
+        await db.close();
+      },
+    );
+  });
+
+  group('pairing rejections migration (v8 -> v9)', () {
+    // v8 is v5 plus needs_llm, local_verdict, model_stats and heartbeat_days.
+    // Built by hand rather than through onUpgrade, which now runs the v9 step
+    // as well.
+    Future<Database> openV8() async {
+      final db = await openV5();
+      await db.execute(
+        'ALTER TABLE sms_records '
+        'ADD COLUMN needs_llm INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute('ALTER TABLE sms_records ADD COLUMN local_verdict TEXT');
+      await db.execute('''
+        CREATE TABLE model_stats (
+          day TEXT NOT NULL,
+          app_version_code INTEGER NOT NULL,
+          accepted INTEGER NOT NULL DEFAULT 0,
+          declined INTEGER NOT NULL DEFAULT 0,
+          unavailable INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL,
+          reported_at INTEGER,
+          PRIMARY KEY (day, app_version_code)
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE heartbeat_days (
+          day TEXT PRIMARY KEY,
+          app_version_code INTEGER NOT NULL,
+          opened INTEGER NOT NULL DEFAULT 0,
+          alive INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL,
+          reported_at INTEGER
+        )
+      ''');
+      return db;
+    }
+
+    test('preserves messages, accounts and transactions', () async {
+      final db = await openV8();
+      await db.insert('sms_records', {
+        'sender': 'CHK',
+        'content': 'debit 50',
+        'timestamp': 1,
+        'status': 'queued',
+        'updated_at': 1,
+      });
+      await db.insert('banks', {
+        'name': 'My Card',
+        'account_type': 'credit',
+        'created_at': 1,
+      });
+      await db.insert('transactions', {
+        'message_id': 1,
+        'normalized_amount': '50.00',
+        'normalized_currency': 'BDT',
+        'type': 'expense',
+        'date': 1,
+        'created_at': 1,
+      });
+
+      await AppDatabase.onUpgrade(db, 8, 9);
+
+      expect((await db.query('sms_records')).single['content'], 'debit 50');
+      expect((await db.query('banks')).single['name'], 'My Card');
+      expect((await db.query('transactions')).single['type'], 'expense');
+      expect(await db.query('pairing_rejections'), isEmpty);
+      await db.close();
+    });
+
+    test('lands on the same shape as a fresh v9 create', () async {
+      final migrated = await openV8();
+      await AppDatabase.onUpgrade(migrated, 8, 9);
+      final fresh = await openTestDb();
+
+      for (final table in const [
+        'sms_records',
+        'banks',
+        'transactions',
+        'bills',
+        'app_meta',
+        'model_stats',
+        'heartbeat_days',
+        'pairing_rejections',
+      ]) {
+        expect(
+          await _columnSpecs(migrated, table),
+          await _columnSpecs(fresh, table),
+          reason: 'columns of $table drifted from a fresh create',
+        );
+        expect(
+          await _indexDdl(migrated, table),
+          await _indexDdl(fresh, table),
+          reason: 'indexes of $table drifted from a fresh create',
+        );
+      }
+      await migrated.close();
+      await fresh.close();
+    });
+
+    test('pairing_rejections is keyed on the id pair', () async {
+      final db = await openTestDb();
+      final row = {'tx_low': 1, 'tx_high': 2, 'expires_at': 10};
+      await db.insert('pairing_rejections', row);
+      await expectLater(
+        db.insert('pairing_rejections', {...row, 'expires_at': 20}),
+        throwsA(isA<Exception>()),
+      );
+      await db.insert('pairing_rejections', {...row, 'tx_high': 3});
+      expect(await db.query('pairing_rejections'), hasLength(2));
+      await db.close();
+    });
+
+    test(
+      'a version-skipping upgrade from v5 to v9 still preserves data',
+      () async {
+        final db = await openV5();
+        await db.insert('banks', {
+          'name': 'My Card',
+          'account_type': 'credit',
+          'card_digits': '4238|3241',
+          'created_at': 1,
+        });
+
+        await AppDatabase.onUpgrade(db, 5, 9);
+
+        expect((await db.query('banks')).single['name'], 'My Card');
+        expect(await _tableNames(db), contains('heartbeat_days'));
+        expect(await _tableNames(db), contains('pairing_rejections'));
         await db.close();
       },
     );
