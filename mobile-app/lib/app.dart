@@ -15,6 +15,7 @@ import 'ui/app_update_flow.dart';
 import 'ui/bulk_import_flow.dart';
 import 'ui/finance_page.dart';
 import 'ui/messages_page.dart';
+import 'ui/pairing_prompt_listener.dart';
 import 'ui/privacy/sms_access_flow.dart';
 import 'ui/security/lock_screen.dart';
 import 'ui/security/setup_pin_screen.dart';
@@ -331,7 +332,12 @@ class _RootShellState extends ConsumerState<RootShell>
     if (widget.pages == null) ref.watch(dataRevisionSyncProvider);
     final index = ref.watch(selectedTabProvider);
     return Scaffold(
-      body: IndexedStack(index: index, children: _pages),
+      // Real app only: test mode injects its own widgets and has no database.
+      body: widget.pages == null
+          ? PairingPromptListener(
+              child: IndexedStack(index: index, children: _pages),
+            )
+          : IndexedStack(index: index, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (i) =>
