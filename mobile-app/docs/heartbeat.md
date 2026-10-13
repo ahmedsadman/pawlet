@@ -68,9 +68,14 @@ Every mark asks the reporter to flush. A flush goes out only when all of these h
 2. No failed upload is being backed off (see [Backoff](#backoff)).
 3. Some row was never acknowledged, or changed since. Rows dated after UTC tomorrow (a phone clock running ahead) are
    held back until they fall inside the server's window, so they cannot get the whole batch rejected.
-4. The last acknowledged flush, from any isolate, was at least the minimum gap ago, unless the newest row is from a
+4. The app was first installed at least the first-upload delay ago (`PackageManager.firstInstallTime`, read through
+   `readInstallTime` in `lib/services/app_version.dart`). Play's review and scanning devices run each new build for a
+   few minutes and are then wiped, so without the delay they show up as installs. An update keeps the install time, so
+   only fresh installs and reinstalls wait; their held days stay in the log and go with a later flush. An unknown
+   install time, or one in the future (the clock moved back), holds nothing off.
+5. The last acknowledged flush, from any isolate, was at least the minimum gap ago, unless the newest row is from a
    build the server has not been told about yet.
-5. The install is still in proxy or bring-your-own-key mode.
+6. The install is still in proxy or bring-your-own-key mode.
 
 The request is unauthenticated: it carries the install ID, which the server hashes before storing, exactly as
 `/v1/session` does. So it works from background isolates and in bring-your-own-key mode, neither of which can mint a
@@ -81,7 +86,9 @@ only if it did not change while the request was in flight.
 Because a flush needs both a changed row and a mark to trigger it, an install typically uploads when a day's first
 alive or first open happens, when it is opened after only running in the background, and when a new build runs. A
 change that lands inside the minimum gap waits for the next mark (launch, resume, processing pass or daily task). On
-the server, `last_seen` therefore usually moves once or twice a day, and "today" can lag by up to a day.
+the server, `last_seen` therefore usually moves once or twice a day, and "today" can lag by up to a day. A fresh
+install first appears on the server at the first mark after the delay ends, which can be as late as the next daily
+task.
 
 | Server answer                        | What the reporter does                                                                    |
 | ------------------------------------ | ----------------------------------------------------------------------------------------- |
@@ -112,13 +119,14 @@ backup ([Backup & Restore](backup-restore.md)).
 
 Snapshot — the source files are authoritative.
 
-| Constant                                 | Value                            | Source                                                                      |
-| ---------------------------------------- | -------------------------------- | --------------------------------------------------------------------------- |
-| Minimum gap between acknowledged flushes | 1 h (skipped for a new build)    | `lib/services/heartbeat_reporter.dart` (`HeartbeatReporter.minGap`)         |
-| Rows per request                         | 31                               | `lib/services/heartbeat_reporter.dart` (`HeartbeatReporter.maxDays`)        |
-| Request timeout                          | 20 s                             | `lib/services/heartbeat_reporter.dart` (`HeartbeatReporter.requestTimeout`) |
-| Days kept and sent                       | UTC today and the 29 days before | `lib/data/model_stats_repository.dart` (`kModelStatsRetentionDays`)         |
-| Daily task period                        | 24 h                             | `lib/services/background_worker.dart` (`scheduleHeartbeat`)                 |
-| Backoff base wait (first failure)        | 15 min                           | `lib/services/upload_backoff.dart` (`kUploadBackoffBase`)                   |
-| Backoff cap                              | 6 h                              | `lib/services/upload_backoff.dart` (`kUploadBackoffCap`)                    |
-| Shortest `Retry-After` wait              | 1 min                            | `lib/services/upload_backoff.dart` (`kUploadRetryAfterMin`)                 |
+| Constant                                 | Value                            | Source                                                                        |
+| ---------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------- |
+| Minimum gap between acknowledged flushes | 1 h (skipped for a new build)    | `lib/services/heartbeat_reporter.dart` (`HeartbeatReporter.minGap`)           |
+| First-upload delay after install         | 6 h                              | `lib/services/heartbeat_reporter.dart` (`HeartbeatReporter.firstUploadDelay`) |
+| Rows per request                         | 31                               | `lib/services/heartbeat_reporter.dart` (`HeartbeatReporter.maxDays`)          |
+| Request timeout                          | 20 s                             | `lib/services/heartbeat_reporter.dart` (`HeartbeatReporter.requestTimeout`)   |
+| Days kept and sent                       | UTC today and the 29 days before | `lib/data/model_stats_repository.dart` (`kModelStatsRetentionDays`)           |
+| Daily task period                        | 24 h                             | `lib/services/background_worker.dart` (`scheduleHeartbeat`)                   |
+| Backoff base wait (first failure)        | 15 min                           | `lib/services/upload_backoff.dart` (`kUploadBackoffBase`)                     |
+| Backoff cap                              | 6 h                              | `lib/services/upload_backoff.dart` (`kUploadBackoffCap`)                      |
+| Shortest `Retry-After` wait              | 1 min                            | `lib/services/upload_backoff.dart` (`kUploadRetryAfterMin`)                   |
