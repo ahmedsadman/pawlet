@@ -46,4 +46,30 @@ void main() {
     respond((_) async => throw MissingPluginException());
     expect(await InstallSource().isFromPlayStore(), isFalse);
   });
+
+  group('isTestLab', () {
+    test('reads the native answer', () async {
+      respond((call) async {
+        expect(call.method, 'isTestLab');
+        return true;
+      });
+      expect(await InstallSource().isTestLab(), isTrue);
+    });
+
+    test('a real device is not Test Lab', () async {
+      respond((_) async => false);
+      expect(await InstallSource().isTestLab(), isFalse);
+    });
+
+    test('a failure reads as a real device', () async {
+      // A real install that stops reporting costs more than one stray test
+      // device.
+      respond((_) async => throw PlatformException(code: 'boom'));
+      expect(await InstallSource().isTestLab(), isFalse);
+      respond((_) async => throw MissingPluginException());
+      expect(await InstallSource().isTestLab(), isFalse);
+      respond((_) async => null);
+      expect(await InstallSource().isTestLab(), isFalse);
+    });
+  });
 }
