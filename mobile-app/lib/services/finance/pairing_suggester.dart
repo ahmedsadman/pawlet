@@ -115,7 +115,9 @@ class PairingSuggester {
     ];
     result.sort((a, b) {
       final byDate = b.newerDate.compareTo(a.newerDate);
-      return byDate != 0 ? byDate : a.key.compareTo(b.key);
+      if (byDate != 0) return byDate;
+      final byLow = a.lowId.compareTo(b.lowId);
+      return byLow != 0 ? byLow : a.highId.compareTo(b.highId);
     });
     return result;
   }
@@ -125,7 +127,16 @@ class PairingSuggester {
       AppDatabase.pairingRejectionsTable,
       columns: ['tx_low', 'tx_high'],
     );
-    return {for (final r in rows) '${r['tx_low']}-${r['tx_high']}'};
+    return {
+      for (final r in rows)
+        () {
+          final a = r['tx_low'] as int;
+          final b = r['tx_high'] as int;
+          final low = a < b ? a : b;
+          final high = a < b ? b : a;
+          return '$low-$high';
+        }(),
+    };
   }
 
   static int _byStrength(PairingSuggestion a, PairingSuggestion b) {
