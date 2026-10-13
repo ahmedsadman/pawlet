@@ -92,3 +92,17 @@ String updatedLabel(DateTime time, {DateTime? now}) {
   // A same-day gap is under 24 h except on a 25-hour daylight-saving day.
   return '${min(elapsed.inHours, 23)}h ago';
 }
+
+/// Compact span between two events: `<1m`, `45m`, `2h 14m`, `3h`, `1d 3h`,
+/// `4d`. Minutes are dropped once the span reaches a day.
+String gapLabel(Duration gap) {
+  final d = gap.abs();
+  if (d.inMinutes < 1) return '<1m';
+  if (d.inHours < 1) return '${d.inMinutes}m';
+  if (d.inDays < 1) {
+    final minutes = d.inMinutes % 60;
+    return minutes == 0 ? '${d.inHours}h' : '${d.inHours}h ${minutes}m';
+  }
+  final hours = d.inHours % 24;
+  return hours == 0 ? '${d.inDays}d' : '${d.inDays}d ${hours}h';
+}
