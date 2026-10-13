@@ -31,10 +31,12 @@ Future<ProviderContainer> _pump(
   FakePairingStore store, {
   bool unlocked = true,
   bool lockOverlay = false,
+  Widget child = const Text('home'),
+  Widget Function(Widget shell)? wrap,
 }) async {
   _unlocked = NotifierProvider<_Unlocked, bool>(() => _Unlocked(unlocked));
   _settle = Completer<void>()..complete();
-  const shell = Scaffold(body: PairingPromptListener(child: Text('home')));
+  final shell = Scaffold(body: PairingPromptListener(child: child));
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -47,15 +49,18 @@ Future<ProviderContainer> _pump(
       ],
       child: MaterialApp(
         theme: AppTheme.theme,
-        // Mirrors AuthGate: the lock screen is a sibling Scaffold stacked over
-        // the shell, so the messenger presents snackbars on it too.
-        home: lockOverlay
+        // Mirrors AuthGate: the lock screen is stacked over the shell.
+        home: wrap != null
+            ? wrap(shell)
+            : lockOverlay
             ? Consumer(
                 builder: (context, ref, _) => Stack(
                   children: [
                     shell,
                     if (!ref.watch(_unlocked))
-                      const Scaffold(body: Text('locked')),
+                      const Positioned.fill(
+                        child: Scaffold(body: Text('locked')),
+                      ),
                   ],
                 ),
               )
@@ -63,140 +68,107 @@ Future<ProviderContainer> _pump(
       ),
     ),
   );
-  await tester.pump();
-  await tester.pump();
-  return ProviderScope.containerOf(tester.element(find.text('home')));
+  await _settleFrames(tester);
+  return ProviderScope.containerOf(
+    tester.element(find.byType(PairingPromptListener)),
+  );
 }
 
-Future<void> _waitPromptGone(WidgetTester tester) async {
-  // Finish the entrance animation first: the messenger only starts the
-  // auto-hide timer once the snackbar is fully shown.
-  await tester.pumpAndSettle();
-  await tester.pump(PairingPromptListener.promptDuration);
-  await tester.pumpAndSettle();
+/// Lets the data load, the settle future resolve and the pill animate in.
+Future<void> _settleFrames(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
 }
+
+Future<void> _bump(ProviderContainer container, WidgetTester tester) async {
+  container.read(dataRevisionProvider.notifier).bump();
+  await _settleFrames(tester);
+}
+
+final _anyPrompt = find.textContaining('to review');
 
 void main() {
   testWidgets('prompts once the list loads non-empty', (tester) async {
     await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
-    await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('1 pairing to review'), findsOneWidget);
     expect(find.text('View'), findsOneWidget);
   });
 
   testWidgets('stays quiet when there is nothing to review', (tester) async {
     await _pump(tester, FakePairingStore(const []));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.textContaining('to review'), findsNothing);
+    expect(_anyPrompt, findsNothing);
+  });
+
+  testWidgets('hides after the prompt duration', (tester) async {
+    await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
+    await tester.pump(
+      PairingPromptListener.promptDuration - const Duration(seconds: 1),
+    );
+    expect(find.text('1 pairing to review'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(_anyPrompt, findsNothing);
   });
 
   testWidgets('prompts again only for a new suggestion', (tester) async {
     final store = FakePairingStore([transferSuggestion(1, 2)]);
     final container = await _pump(tester, store);
-    await _waitPromptGone(tester);
+    await tester.pump(PairingPromptListener.promptDuration);
+    await tester.pumpAndSettle();
 
     // Same list after a data change: no prompt.
-    container.read(dataRevisionProvider.notifier).bump();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.textContaining('to review'), findsNothing);
+    await _bump(container, tester);
+    expect(_anyPrompt, findsNothing);
 
     // A new suggestion appears: prompt with the full count.
     store.items.add(cardSuggestion(3, 4));
-    container.read(dataRevisionProvider.notifier).bump();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+    await _bump(container, tester);
     expect(find.text('2 pairings to review'), findsOneWidget);
   });
 
-  testWidgets('waits for unlock instead of prompting over the lock', (
+  testWidgets('a new suggestion while the pill is up updates it in place', (
     tester,
   ) async {
-    final container = await _pump(
-      tester,
-      FakePairingStore([transferSuggestion(1, 2)]),
-      unlocked: false,
-    );
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.textContaining('to review'), findsNothing);
+    final store = FakePairingStore([transferSuggestion(1, 2)]);
+    final container = await _pump(tester, store);
+    await tester.pump(const Duration(seconds: 3));
 
-    container.read(_unlocked.notifier).set(true);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('1 pairing to review'), findsOneWidget);
+    store.items.add(cardSuggestion(3, 4));
+    await _bump(container, tester);
+    expect(find.text('1 pairing to review'), findsNothing);
+    expect(find.text('2 pairings to review'), findsOneWidget);
+
+    // The timer restarted: still up past the first prompt's deadline.
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('2 pairings to review'), findsOneWidget);
   });
 
-  testWidgets('View opens the review deck', (tester) async {
-    await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
-    await tester.pump(const Duration(milliseconds: 500));
-
-    await tester.tap(find.text('View'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(PairingReviewPage), findsOneWidget);
-  });
-
-  group('lock screen', () {
-    testWidgets('locking takes the prompt off the lock screen', (tester) async {
+  group('allowed', () {
+    testWidgets('waits for unlock instead of prompting', (tester) async {
       final container = await _pump(
         tester,
         FakePairingStore([transferSuggestion(1, 2)]),
-        lockOverlay: true,
+        unlocked: false,
       );
-      await tester.pump(const Duration(milliseconds: 500));
+      expect(_anyPrompt, findsNothing);
+
+      container.read(_unlocked.notifier).set(true);
+      await _settleFrames(tester);
+      expect(find.text('1 pairing to review'), findsOneWidget);
+    });
+
+    testWidgets('hides at once when no longer allowed', (tester) async {
+      final container = await _pump(
+        tester,
+        FakePairingStore([transferSuggestion(1, 2)]),
+      );
       expect(find.text('1 pairing to review'), findsOneWidget);
 
       container.read(_unlocked.notifier).set(false);
-      // The lock screen's first frame: the prompt may still be in the tree
-      // until the frame ends, but must not show the count.
       await tester.pump();
-      expect(find.text('locked'), findsOneWidget);
-      expect(find.text('1 pairing to review'), findsNothing);
-      await tester.pump();
+      expect(_anyPrompt, findsNothing);
       expect(find.text('View'), findsNothing);
-      expect(find.text('1 pairing to review'), findsNothing);
-    });
-
-    testWidgets('a queued prompt never surfaces on the lock screen', (
-      tester,
-    ) async {
-      final store = FakePairingStore(const []);
-      final container = await _pump(tester, store, lockOverlay: true);
-      // Another snackbar is up, so the prompt queues behind it.
-      ScaffoldMessenger.of(
-        tester.element(find.text('home')),
-      ).showSnackBar(const SnackBar(content: Text('other')));
-      store.items.add(transferSuggestion(1, 2));
-      container.read(dataRevisionProvider.notifier).bump();
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('other'), findsOneWidget);
-
-      container.read(_unlocked.notifier).set(false);
-      await tester.pump();
-      // Let the other snackbar time out; the queued prompt comes next.
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(seconds: 4));
-      await tester.pumpAndSettle();
-      expect(find.text('other'), findsNothing);
-      expect(find.text('1 pairing to review'), findsNothing);
-      expect(find.text('View'), findsNothing);
-    });
-
-    testWidgets('View does nothing once the app is locked', (tester) async {
-      final container = await _pump(
-        tester,
-        FakePairingStore([transferSuggestion(1, 2)]),
-        lockOverlay: true,
-      );
-      await tester.pump(const Duration(milliseconds: 500));
-      final action = tester.widget<SnackBarAction>(find.byType(SnackBarAction));
-
-      container.read(_unlocked.notifier).set(false);
-      await tester.pump();
-      action.onPressed();
-      await tester.pumpAndSettle();
-      expect(find.byType(PairingReviewPage), findsNothing);
     });
 
     testWidgets('waits for the resume to settle before prompting', (
@@ -207,14 +179,11 @@ void main() {
 
       _settle = Completer<void>();
       store.items.add(transferSuggestion(1, 2));
-      container.read(dataRevisionProvider.notifier).bump();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(find.textContaining('to review'), findsNothing);
+      await _bump(container, tester);
+      expect(_anyPrompt, findsNothing);
 
       _settle.complete();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
+      await _settleFrames(tester);
       expect(find.text('1 pairing to review'), findsOneWidget);
     });
 
@@ -222,67 +191,131 @@ void main() {
       tester,
     ) async {
       final store = FakePairingStore(const []);
-      final container = await _pump(tester, store, lockOverlay: true);
+      final container = await _pump(tester, store);
 
       _settle = Completer<void>();
       store.items.add(transferSuggestion(1, 2));
-      container.read(dataRevisionProvider.notifier).bump();
-      await tester.pump();
+      await _bump(container, tester);
       container.read(_unlocked.notifier).set(false);
       _settle.complete();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(find.textContaining('to review'), findsNothing);
+      await _settleFrames(tester);
+      expect(_anyPrompt, findsNothing);
 
       container.read(_unlocked.notifier).set(true);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
+      await _settleFrames(tester);
       expect(find.text('1 pairing to review'), findsOneWidget);
     });
   });
 
-  testWidgets('a new suggestion while the prompt is up updates the count', (
-    tester,
-  ) async {
-    final store = FakePairingStore([transferSuggestion(1, 2)]);
-    final container = await _pump(tester, store);
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('1 pairing to review'), findsOneWidget);
+  group('review page', () {
+    testWidgets('beginning a review hides the pill', (tester) async {
+      final container = await _pump(
+        tester,
+        FakePairingStore([transferSuggestion(1, 2)]),
+      );
+      expect(find.text('1 pairing to review'), findsOneWidget);
 
-    store.items.add(cardSuggestion(3, 4));
-    container.read(dataRevisionProvider.notifier).bump();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('1 pairing to review'), findsNothing);
-    expect(find.text('2 pairings to review'), findsOneWidget);
+      container.read(pairingPromptTrackerProvider).beginReview();
+      await tester.pumpAndSettle();
+      expect(_anyPrompt, findsNothing);
+    });
+
+    testWidgets('opening the review page another way hides the pill', (
+      tester,
+    ) async {
+      await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
+      expect(find.text('1 pairing to review'), findsOneWidget);
+
+      openPairingReview(tester.element(find.text('home')));
+      await tester.pumpAndSettle();
+      expect(find.byType(PairingReviewPage), findsOneWidget);
+      expect(_anyPrompt, findsNothing);
+      expect(find.text('View'), findsNothing);
+    });
+
+    testWidgets('View opens the review deck', (tester) async {
+      await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
+
+      await tester.tap(find.text('View'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PairingReviewPage), findsOneWidget);
+      expect(_anyPrompt, findsNothing);
+    });
+
+    testWidgets('tapping the pill opens the review deck', (tester) async {
+      await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
+
+      await tester.tap(find.text('1 pairing to review'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PairingReviewPage), findsOneWidget);
+    });
   });
 
-  testWidgets('beginning a review dismisses the prompt', (tester) async {
+  testWidgets('the lock screen covers the pill', (tester) async {
     final container = await _pump(
       tester,
       FakePairingStore([transferSuggestion(1, 2)]),
+      lockOverlay: true,
     );
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('1 pairing to review'), findsOneWidget);
+    expect(find.text('View').hitTestable(), findsOneWidget);
 
-    container.read(pairingPromptTrackerProvider).beginReview();
+    container.read(_unlocked.notifier).set(false);
+    await tester.pump();
+    expect(find.text('locked'), findsOneWidget);
+    expect(find.text('View').hitTestable(), findsNothing);
+    expect(find.text('1 pairing to review').hitTestable(), findsNothing);
     await tester.pumpAndSettle();
-    expect(find.text('1 pairing to review'), findsNothing);
+    expect(find.text('View'), findsNothing);
   });
 
-  testWidgets('opening the review page another way dismisses the prompt', (
+  testWidgets('any page over the shell covers the pill, even if allowed', (
     tester,
   ) async {
-    await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('1 pairing to review'), findsOneWidget);
+    // The overlay alone, with the gate left open: coverage is structural.
+    final covered = ValueNotifier(false);
+    addTearDown(covered.dispose);
+    await _pump(
+      tester,
+      FakePairingStore([transferSuggestion(1, 2)]),
+      wrap: (shell) => ValueListenableBuilder(
+        valueListenable: covered,
+        builder: (_, on, _) => Stack(
+          children: [
+            shell,
+            if (on)
+              const Positioned.fill(child: Scaffold(body: Text('locked'))),
+          ],
+        ),
+      ),
+    );
+    expect(find.text('View').hitTestable(), findsOneWidget);
 
-    Navigator.of(
-      tester.element(find.text('home')),
-    ).push(MaterialPageRoute<void>(builder: (_) => const PairingReviewPage()));
-    await tester.pumpAndSettle();
-    expect(find.byType(PairingReviewPage), findsOneWidget);
-    expect(find.text('1 pairing to review'), findsNothing);
-    expect(find.text('View'), findsNothing);
+    covered.value = true;
+    await tester.pump();
+    expect(find.text('View').hitTestable(), findsNothing);
+    expect(find.text('1 pairing to review').hitTestable(), findsNothing);
+  });
+
+  testWidgets('the pill does not block taps elsewhere', (tester) async {
+    var taps = 0;
+    await _pump(
+      tester,
+      FakePairingStore([transferSuggestion(1, 2)]),
+      child: Column(
+        children: [
+          const Text('home'),
+          const Spacer(),
+          // Under the pill's layer, beside its bottom edge.
+          Align(
+            alignment: Alignment.bottomLeft,
+            child: TextButton(onPressed: () => taps++, child: const Text('x')),
+          ),
+        ],
+      ),
+    );
+    expect(find.text('View').hitTestable(), findsOneWidget);
+
+    await tester.tap(find.text('x'));
+    expect(taps, 1);
   });
 }
