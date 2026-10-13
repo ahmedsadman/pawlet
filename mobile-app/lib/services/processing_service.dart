@@ -212,7 +212,8 @@ class ProcessingService {
       }
 
       // Throttled cleanup (≤1 real prune / 24h across all triggers and both
-      // isolates, via a single DB row) — deletes only aged ignored rows.
+      // isolates, via a single DB row) — deletes aged ignored rows and expired
+      // pairing rejections.
       await smsRepository.pruneIfDue(now: _clock());
 
       // A pass that touched records likely changed queue/history/finance state.
