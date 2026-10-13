@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/models/finance/pairing_suggestion.dart';
+import 'package:pawlet/services/finance/finance_matcher.dart';
 import 'package:pawlet/services/finance/pairing_actions.dart';
 import 'package:pawlet/services/finance/pairing_suggester.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -122,6 +123,59 @@ void main() {
     expect(await actions.accept(s), isNull);
     expect((await row(out))['type'], 'expense');
     expect((await row(out))['paired_with_id'], isNull);
+    expect((await row(inc))['type'], 'income');
+    expect((await row(inc))['paired_with_id'], 999);
+  });
+
+  test(
+    'accept writes nothing when the card leg got paired meanwhile',
+    () async {
+      final (out, card, _) = await cardPairWithBill();
+      final s = await only();
+      await db.update(
+        'transactions',
+        {'paired_with_id': 999},
+        where: 'id = ?',
+        whereArgs: [card],
+      );
+
+      expect(await actions.accept(s), isNull);
+      expect((await row(out))['type'], 'expense');
+      expect((await row(out))['paired_with_id'], isNull);
+      expect((await row(out))['bill_id'], isNull);
+      expect((await row(card))['paired_with_id'], 999);
+      expect((await row(card))['bill_id'], isNull);
+      expect((await db.query('bills')).single['paid_at'], isNull);
+    },
+  );
+
+  test('accept copies an existing card bill link to the bank leg', () async {
+    final (out, card, bill) = await cardPairWithBill();
+    await FinanceMatcher(
+      db,
+      nowMs: () => now.millisecondsSinceEpoch,
+    ).runPending();
+    expect((await row(card))['bill_id'], bill);
+    final paidAt = (await db.query('bills')).single['paid_at'];
+    expect(paidAt, isNotNull);
+
+    final d = await actions.accept(await only());
+
+    expect(d!.linkedBillId, isNull);
+    expect((await row(out))['type'], 'transfer');
+    expect((await row(out))['paired_with_id'], card);
+    expect((await row(out))['bill_id'], bill);
+    expect((await row(card))['bill_id'], bill);
+    expect((await db.query('bills')).single['paid_at'], paidAt);
+
+    await actions.undo(d);
+
+    expect((await row(out))['type'], 'expense');
+    expect((await row(out))['paired_with_id'], isNull);
+    expect((await row(out))['bill_id'], isNull);
+    expect((await row(card))['paired_with_id'], isNull);
+    expect((await row(card))['bill_id'], bill);
+    expect((await db.query('bills')).single['paid_at'], paidAt);
   });
 
   test('rejecting stores the pair until 30 days after its newer leg', () async {
@@ -172,6 +226,27 @@ void main() {
     expect((await row(card))['bill_id'], isNull);
     expect((await db.query('bills')).single['paid_at'], isNull);
   });
+
+  test(
+    'undo leaves the legs alone once they stop pointing at each other',
+    () async {
+      final (out, inc) = await transferPair();
+      final d = await actions.accept(await only());
+      await db.update(
+        'transactions',
+        {'paired_with_id': 999},
+        where: 'id = ?',
+        whereArgs: [inc],
+      );
+
+      await actions.undo(d!);
+
+      expect((await row(out))['type'], 'transfer');
+      expect((await row(out))['paired_with_id'], inc);
+      expect((await row(inc))['type'], 'transfer');
+      expect((await row(inc))['paired_with_id'], 999);
+    },
+  );
 
   test('undoing a rejection deletes it', () async {
     await transferPair();
