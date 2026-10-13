@@ -184,11 +184,9 @@ all (§5):
      Anything short of that (low confidence, a missing span, or the model failing to load)
      falls back to Layer 3.
      
-     **With no LLM** (ungated mode), the two confidence thresholds are skipped — whatever
-     prediction the model produced is accepted. The structural checks above still apply: a
-     missing amount span, an unparseable number, or a foreign currency with no conversion
-     path means there is no record to build, which is a fact about the message rather than
-     a confidence judgement. A `null` label still means ignore.
+     **With no LLM**, the gate is exactly the same — both confidence thresholds and the
+     structural checks apply. Only the outcome of a rejection differs: there is no Layer 3
+     to fall back to, so the row fails terminally (see Layer 3 below).
 
      A bill's **statement period is optional**: the month/year is parsed from the
      extracted span by `local_parsers.dart` (3-letter and full month names with a
@@ -317,7 +315,8 @@ Being offline must also never *cost* a message an attempt. The guards:
   
   **With no LLM**, the flag is never set — there is nothing to defer to, so setting it
   would strand the row. A row that already carries it (e.g. the user removed their key)
-  is re-run through the ungated gate rather than skipped.
+  is re-run through the on-device model rather than skipped, so a newer bundled model
+  gets the chance to accept it.
 - **A deferred row does not block the queue.** The pass carries on to the rows behind it,
   which may still be locally solvable (§3).
 - **A failure discovered to be offline is a transport drop, not an attempt.** If the LLM

@@ -30,8 +30,8 @@ What the LLM does afterwards (success, error, retry, waiting for the network) ne
 - Counting runs only in proxy mode. Before each verdict is counted, `ProcessingService` re-checks the mode with the
   same check the reporter runs before each send (built in `lib/services/app_services.dart`, which offers it only to
   proxy-mode services). BYOK installs count nothing, so BYOK usage can never reach the server, even if the install
-  later becomes proxy-eligible. In no-LLM mode nothing is counted either: the model runs without its confidence gate,
-  so its answers are not comparable. If the check fails, the message is not counted.
+  later becomes proxy-eligible. In no-LLM mode nothing is counted either: a decline there spares no LLM call, so it
+  says nothing about the rate the stats measure. If the check fails, the message is not counted.
   Counting never changes what happens to the message: a counting failure is swallowed.
 
 Schema: `sms_records.local_verdict` and the `model_stats` table, both in `lib/data/database.dart`.

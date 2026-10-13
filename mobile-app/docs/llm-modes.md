@@ -113,10 +113,10 @@ The app previously included an OpenRouter API key compiled into the build. That 
 
 ## What happens with no LLM
 
-When the mode is `none`, the on-device model runs ungated: its two confidence thresholds are skipped, so any prediction it produces is accepted. The structural checks survive — a missing amount span, an unparseable number, or a foreign currency with no conversion path still means no record, because those are facts about the message rather than confidence judgements. A `null` label still means ignore.
+When the mode is `none`, the on-device model is gated exactly as in the other modes: both confidence thresholds and the structural checks (a missing amount span, an unparseable number, a foreign currency with no conversion path) apply. A low-confidence guess is never written to the ledger, LLM or not.
 
-If the ungated gate still rejects the message (structural failure), the row is marked `failure` with the new `FailureReason.localOnly`, shown in Messages as "On-device parsing failed". This is a terminal state but recoverable: the Messages page already offers Retry on every failure row, so saving a key later and retrying will re-run the message through the now-gated pipeline and defer it to the LLM.
+If the gate rejects the message, the row is marked `failure` with the new `FailureReason.localOnly`, shown in Messages as "On-device parsing failed". This is a terminal state but recoverable: the Messages page already offers Retry on every failure row, so saving a key later and retrying will re-run the message through the pipeline, which now defers it to the LLM.
 
-The `needs_llm` flag is never set when no LLM exists, because it is permanent (never cleared) and its two readers would otherwise strand the row. A row that already carries the flag from an earlier state (e.g. the user removed their key) is re-run through the ungated gate rather than skipped.
+The `needs_llm` flag is never set when no LLM exists, because it is permanent (never cleared) and its two readers would otherwise strand the row. A row that already carries the flag from an earlier state (e.g. the user removed their key) is re-run through the on-device model rather than skipped.
 
 Layer 3 is skipped entirely with no LLM — no provider is constructed, and no network call is made.
