@@ -108,6 +108,22 @@ void main() {
       expect(all.single.from.amount, '1500');
     });
 
+    test('suggests a transfer when income is 96h before expense', () async {
+      final t = ago(const Duration(days: 5));
+      await tx(city, 'income', '1500', t);
+      final out = await tx(
+        mtb,
+        'expense',
+        '1500',
+        t.add(const Duration(hours: 96)),
+      );
+
+      final s = (await suggest()).single;
+      expect(s.kind, PairingKind.transfer);
+      expect(s.from.id, out);
+      expect(s.gap, const Duration(hours: 96));
+    });
+
     test('skips credit accounts, other currencies and paired rows', () async {
       final t = ago(const Duration(hours: 10));
       // An income on a credit card is not a deposit-to-deposit transfer.
@@ -151,6 +167,24 @@ void main() {
       await tx(ebl, 'transfer', '2951', ago(const Duration(days: 2)));
       expect(await suggest(), isEmpty);
     });
+
+    test(
+      'suggests a card payment when the card transfer is before the expense',
+      () async {
+        final t = ago(const Duration(days: 5));
+        await tx(ebl, 'transfer', '2950', t);
+        final out = await tx(
+          mtb,
+          'expense',
+          '2951',
+          t.add(const Duration(hours: 10)),
+        );
+
+        final s = (await suggest()).single;
+        expect(s.kind, PairingKind.cardPayment);
+        expect(s.from.id, out);
+      },
+    );
 
     test('ignores an expense on a credit account as the bank leg', () async {
       final other = await insertBank(
@@ -197,8 +231,11 @@ void main() {
       final a = await tx(city, 'income', '1500', at(10, 50));
       final b = await tx(dbbl, 'income', '1500', at(10, 10));
 
-      final pairs = {for (final s in await suggest()) s.to.id: s.from.id};
+      final all = await suggest();
+      final pairs = {for (final s in all) s.to.id: s.from.id};
       expect(pairs, {b: x, a: y});
+      expect(all[0].otherMatches, 2);
+      expect(all[1].otherMatches, 2);
     });
 
     test('a debit shared by both kinds goes to the closer partner', () async {
@@ -277,5 +314,24 @@ void main() {
       final amounts = [for (final s in await suggest()) s.from.amount];
       expect(amounts, ['200', '100']);
     });
+
+    test(
+      'a rejection row with reversed tx_low/tx_high still excludes the pair',
+      () async {
+        final t = ago(const Duration(days: 1));
+        final out = await tx(mtb, 'expense', '1500', t);
+        final inc = await tx(city, 'income', '1500', t);
+        // Insert the rejection with tx_low and tx_high reversed.
+        await db.insert('pairing_rejections', {
+          'tx_low': out > inc ? out : inc,
+          'tx_high': out > inc ? inc : out,
+          'expires_at': now
+              .add(const Duration(days: 30))
+              .millisecondsSinceEpoch,
+        });
+
+        expect(await suggest(), isEmpty);
+      },
+    );
   });
 }
