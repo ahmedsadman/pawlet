@@ -73,8 +73,8 @@ Deliberately excluded:
 
 ## Restore is replace-all
 
-Restore is **not** a merge. It wipes every row in the four core tables and the optional
-`pairing_rejections` table (when present in the backup), then re-inserts the file's rows
+Restore is **not** a merge. It wipes every row in the four core tables and the
+`pairing_rejections` table (always, even when the backup has none), then re-inserts the file's rows
 **with their original IDs preserved**, all inside one database transaction. Preserving IDs
 is what keeps cross-table references valid — a transaction points at its backing message
 and bank, a bill at its message, a transfer at its paired transaction. Settings are

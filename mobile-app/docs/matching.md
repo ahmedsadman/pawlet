@@ -92,8 +92,7 @@ and still count as the same money movement), not polling intervals.
 
 Three passes run — bill linking runs in both directions — each match committed in **its own
 DB transaction**, so a two- or three-row link is all-or-nothing. Any **ambiguous tie is
-skipped** and left unpaired; such pairs (along with payments that clear more than 15 minutes
-apart) are offered for user confirmation in [Pairing Review](pairing-review.md).
+skipped** and left unpaired.
 
 - **Transfer pairing** — a credit-card `transfer` (the bill payment the issuer received) is
   paired with the bank `expense` debit that funded it. The closest-in-time candidate wins.

@@ -2,7 +2,7 @@
 
 Suggests transaction pairs for the user to confirm: money moved between deposit accounts (internal transfers) and bank debits that paid a credit card but fell outside the automatic 15-minute pairing window or tied inside it. Suggestions are computed on read and never stored; only "No" answers are persisted.
 
-Implementation lives in `lib/services/finance/pairing_suggester.dart` (finding candidates), `lib/services/finance/pairing_actions.dart` (applying answers), `lib/models/finance/pairing_suggestion.dart` (the pair model), `lib/state/pairing_providers.dart` (Riverpod wiring), `lib/ui/pairing_review_page.dart` (the deck screen), `lib/ui/widgets/finance/pairing_card.dart` (the swipeable review card), `lib/ui/widgets/finance/review_entry_card.dart` (the peach prompt on the Finance page), and `lib/ui/pairing_prompt_listener.dart` (the floating prompt).
+Implementation lives in `lib/services/finance/pairing_suggester.dart` (finding candidates), `lib/services/finance/pairing_actions.dart` (applying answers), `lib/models/finance/pairing_suggestion.dart` (the pair model), `lib/state/pairing_providers.dart` (Riverpod wiring), `lib/ui/pairing_review_page.dart` (the deck screen), `lib/ui/widgets/finance/pairing_card.dart` (one review card), `lib/ui/widgets/finance/review_entry_card.dart` (the peach prompt on the Finance page), and `lib/ui/pairing_prompt_listener.dart` (the floating prompt).
 
 ## What gets suggested
 
