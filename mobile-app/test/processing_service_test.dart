@@ -1401,7 +1401,35 @@ void main() {
       clock: () => now,
     );
 
-    test('a weak prediction is accepted and written', () async {
+    test('a confident prediction is accepted and written', () async {
+      const content = 'debit 50 BDT';
+      final local = _FakeLocal(
+        LocalPrediction(
+          classLabel: 'expense',
+          classConfidence: 0.99,
+          spans: [
+            LocalSpan(
+              entity: 'AMOUNT',
+              text: '50',
+              confidence: 0.96,
+              start: content.indexOf('50'),
+              end: content.indexOf('50') + 2,
+            ),
+          ],
+        ),
+      );
+      final id = await queue('CHK', content: content);
+      await noLlmService(local: local).process();
+
+      final r = await row(id);
+      expect(r['status'], 'success');
+      expect(r['parse_source'], ParseSource.local.value);
+      expect(r['needs_llm'], 0);
+      expect((await db.query('transactions')).length, 1);
+      await db.close();
+    });
+
+    test('a weak prediction fails terminally, gated as with an LLM', () async {
       const content = 'debit 50 BDT';
       final local = _FakeLocal(
         LocalPrediction(
@@ -1422,10 +1450,10 @@ void main() {
       await noLlmService(local: local).process();
 
       final r = await row(id);
-      expect(r['status'], 'success');
-      expect(r['parse_source'], ParseSource.local.value);
+      expect(r['status'], 'failure');
+      expect(r['failure_reason'], FailureReason.localOnly.value);
       expect(r['needs_llm'], 0);
-      expect((await db.query('transactions')).length, 1);
+      expect(await db.query('transactions'), isEmpty);
       await db.close();
     });
 
@@ -1462,7 +1490,7 @@ void main() {
       final local = _FakeLocal(
         LocalPrediction(
           classLabel: 'expense',
-          classConfidence: 0.10,
+          classConfidence: 0.99,
           spans: [
             LocalSpan(
               entity: 'AMOUNT',
@@ -1494,7 +1522,7 @@ void main() {
       final local = _FakeLocal(
         LocalPrediction(
           classLabel: 'expense',
-          classConfidence: 0.10,
+          classConfidence: 0.99,
           spans: [
             LocalSpan(
               entity: 'AMOUNT',
@@ -1806,38 +1834,41 @@ void main() {
       await db.close();
     });
 
-    test('no-LLM mode counts nothing: its model runs ungated', () async {
-      const unbuildable = 'balance 500 BDT';
-      final local = _FnLocal(
-        (c) => c == content
-            ? _localExpense(c)
-            : LocalPrediction(
-                classLabel: 'expense',
-                classConfidence: 0.95,
-                spans: [
-                  LocalSpan(
-                    entity: 'BALANCE',
-                    text: '500',
-                    confidence: 0.96,
-                    start: c.indexOf('500'),
-                    end: c.indexOf('500') + 3,
-                  ),
-                ],
-              ),
-      );
-      final accepted = await queue('CHK', content: content);
-      final rejected = await queue('CHK', content: unbuildable);
+    test(
+      'no-LLM mode counts nothing: no decline there spares an LLM call',
+      () async {
+        const unbuildable = 'balance 500 BDT';
+        final local = _FnLocal(
+          (c) => c == content
+              ? _localExpense(c)
+              : LocalPrediction(
+                  classLabel: 'expense',
+                  classConfidence: 0.95,
+                  spans: [
+                    LocalSpan(
+                      entity: 'BALANCE',
+                      text: '500',
+                      confidence: 0.96,
+                      start: c.indexOf('500'),
+                      end: c.indexOf('500') + 3,
+                    ),
+                  ],
+                ),
+        );
+        final accepted = await queue('CHK', content: content);
+        final rejected = await queue('CHK', content: unbuildable);
 
-      await statsService(local: local).process(); // no llm: hasLlm is false
+        await statsService(local: local).process(); // no llm: hasLlm is false
 
-      expect((await row(accepted))['status'], 'success');
-      expect((await row(rejected))['status'], 'failure');
-      expect(local.calls, 2);
-      expect((await row(accepted))['local_verdict'], isNull);
-      expect((await row(rejected))['local_verdict'], isNull);
-      expect(await tally(), isEmpty);
-      await db.close();
-    });
+        expect((await row(accepted))['status'], 'success');
+        expect((await row(rejected))['status'], 'failure');
+        expect(local.calls, 2);
+        expect((await row(accepted))['local_verdict'], isNull);
+        expect((await row(rejected))['local_verdict'], isNull);
+        expect(await tally(), isEmpty);
+        await db.close();
+      },
+    );
 
     test('BYOK mode counts nothing: its usage is never sent', () async {
       final id = await queue('CHK', content: content);
