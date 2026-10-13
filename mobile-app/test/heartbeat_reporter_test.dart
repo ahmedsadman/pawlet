@@ -28,6 +28,7 @@ void main() {
   late int now;
   late bool allowed;
   late bool idFails;
+  late int? installedAt;
 
   setUp(() async {
     db = await openTestDb();
@@ -37,6 +38,8 @@ void main() {
     now = start;
     allowed = true;
     idFails = false;
+    // Long enough ago that the first-upload delay is over.
+    installedAt = start - 7 * Duration.millisecondsPerDay;
   });
 
   tearDown(() async {
@@ -51,6 +54,7 @@ void main() {
       return installId;
     },
     isAllowed: () async => allowed,
+    installedAt: () async => installedAt,
     clock: () => now,
     client: MockClient((req) async {
       requests.add(req);
@@ -91,6 +95,65 @@ void main() {
     );
     expect(await repo.schedule.flushedAt(), start);
     expect(await repo.reportedVersion(), 28);
+  });
+
+  group('first upload after install', () {
+    const hour = Duration.millisecondsPerHour;
+
+    test('waits 6 hours, keeping the days for later', () async {
+      installedAt = start - 5 * hour;
+      await mark();
+      await reporter().maybeFlush();
+      expect(requests, isEmpty);
+
+      now = start + hour;
+      await mark(opened: false);
+      await reporter().maybeFlush();
+      expect(requests, hasLength(1));
+      expect((jsonDecode(requests.single.body) as Map)['days'], [
+        {
+          'day': '2026-10-13',
+          'appVersionCode': 28,
+          'opened': true,
+          'alive': true,
+        },
+      ]);
+    });
+
+    test('an unknown install time does not delay', () async {
+      installedAt = null;
+      await mark();
+      await reporter().maybeFlush();
+      expect(requests, hasLength(1));
+    });
+
+    test(
+      'an install time in the future (clock moved back) does not delay',
+      () async {
+        installedAt = start + hour;
+        await mark();
+        await reporter().maybeFlush();
+        expect(requests, hasLength(1));
+      },
+    );
+
+    test('a failing install-time read does not delay', () async {
+      final r = HeartbeatReporter(
+        apiBase: 'https://api.test',
+        repository: repo,
+        installId: () async => installId,
+        isAllowed: () async => true,
+        installedAt: () async => throw Exception('plugin'),
+        clock: () => now,
+        client: MockClient((req) async {
+          requests.add(req);
+          return http.Response('', 204);
+        }),
+      );
+      await mark();
+      await r.maybeFlush();
+      expect(requests, hasLength(1));
+    });
   });
 
   test('nothing to send means no request', () async {

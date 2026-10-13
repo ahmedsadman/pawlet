@@ -13,3 +13,16 @@ Future<int?> readAppVersionCode() async {
     return null;
   }
 }
+
+/// When this app was first installed on the device, in epoch ms
+/// (`PackageManager.firstInstallTime`; an update keeps it, a reinstall resets
+/// it). Null when the plugin fails or does not know.
+Future<int?> readInstallTime() async {
+  try {
+    return (await PackageInfo.fromPlatform())
+        .installTime
+        ?.millisecondsSinceEpoch;
+  } catch (_) {
+    return null;
+  }
+}
