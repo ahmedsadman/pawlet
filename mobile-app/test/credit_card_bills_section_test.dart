@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/data/finance_repository.dart';
+import 'package:pawlet/data/settings_repository.dart';
 import 'package:pawlet/models/finance/bank.dart';
 import 'package:pawlet/models/finance/bill.dart';
 import 'package:pawlet/models/finance/bills_page.dart';
 import 'package:pawlet/models/finance/bills_query.dart';
+import 'package:pawlet/models/finance/sms_message.dart';
 import 'package:pawlet/state/finance_providers.dart';
+import 'package:pawlet/state/providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/bill_history_page.dart';
 import 'package:pawlet/ui/widgets/finance/credit_card_bills_section.dart';
 import 'package:pawlet/utils/date_range.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/balance_test_overrides.dart';
 
@@ -47,10 +52,15 @@ Future<void> _pump(
   required List<Bank> banks,
   List<Bill> bills = const [],
   List<BillsQuery>? queries,
+  int older = 0,
+  Map<String, Object> prefsSeed = const {'bill_actions_hint_seen': true},
 }) async {
+  SharedPreferences.setMockInitialValues(prefsSeed);
+  final prefs = await SharedPreferences.getInstance();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        settingsRepositoryProvider.overrideWithValue(SettingsRepository(prefs)),
         overrideBalanceHidden(false),
         banksProvider.overrideWith(
           (ref) async => CachedResult(data: banks, stale: false),
@@ -70,7 +80,18 @@ Future<void> _pump(
             stale: false,
           );
         }),
-        olderBillCountProvider.overrideWith((ref, key) async => 0),
+        olderBillCountProvider.overrideWith((ref, key) async => older),
+        billTransactionsProvider.overrideWith((ref, billId) async => const []),
+        messageProvider.overrideWith(
+          (ref, id) async => CachedResult(
+            data: ApiMessage(
+              id: id,
+              sender: 'VISA-BANK',
+              content: 'SMS body for $id',
+              receivedAt: DateTime(2025, 1, 1),
+            ),
+          ),
+        ),
       ],
       child: MaterialApp(
         theme: AppTheme.theme,
@@ -132,5 +153,75 @@ void main() {
     expect(queries.last.since, billsWindowStart(now));
     expect(queries.last.pageSize, 100);
     expect(queries.last.bankId, 1);
+  });
+
+  testWidgets('offers View more only when older bills exist', (tester) async {
+    await _pump(
+      tester,
+      banks: [_credit('Visa')],
+      bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
+    );
+    expect(find.text('View more'), findsNothing);
+  });
+
+  testWidgets('View more opens the card history', (tester) async {
+    await _pump(
+      tester,
+      banks: [_credit('Visa')],
+      bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
+      older: 4,
+    );
+
+    await tester.tap(find.text('View more'));
+    await tester.pumpAndSettle();
+    expect(find.byType(BillHistoryPage), findsOneWidget);
+  });
+
+  testWidgets('a card with only older bills says so and offers View more', (
+    tester,
+  ) async {
+    await _pump(tester, banks: [_credit('Visa')], older: 2);
+    expect(find.text('No bills in the last 12 months.'), findsOneWidget);
+    expect(find.text('View more'), findsOneWidget);
+  });
+
+  testWidgets('long-press on a bill opens its sheet', (tester) async {
+    await _pump(
+      tester,
+      banks: [_credit('Visa')],
+      bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
+    );
+    await tester.longPress(find.text('300.00 BDT'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mark paid'), findsOneWidget);
+    expect(find.text('SMS body for 1'), findsOneWidget);
+  });
+
+  testWidgets('shows the one-time hint until dismissed', (tester) async {
+    await _pump(
+      tester,
+      banks: [_credit('Visa')],
+      bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
+      prefsSeed: const {},
+    );
+    expect(find.textContaining('long-press a bill'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pump();
+    expect(find.textContaining('long-press a bill'), findsNothing);
+  });
+
+  testWidgets('a long-press retires the hint', (tester) async {
+    await _pump(
+      tester,
+      banks: [_credit('Visa')],
+      bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
+      prefsSeed: const {},
+    );
+    await tester.longPress(find.text('300.00 BDT'));
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.text('Mark paid'))).pop();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('long-press a bill'), findsNothing);
   });
 }
