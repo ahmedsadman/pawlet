@@ -92,6 +92,21 @@ void main() {
     expect(find.text('Are these one internal transfer?'), findsOneWidget);
   });
 
+  testWidgets('centres the card vertically for easier swiping', (tester) async {
+    await _pump(
+      tester,
+      FakePairingStore([transferSuggestion(1, 2), cardSuggestion(3, 4)]),
+    );
+
+    final bodyTop = tester.getBottomLeft(find.byType(AppBar)).dy;
+    final bodyBottom = tester.getSize(find.byType(Scaffold).last).height;
+    final above = tester.getTopLeft(find.byType(PairingCard)).dy - bodyTop;
+    final hint = find.text('Swipe right for yes, left for no');
+    final below = bodyBottom - tester.getBottomLeft(hint).dy;
+    expect(above, greaterThan(16));
+    expect((above - below).abs(), lessThan(2));
+  });
+
   testWidgets('Yes accepts, advances and offers Undo', (tester) async {
     final store = await _pump(
       tester,

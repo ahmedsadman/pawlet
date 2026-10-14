@@ -208,46 +208,63 @@ class _PairingReviewPageState extends ConsumerState<PairingReviewPage> {
         ),
         null => const Center(child: CircularProgressIndicator()),
         [] => const _AllCaughtUp(),
-        [final top, ...] => SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Only the incoming card animates. The outgoing one is either
-              // swiped away by its Dismissible or removed at once; keeping it
-              // around for an exit transition would leave a dismissed
-              // Dismissible in the tree, which Flutter rejects.
-              TweenAnimationBuilder<double>(
-                key: ValueKey('enter-${top.key}'),
-                tween: Tween(begin: 0, end: 1),
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOutCubic,
-                builder: (context, t, child) => Opacity(
-                  opacity: t,
-                  child: Transform.scale(scale: 0.96 + 0.04 * t, child: child),
-                ),
-                child: Dismissible(
-                  key: ValueKey(top.key),
-                  background: const _SwipeHint(yes: true),
-                  secondaryBackground: const _SwipeHint(yes: false),
-                  onDismissed: (direction) =>
-                      _answer(top, direction == DismissDirection.startToEnd),
-                  child: PairingCard(
-                    key: ValueKey('card-${top.key}'),
-                    suggestion: top,
-                    onAnswer: (yes) => _answer(top, yes),
+        // Centred so the card sits where a thumb can swipe it; still scrolls
+        // when expanded messages make it taller than the screen.
+        [final top, ...] => LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: constraints.maxHeight - 32,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Only the incoming card animates. The outgoing one is either
+                  // swiped away by its Dismissible or removed at once; keeping it
+                  // around for an exit transition would leave a dismissed
+                  // Dismissible in the tree, which Flutter rejects.
+                  TweenAnimationBuilder<double>(
+                    key: ValueKey('enter-${top.key}'),
+                    tween: Tween(begin: 0, end: 1),
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOutCubic,
+                    builder: (context, t, child) => Opacity(
+                      opacity: t,
+                      child: Transform.scale(
+                        scale: 0.96 + 0.04 * t,
+                        child: child,
+                      ),
+                    ),
+                    child: Dismissible(
+                      key: ValueKey(top.key),
+                      background: const _SwipeHint(yes: true),
+                      secondaryBackground: const _SwipeHint(yes: false),
+                      onDismissed: (direction) => _answer(
+                        top,
+                        direction == DismissDirection.startToEnd,
+                      ),
+                      child: PairingCard(
+                        key: ValueKey('card-${top.key}'),
+                        suggestion: top,
+                        onAnswer: (yes) => _answer(top, yes),
+                      ),
+                    ),
                   ),
-                ),
+                  if (deck.length > 1) const _DeckEdge(inset: 12, alpha: 0.6),
+                  if (deck.length > 2) const _DeckEdge(inset: 24, alpha: 0.3),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Swipe right for yes, left for no',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: f.overlay0,
+                    ),
+                  ),
+                ],
               ),
-              if (deck.length > 1) const _DeckEdge(inset: 12, alpha: 0.6),
-              if (deck.length > 2) const _DeckEdge(inset: 24, alpha: 0.3),
-              const SizedBox(height: 16),
-              Text(
-                'Swipe right for yes, left for no',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(color: f.overlay0),
-              ),
-            ],
+            ),
           ),
         ),
       },
