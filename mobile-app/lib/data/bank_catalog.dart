@@ -5,13 +5,24 @@
 ///
 /// Matchers are stored lowercase. To support more banks, add entries here.
 class BankCatalogEntry {
-  const BankCatalogEntry({required this.label, required this.matchers});
+  const BankCatalogEntry({
+    required this.label,
+    required this.matchers,
+    this.cardLastFourOnly = false,
+  });
 
   /// User-facing bank name (also stored as the bank's name).
   final String label;
 
   /// Lowercase substrings; a sender matches if it contains any of them.
   final List<String> matchers;
+
+  /// Whether this bank's card SMS may identify the card by a masked last four
+  /// alone (e.g. "Card#***0000"). This *adds* a way to match: the bank's cards
+  /// still match on both four-digit groups too. Only honoured when the SMS
+  /// sender contains one of [matchers], since four digits alone are weak
+  /// evidence.
+  final bool cardLastFourOnly;
 }
 
 const List<BankCatalogEntry> kBankCatalog = [
@@ -25,7 +36,11 @@ const List<BankCatalogEntry> kBankCatalog = [
   ),
   BankCatalogEntry(label: 'EBL', matchers: ['ebl', 'eastern bank limited']),
   BankCatalogEntry(label: 'StanChart (SCB)', matchers: ['scb', 'stanchart']),
-  BankCatalogEntry(label: 'BRAC Bank', matchers: ['brac', 'brac-bank']),
+  BankCatalogEntry(
+    label: 'BRAC Bank',
+    matchers: ['brac', 'brac-bank'],
+    cardLastFourOnly: true,
+  ),
 ];
 
 /// Looks up a catalog entry by its exact label, or null if unknown.

@@ -68,4 +68,12 @@ void main() {
     // ambiguity.
     expect(singleCatalogMatch('EBL (Eastern Bank Limited)')?.label, 'EBL');
   });
+
+  test('only BRAC Bank opts into suffix-only card matching', () {
+    expect(bankCatalogByLabel('BRAC Bank')!.cardLastFourOnly, isTrue);
+    for (final entry in kBankCatalog) {
+      if (entry.label == 'BRAC Bank') continue;
+      expect(entry.cardLastFourOnly, isFalse, reason: entry.label);
+    }
+  });
 }
