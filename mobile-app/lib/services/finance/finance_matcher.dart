@@ -14,6 +14,8 @@ import '../../data/database.dart';
 /// - Bill-payment linking: a credit-card transfer is linked to the matching
 ///   Bill on that card (±1.00, ±45 days, bill-before-payment preferred),
 ///   populating bill_id on both paired transactions + paid_at on the bill.
+/// - Bills the user marked paid or unpaid (`status_overridden = 1`) are never
+///   linked, from either direction.
 class FinanceMatcher {
   FinanceMatcher(this._db, {int Function()? nowMs})
     : _nowMs = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch);
@@ -73,7 +75,8 @@ class FinanceMatcher {
     final rows = await _db.rawQuery(
       'SELECT b.id AS id FROM ${AppDatabase.billsTable} b '
       'JOIN ${AppDatabase.smsTable} s ON s.id = b.message_id '
-      'WHERE b.paid_at IS NULL AND s.timestamp >= ?',
+      'WHERE b.paid_at IS NULL AND b.status_overridden = 0 '
+      'AND s.timestamp >= ?',
       [cutoff],
     );
     return rows.map((r) => r['id'] as int).toList();
@@ -154,7 +157,7 @@ Future<int?> findAndLinkBillForPayment(
     'SELECT b.id AS id, b.normalized_total_due AS total, '
     's.timestamp AS received_at FROM ${AppDatabase.billsTable} b '
     'JOIN ${AppDatabase.smsTable} s ON s.id = b.message_id '
-    'WHERE b.bank_id = ? AND b.normalized_currency = ? '
+    'WHERE b.bank_id = ? AND b.status_overridden = 0 AND b.normalized_currency = ? '
     'AND s.timestamp >= ? AND s.timestamp <= ?',
     [tx.bankId, tx.currency, start, end],
   );
@@ -197,7 +200,7 @@ Future<int?> findAndLinkBillForPayment(
 /// Links Bill [billId] to the transfer that paid it. Returns the payment tx id.
 Future<int?> findAndLinkPaymentForBill(DatabaseExecutor db, int billId) async {
   final bill = await _loadBill(db, billId);
-  if (bill == null || bill.bankId == null) return null;
+  if (bill == null || bill.bankId == null || bill.overridden) return null;
 
   final total = Decimal.parse(bill.total);
   final start = bill.receivedAt - FinanceMatcher.billWindow.inMilliseconds;
@@ -331,6 +334,7 @@ class _Bill {
     required this.total,
     required this.currency,
     required this.receivedAt,
+    required this.overridden,
   });
 
   final int id;
@@ -338,12 +342,14 @@ class _Bill {
   final String total;
   final String currency;
   final int receivedAt;
+  final bool overridden;
 }
 
 Future<_Bill?> _loadBill(DatabaseExecutor db, int id) async {
   final rows = await db.rawQuery(
     'SELECT b.id AS id, b.bank_id AS bank_id, '
     'b.normalized_total_due AS total, b.normalized_currency AS currency, '
+    'b.status_overridden AS overridden, '
     's.timestamp AS received_at FROM ${AppDatabase.billsTable} b '
     'JOIN ${AppDatabase.smsTable} s ON s.id = b.message_id WHERE b.id = ?',
     [id],
@@ -356,5 +362,6 @@ Future<_Bill?> _loadBill(DatabaseExecutor db, int id) async {
     total: r['total'] as String,
     currency: r['currency'] as String,
     receivedAt: r['received_at'] as int,
+    overridden: r['overridden'] == 1,
   );
 }

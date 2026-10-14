@@ -557,4 +557,70 @@ void main() {
       await db.close();
     },
   );
+
+  group('user-overridden bills', () {
+    Future<(Database, int, int)> overriddenBillAndPayment({
+      DateTime? paidAt,
+    }) async {
+      final db = await openTestDb();
+      final ebl = await insertBank(
+        db,
+        name: 'EBL',
+        accountType: 'credit',
+        cardDigits: '4238|3241',
+      );
+      final billMsg = await insertSms(
+        db,
+        sender: 'EBL',
+        ts: DateTime(2026, 7, 5).millisecondsSinceEpoch,
+      );
+      final bill = await insertBill(
+        db,
+        messageId: billMsg,
+        bankId: ebl,
+        totalDue: '8020',
+        paidAt: paidAt,
+        statusOverridden: true,
+      );
+      final transfer = await tx(
+        db,
+        bankId: ebl,
+        amount: '8020',
+        type: 'transfer',
+        date: DateTime(2026, 7, 8),
+      );
+      return (db, bill, transfer);
+    }
+
+    test('payment-side linking skips an overridden bill', () async {
+      final (db, _, transfer) = await overriddenBillAndPayment();
+      expect(await findAndLinkBillForPayment(db, transfer), isNull);
+      expect((await txRow(db, transfer))['bill_id'], isNull);
+      await db.close();
+    });
+
+    test('bill-side linking skips an overridden bill', () async {
+      final (db, bill, transfer) = await overriddenBillAndPayment();
+      expect(await findAndLinkPaymentForBill(db, bill), isNull);
+      expect((await txRow(db, transfer))['bill_id'], isNull);
+      await db.close();
+    });
+
+    test('runPending leaves a bill the user marked unpaid unpaid', () async {
+      final (db, bill, transfer) = await overriddenBillAndPayment();
+      await FinanceMatcher(
+        db,
+        nowMs: () => DateTime(2026, 7, 10).millisecondsSinceEpoch,
+      ).runPending();
+
+      expect((await txRow(db, transfer))['bill_id'], isNull);
+      final row = (await db.query(
+        'bills',
+        where: 'id = ?',
+        whereArgs: [bill],
+      )).single;
+      expect(row['paid_at'], isNull);
+      await db.close();
+    });
+  });
 }
