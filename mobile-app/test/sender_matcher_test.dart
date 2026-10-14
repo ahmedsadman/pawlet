@@ -415,5 +415,35 @@ void main() {
       final b = _bank('Bank B', matchers: const ['shared']);
       expect(resolveTransactionBank('SHARED', 'debit 50', [a, b]), isNull);
     });
+
+    test('a sender tie falls through to a loosely-masked card', () {
+      final a = _bank('Bank A', matchers: const ['shared']);
+      final b = _bank('Bank B', matchers: const ['shared']);
+      final card = _bank(
+        'Loose Card',
+        accountType: 'credit',
+        cardDigits: '0009|4111',
+      );
+      expect(
+        resolveTransactionBank('SHARED', 'card 000***111 used', [a, b, card]),
+        card,
+      );
+    });
+
+    test('two exact card matches resolve to the first in list order', () {
+      final twin = _bank(
+        'EBL Twin',
+        accountType: 'credit',
+        cardDigits: '4238|3241',
+      );
+      expect(
+        resolveTransactionBank('RANDOM', 'card 4238****3241 used', [ebl, twin]),
+        ebl,
+      );
+      expect(
+        resolveTransactionBank('RANDOM', 'card 4238****3241 used', [twin, ebl]),
+        twin,
+      );
+    });
   });
 }
