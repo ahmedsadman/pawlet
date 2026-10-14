@@ -93,6 +93,40 @@ bool contentLooselyMatchesCardDigits(String content, String? cardDigits) {
   return false;
 }
 
+final _maskOrSeparator = RegExp(r'[Xx*\s\-]');
+final _digit = RegExp(r'\d');
+
+/// Fewest mask characters that make a bare four-digit group read as a card.
+const _minLastFourMasks = 2;
+
+/// True when [content] shows a suffix-only masked card ending in
+/// [cardDigits]'s last group — mask characters, then the four digits, with no
+/// visible first group — e.g. "Card#***0000" or "XXXX-XXXX-XXXX-0000".
+///
+/// Four digits are weak evidence, so this is never consulted alone: the
+/// [BankMatchTier.lastFour] tier also requires a catalog-flagged bank and that
+/// bank's sender. A visible first group ("5123****0000") is rejected here —
+/// that form is for the exact and loose matchers to judge, and a mismatching
+/// head means a different card.
+bool contentMatchesMaskedLastFour(String content, String? cardDigits) {
+  final digits = _parseCardDigits(cardDigits);
+  if (digits == null) return false;
+  for (final run in _digitRun.allMatches(content)) {
+    // Runs are maximal, so "***10000" is one five-digit run, never "0000".
+    if (run[0] != digits.last4) continue;
+    var start = run.start;
+    var masks = 0;
+    while (start > 0 && _maskOrSeparator.hasMatch(content[start - 1])) {
+      start--;
+      if (_maskChar.hasMatch(content[start])) masks++;
+    }
+    if (masks < _minLastFourMasks) continue;
+    if (start > 0 && _digit.hasMatch(content[start - 1])) continue;
+    return true;
+  }
+  return false;
+}
+
 /// The single bank whose matchers match [sender], or null when zero or more
 /// than one match. Ambiguity (e.g. two accounts sharing matchers) resolves to
 /// null so the caller leaves the row unlinked rather than guessing.
