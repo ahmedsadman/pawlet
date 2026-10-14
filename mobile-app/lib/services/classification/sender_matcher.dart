@@ -107,7 +107,8 @@ const _minLastFourMasks = 2;
 /// [BankMatchTier.lastFour] tier also requires a catalog-flagged bank and that
 /// bank's sender. A visible first group ("5123****0000") is rejected here —
 /// that form is for the exact and loose matchers to judge, and a mismatching
-/// head means a different card.
+/// head means a different card. Any digit before the mask counts as one, even
+/// across whitespace, so "Tk 500 ***0000" does not match.
 bool contentMatchesMaskedLastFour(String content, String? cardDigits) {
   final digits = _parseCardDigits(cardDigits);
   if (digits == null) return false;
