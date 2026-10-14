@@ -8,7 +8,8 @@ import '../../../utils/currency_format.dart';
 import '../../../utils/time_format.dart';
 import 'finance_badge.dart';
 
-/// A single credit-card bill: statement period, sender, paid/due status, total. Long-press opens its details.
+/// A single credit-card bill: statement period, sender, paid/due status,
+/// total. Long-press opens its details.
 class BillRow extends ConsumerWidget {
   const BillRow({
     required this.bill,
