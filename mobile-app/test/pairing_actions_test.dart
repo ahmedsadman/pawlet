@@ -281,6 +281,8 @@ void main() {
       final (out, card, bill) = await cardPairWithBill();
       final d = await actions.accept(await only());
       final billPaidAt = (await db.query('bills')).single['paid_at'];
+      expect(d!.linkedBillId, bill);
+      expect(billPaidAt, isNotNull);
       await db.update(
         'bills',
         {'status_overridden': 1},
