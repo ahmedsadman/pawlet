@@ -54,7 +54,7 @@ Accepting a suggestion pairs the two legs:
 
 If either leg changed since the suggestion was built (e.g. a background pass auto-paired it), the accept writes nothing and returns null.
 
-A **snackbar with an Undo button** appears after every saved answer. Undo reverses an accept only while the two legs still point at each other. Undoing a card payment always clears the bank leg's bill, but clears the card leg's bill and the bill's `paid_at` only when this accept made that link (not when the card was already bill-linked beforehand).
+A **snackbar with an Undo button** appears after every saved answer. Undo reverses an accept only while the two legs still point at each other. Undoing a card payment always clears the bank leg's bill, but clears the card leg's bill and the bill's `paid_at` only when this accept made that link (not when the card was already bill-linked beforehand). A bill whose paid status the user set by hand keeps its `paid_at`.
 
 ## What happens on reject
 
