@@ -47,4 +47,17 @@ void main() {
     expect(a, b);
     expect(a.hashCode, b.hashCode);
   });
+
+  group('billsWindowStart', () {
+    test('spans the current month plus the previous 11', () {
+      expect(
+        billsWindowStart(DateTime(2026, 10, 15, 9, 30)),
+        DateTime(2025, 11, 1),
+      );
+    });
+
+    test('crosses the year boundary from January', () {
+      expect(billsWindowStart(DateTime(2026, 1, 1)), DateTime(2025, 2, 1));
+    });
+  });
 }

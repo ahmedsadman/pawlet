@@ -68,3 +68,7 @@ DateRange resolveDateRange(DateRangePreset preset, {DateTime? now}) {
       return DateRange(from: DateTime(n.year), to: _endOfDay(n));
   }
 }
+
+/// Start of the Finance page's bills window: the 1st of the month 11 months
+/// before [now], so the window spans the current month plus the previous 11.
+DateTime billsWindowStart(DateTime now) => DateTime(now.year, now.month - 11);

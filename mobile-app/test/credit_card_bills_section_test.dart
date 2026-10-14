@@ -5,9 +5,11 @@ import 'package:pawlet/data/finance_repository.dart';
 import 'package:pawlet/models/finance/bank.dart';
 import 'package:pawlet/models/finance/bill.dart';
 import 'package:pawlet/models/finance/bills_page.dart';
+import 'package:pawlet/models/finance/bills_query.dart';
 import 'package:pawlet/state/finance_providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
 import 'package:pawlet/ui/widgets/finance/credit_card_bills_section.dart';
+import 'package:pawlet/utils/date_range.dart';
 
 import 'support/balance_test_overrides.dart';
 
@@ -44,6 +46,7 @@ Future<void> _pump(
   WidgetTester tester, {
   required List<Bank> banks,
   List<Bill> bills = const [],
+  List<BillsQuery>? queries,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -55,17 +58,19 @@ Future<void> _pump(
         currencyProvider.overrideWith(
           (ref) async => const CachedResult(data: 'BDT', stale: false),
         ),
-        billsProvider.overrideWith(
-          (ref, bankId) async => CachedResult(
+        billsProvider.overrideWith((ref, query) async {
+          queries?.add(query);
+          return CachedResult(
             data: BillsPage(
               bills: bills,
               total: bills.length,
-              page: 1,
-              pageSize: 20,
+              page: query.page,
+              pageSize: query.pageSize,
             ),
             stale: false,
-          ),
-        ),
+          );
+        }),
+        olderBillCountProvider.overrideWith((ref, key) async => 0),
       ],
       child: MaterialApp(
         theme: AppTheme.theme,
@@ -111,5 +116,19 @@ void main() {
 
     expect(find.text('200.00 BDT'), findsOneWidget);
     expect(find.text('100.00 BDT'), findsOneWidget);
+  });
+
+  testWidgets('asks for the last 12 months of bills', (tester) async {
+    final queries = <BillsQuery>[];
+    await _pump(
+      tester,
+      banks: [_credit('Visa')],
+      bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
+      queries: queries,
+    );
+
+    expect(queries, isNotEmpty);
+    expect(queries.last.since, billsWindowStart(DateTime.now()));
+    expect(queries.last.bankId, 1);
   });
 }
