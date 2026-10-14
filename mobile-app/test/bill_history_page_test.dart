@@ -56,7 +56,10 @@ Future<({List<BillsQuery> queries, SharedPreferences prefs})> _pump(
           queries.add(query);
           final pageBills = bills.isEmpty
               ? [_bill(query.page)]
-              : bills.skip((query.page - 1) * query.pageSize).take(query.pageSize).toList();
+              : bills
+                    .skip((query.page - 1) * query.pageSize)
+                    .take(query.pageSize)
+                    .toList();
           return CachedResult(
             data: BillsPage(
               bills: pageBills,
@@ -121,7 +124,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          settingsRepositoryProvider.overrideWithValue(SettingsRepository(prefs)),
+          settingsRepositoryProvider.overrideWithValue(
+            SettingsRepository(prefs),
+          ),
           overrideBalanceHidden(false),
           currencyProvider.overrideWith(
             (ref) async => const CachedResult(data: 'BDT'),
@@ -129,15 +134,12 @@ void main() {
           billsProvider.overrideWith((ref, query) async {
             queries.add(query);
             return CachedResult(
-              data: BillsPage(
-                bills: const [],
-                total: 0,
-                page: 1,
-                pageSize: 10,
-              ),
+              data: BillsPage(bills: const [], total: 0, page: 1, pageSize: 10),
             );
           }),
-          billTransactionsProvider.overrideWith((ref, billId) async => const []),
+          billTransactionsProvider.overrideWith(
+            (ref, billId) async => const [],
+          ),
           messageProvider.overrideWith(
             (ref, id) async => CachedResult(
               data: ApiMessage(
