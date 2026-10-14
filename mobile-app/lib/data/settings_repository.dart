@@ -18,6 +18,7 @@ class SettingsRepository {
   // users who dismissed the old one see the new text once. The old
   // `history_hint_seen` key is no longer read.
   static const _kHistoryHintSeen = 'history_hint_seen_v2';
+  static const _kBillActionsHintSeen = 'bill_actions_hint_seen';
   static const _kBulkImportOffered = 'bulk_import_offered';
   static const _kInstalledFromPlay = 'installed_from_play';
   static const _kAttestationIneligible = 'attestation_ineligible';
@@ -68,6 +69,12 @@ class SettingsRepository {
   bool get historyHintSeen => _prefs.getBool(_kHistoryHintSeen) ?? false;
   Future<void> setHistoryHintSeen(bool value) =>
       _prefs.setBool(_kHistoryHintSeen, value);
+
+  /// Whether the user has seen the one-time "long-press a bill" hint.
+  bool get billActionsHintSeen =>
+      _prefs.getBool(_kBillActionsHintSeen) ?? false;
+  Future<void> setBillActionsHintSeen(bool value) =>
+      _prefs.setBool(_kBillActionsHintSeen, value);
 
   /// Whether the one-time "import your existing messages" offer has been shown.
   ///
@@ -169,6 +176,7 @@ class SettingsRepository {
     _kHideBalance,
     _kTxTypeHintSeen,
     _kHistoryHintSeen,
+    _kBillActionsHintSeen,
   ];
 
   /// Snapshot of user settings for a backup (only keys that are actually set).
