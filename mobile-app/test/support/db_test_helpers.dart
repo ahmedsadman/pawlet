@@ -87,6 +87,7 @@ Future<int> insertBill(
   String currency = 'BDT',
   DateTime? statementPeriod,
   DateTime? paidAt,
+  bool statusOverridden = false,
   int createdAt = 0,
 }) {
   return db.insert(AppDatabase.billsTable, {
@@ -96,6 +97,7 @@ Future<int> insertBill(
     'normalized_currency': currency,
     'statement_period': statementPeriod?.millisecondsSinceEpoch,
     'paid_at': paidAt?.millisecondsSinceEpoch,
+    'status_overridden': statusOverridden ? 1 : 0,
     'created_at': createdAt,
   });
 }

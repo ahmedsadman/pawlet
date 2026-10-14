@@ -80,7 +80,7 @@ void main() {
     // version pair it has no branch for, so a bump that forgets its branch
     // ships a database the app queries with the wrong schema and no failing
     // test. Update this only together with the branch and its parity test.
-    expect(AppDatabase.version, 9);
+    expect(AppDatabase.version, 10);
   });
 
   test('schema creates all tables', () async {
@@ -397,6 +397,41 @@ void main() {
     await db.execute(
       'CREATE INDEX idx_bill_bank_period ON bills (bank_id, statement_period)',
     );
+    return db;
+  }
+
+  // v8 is v5 plus needs_llm, local_verdict, model_stats and heartbeat_days.
+  // Built by hand rather than through onUpgrade, which now runs the v9 step
+  // as well.
+  Future<Database> openV8() async {
+    final db = await openV5();
+    await db.execute(
+      'ALTER TABLE sms_records '
+      'ADD COLUMN needs_llm INTEGER NOT NULL DEFAULT 0',
+    );
+    await db.execute('ALTER TABLE sms_records ADD COLUMN local_verdict TEXT');
+    await db.execute('''
+      CREATE TABLE model_stats (
+        day TEXT NOT NULL,
+        app_version_code INTEGER NOT NULL,
+        accepted INTEGER NOT NULL DEFAULT 0,
+        declined INTEGER NOT NULL DEFAULT 0,
+        unavailable INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        reported_at INTEGER,
+        PRIMARY KEY (day, app_version_code)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE heartbeat_days (
+        day TEXT PRIMARY KEY,
+        app_version_code INTEGER NOT NULL,
+        opened INTEGER NOT NULL DEFAULT 0,
+        alive INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        reported_at INTEGER
+      )
+    ''');
     return db;
   }
 
@@ -730,41 +765,6 @@ void main() {
   });
 
   group('pairing rejections migration (v8 -> v9)', () {
-    // v8 is v5 plus needs_llm, local_verdict, model_stats and heartbeat_days.
-    // Built by hand rather than through onUpgrade, which now runs the v9 step
-    // as well.
-    Future<Database> openV8() async {
-      final db = await openV5();
-      await db.execute(
-        'ALTER TABLE sms_records '
-        'ADD COLUMN needs_llm INTEGER NOT NULL DEFAULT 0',
-      );
-      await db.execute('ALTER TABLE sms_records ADD COLUMN local_verdict TEXT');
-      await db.execute('''
-        CREATE TABLE model_stats (
-          day TEXT NOT NULL,
-          app_version_code INTEGER NOT NULL,
-          accepted INTEGER NOT NULL DEFAULT 0,
-          declined INTEGER NOT NULL DEFAULT 0,
-          unavailable INTEGER NOT NULL DEFAULT 0,
-          updated_at INTEGER NOT NULL,
-          reported_at INTEGER,
-          PRIMARY KEY (day, app_version_code)
-        )
-      ''');
-      await db.execute('''
-        CREATE TABLE heartbeat_days (
-          day TEXT PRIMARY KEY,
-          app_version_code INTEGER NOT NULL,
-          opened INTEGER NOT NULL DEFAULT 0,
-          alive INTEGER NOT NULL DEFAULT 0,
-          updated_at INTEGER NOT NULL,
-          reported_at INTEGER
-        )
-      ''');
-      return db;
-    }
-
     test('preserves messages, accounts and transactions', () async {
       final db = await openV8();
       await db.insert('sms_records', {
@@ -856,6 +856,101 @@ void main() {
         expect((await db.query('banks')).single['name'], 'My Card');
         expect(await _tableNames(db), contains('heartbeat_days'));
         expect(await _tableNames(db), contains('pairing_rejections'));
+        await db.close();
+      },
+    );
+  });
+
+  group('bill status override migration (v9 -> v10)', () {
+    // v9 is v8 plus pairing_rejections. Built by hand rather than through
+    // onUpgrade, which now runs the v10 step as well.
+    Future<Database> openV9() async {
+      final db = await openV8();
+      await db.execute('''
+        CREATE TABLE pairing_rejections (
+          tx_low INTEGER NOT NULL,
+          tx_high INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL,
+          PRIMARY KEY (tx_low, tx_high)
+        )
+      ''');
+      await db.execute('''
+        CREATE INDEX idx_pairing_rejections_expires
+        ON pairing_rejections (expires_at)
+      ''');
+      return db;
+    }
+
+    test('preserves bills, which start matcher-managed', () async {
+      final db = await openV9();
+      await db.insert('sms_records', {
+        'sender': 'EBL',
+        'content': 'bill 8020',
+        'timestamp': 1,
+        'status': 'success',
+        'updated_at': 1,
+      });
+      await db.insert('bills', {
+        'message_id': 1,
+        'normalized_total_due': '8020',
+        'normalized_currency': 'BDT',
+        'paid_at': 5,
+        'created_at': 1,
+      });
+
+      await AppDatabase.onUpgrade(db, 9, 10);
+
+      final bill = (await db.query('bills')).single;
+      expect(bill['paid_at'], 5);
+      expect(bill['status_overridden'], 0);
+      await db.close();
+    });
+
+    test('lands on the same shape as a fresh v10 create', () async {
+      final migrated = await openV9();
+      await AppDatabase.onUpgrade(migrated, 9, 10);
+      final fresh = await openTestDb();
+
+      for (final table in const [
+        'sms_records',
+        'banks',
+        'transactions',
+        'bills',
+        'app_meta',
+        'model_stats',
+        'heartbeat_days',
+        'pairing_rejections',
+      ]) {
+        expect(
+          await _columnSpecs(migrated, table),
+          await _columnSpecs(fresh, table),
+          reason: 'columns of $table drifted from a fresh create',
+        );
+        expect(
+          await _indexDdl(migrated, table),
+          await _indexDdl(fresh, table),
+          reason: 'indexes of $table drifted from a fresh create',
+        );
+      }
+      await migrated.close();
+      await fresh.close();
+    });
+
+    test(
+      'a version-skipping upgrade from v5 to v10 still preserves data',
+      () async {
+        final db = await openV5();
+        await db.insert('banks', {
+          'name': 'My Card',
+          'account_type': 'credit',
+          'card_digits': '4238|3241',
+          'created_at': 1,
+        });
+
+        await AppDatabase.onUpgrade(db, 5, 10);
+
+        expect((await db.query('banks')).single['name'], 'My Card');
+        expect(await _columnNames(db, 'bills'), contains('status_overridden'));
         await db.close();
       },
     );

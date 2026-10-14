@@ -198,4 +198,55 @@ void main() {
       throwsA(isA<BackupFormatException>()),
     );
   });
+
+  test('a backup from before status_overridden restores it as 0', () async {
+    final src = await openTestDb();
+    final msgId = await insertSms(src, sender: 'EBL', ts: 100);
+    await insertBill(src, messageId: msgId, totalDue: '5.00');
+    final settingsRepo = await settings();
+    final root =
+        jsonDecode(
+              await BackupService(db: src, settings: settingsRepo).exportJson(),
+            )
+            as Map<String, Object?>;
+    // Simulate a pre-v10 export: drop the column from every bill row.
+    final bills = ((root['database'] as Map)['bills'] as List)
+        .cast<Map<String, Object?>>();
+    for (final row in bills) {
+      row.remove('status_overridden');
+    }
+
+    final dst = await openTestDb();
+    await BackupService(
+      db: dst,
+      settings: settingsRepo,
+    ).importJson(jsonEncode(root));
+
+    expect((await dst.query('bills')).single['status_overridden'], 0);
+    await src.close();
+    await dst.close();
+  });
+
+  test('round-trips a user-overridden bill', () async {
+    final src = await openTestDb();
+    final msgId = await insertSms(src, sender: 'EBL', ts: 100);
+    await insertBill(
+      src,
+      messageId: msgId,
+      totalDue: '5.00',
+      statusOverridden: true,
+    );
+    final settingsRepo = await settings();
+    final json = await BackupService(
+      db: src,
+      settings: settingsRepo,
+    ).exportJson();
+
+    final dst = await openTestDb();
+    await BackupService(db: dst, settings: settingsRepo).importJson(json);
+
+    expect((await dst.query('bills')).single['status_overridden'], 1);
+    await src.close();
+    await dst.close();
+  });
 }
