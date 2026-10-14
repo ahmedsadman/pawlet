@@ -42,8 +42,18 @@ void main() {
       expect(parseStatementPeriod("December'27")!.month, 12);
       // Curly apostrophe, in case a sender or the keyboard emits one.
       expect(parseStatementPeriod('Jun’27')!.month, 6);
-      // A bare day number must not be read as a year.
-      expect(parseStatementPeriod('Sep 26'), isNull);
+    });
+
+    test('bare MON YY when it is the whole span (BRAC Bank bills)', () {
+      final p = parseStatementPeriod('Sep 26');
+      expect(p!.month, 9);
+      expect(p.year, 2026);
+      expect(parseStatementPeriod('JAN 25')!.year, 2025);
+      expect(parseStatementPeriod('December 27')!.month, 12);
+      // Embedded in a longer phrase, "Sep 26" is a day, not a period.
+      expect(parseStatementPeriod('due Sep 26'), isNull);
+      expect(parseStatementPeriod('Sep 26, 2026'), isNull);
+      expect(parseStatementPeriod('Foo 26'), isNull);
     });
 
     test('full month names', () {

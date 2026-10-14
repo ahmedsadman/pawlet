@@ -190,7 +190,8 @@ all (§5):
 
      A bill's **statement period is optional**: the month/year is parsed from the
      extracted span by `local_parsers.dart` (3-letter and full month names with a
-     4-digit year, the apostrophe form `Sep'26`, and numeric forms like `07-2026`
+     4-digit year, the 2-digit-year forms `Sep'26` and `Sep 26` — the bare
+     `Sep 26` only when it is the whole span — and numeric forms like `07-2026`
      or `2026-09`), but a missing or unparseable period does **not** reject the
      bill — it is stored with no month/year. A sender whose period format is not
      recognised therefore produces bills that are silently undated rather than
