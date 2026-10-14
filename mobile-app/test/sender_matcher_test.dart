@@ -298,6 +298,24 @@ void main() {
       );
     });
 
+    test('matches the real BRAC card transaction SMS', () {
+      const sms =
+          'BDT 12,000 transacted at SHWAPNO on 17/09/26 [11:00:10 AM BST] '
+          'using Card#***0000. Available balance: BDT 000,000. '
+          'Helpline 16221.';
+      expect(contentMatchesMaskedLastFour(sms, digits), isTrue);
+    });
+
+    test('the mask may span line breaks', () {
+      expect(contentMatchesMaskedLastFour('Card:\nXX\n0000', digits), isTrue);
+    });
+
+    test('any number just before the mask reads as a visible first group', () {
+      // Known miss, accepted: rejecting "4111 XXXX 0000" also rejects an
+      // unrelated number separated from the mask only by whitespace.
+      expect(contentMatchesMaskedLastFour('Tk 500 ***0000', digits), isFalse);
+    });
+
     test('null / malformed card digits never match', () {
       expect(contentMatchesMaskedLastFour('***0000', null), isFalse);
       expect(contentMatchesMaskedLastFour('***0000', '0000'), isFalse);
