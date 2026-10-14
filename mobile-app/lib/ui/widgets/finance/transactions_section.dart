@@ -9,7 +9,9 @@ import '../../../state/providers.dart';
 import '../../../theme/catppuccin_theme.dart';
 import '../../../utils/currency_format.dart';
 import '../../../utils/date_range.dart';
+import '../hint_banner.dart';
 import '../keyboard_inset.dart';
+import '../pagination_bar.dart';
 import '../section_header.dart';
 import '../skeleton.dart';
 import 'date_range_selector.dart';
@@ -202,7 +204,13 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
         if (page.transactions.isEmpty)
           const EmptyHint('No transactions in selected range.')
         else ...[
-          if (!_hintSeen) ...[_hintBanner(), const SizedBox(height: 8)],
+          if (!_hintSeen) ...[
+            HintBanner(
+              'Tip: long-press a transaction to edit its amount or type.',
+              onDismiss: _markHintSeen,
+            ),
+            const SizedBox(height: 8),
+          ],
           for (final tx in page.transactions)
             TransactionRow(
               tx: tx,
@@ -222,41 +230,13 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
               onLongPress: () => _editTransaction(tx),
             ),
         ],
-        if (page.totalPages > 1) _Pagination(page: page, onChange: _goToPage),
+        if (page.totalPages > 1)
+          PaginationBar(
+            page: page.page,
+            totalPages: page.totalPages,
+            onChange: _goToPage,
+          ),
       ],
-    );
-  }
-
-  Widget _hintBanner() {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.lightbulb_outline,
-            size: 16,
-            color: theme.colorScheme.outline,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Tip: long-press a transaction to edit its amount or type.',
-              style: theme.textTheme.bodySmall,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Dismiss',
-            icon: const Icon(Icons.close, size: 16),
-            visualDensity: VisualDensity.compact,
-            onPressed: _markHintSeen,
-          ),
-        ],
-      ),
     );
   }
 
@@ -339,40 +319,6 @@ class _TotalBox extends StatelessWidget {
               color: color,
               fontWeight: FontWeight.bold,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Pagination extends StatelessWidget {
-  const _Pagination({required this.page, required this.onChange});
-
-  final TransactionsPage page;
-  final ValueChanged<int> onChange;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconButton(
-            onPressed: page.page > 1 ? () => onChange(page.page - 1) : null,
-            icon: const Icon(Icons.chevron_left),
-          ),
-          Text(
-            'Page ${page.page} of ${page.totalPages}',
-            style: theme.textTheme.bodyMedium,
-          ),
-          IconButton(
-            onPressed: page.page < page.totalPages
-                ? () => onChange(page.page + 1)
-                : null,
-            icon: const Icon(Icons.chevron_right),
           ),
         ],
       ),
