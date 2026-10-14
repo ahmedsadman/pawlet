@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/finance/pairing_suggestion.dart';
@@ -72,6 +73,7 @@ class _PairingReviewPageState extends ConsumerState<PairingReviewPage> {
   Future<void> _answer(PairingSuggestion s, bool yes) async {
     // A swipe and a button tap can both land before the rebuild.
     if (_hidden.contains(s.key)) return;
+    unawaited(HapticFeedback.lightImpact());
     final actions = ref.read(pairingActionsProvider);
     final revision = ref.read(dataRevisionProvider.notifier);
     final messenger = ScaffoldMessenger.of(context);
@@ -255,19 +257,66 @@ class _PairingReviewPageState extends ConsumerState<PairingReviewPage> {
                   if (deck.length > 1) const _DeckEdge(inset: 12, alpha: 0.6),
                   if (deck.length > 2) const _DeckEdge(inset: 24, alpha: 0.3),
                   const SizedBox(height: 16),
-                  Text(
-                    'Swipe right for yes, left for no',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: f.overlay0,
-                    ),
-                  ),
+                  const _SwipeLegend(key: ValueKey('swipe-legend')),
                 ],
               ),
             ),
           ),
         ),
       },
+    );
+  }
+}
+
+/// Which way to swipe for each answer, in the colours revealed behind the
+/// card while it is dragged.
+class _SwipeLegend extends StatelessWidget {
+  const _SwipeLegend({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [_LegendSide(yes: false), _LegendSide(yes: true)],
+      ),
+    );
+  }
+}
+
+class _LegendSide extends StatelessWidget {
+  const _LegendSide({required this.yes});
+
+  final bool yes;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = yes ? AppTheme.income : AppTheme.expense;
+    final icon = Icon(
+      yes ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
+      size: 16,
+      color: color,
+    );
+    final label = Text(
+      yes ? 'Yes' : 'No',
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+        color: color,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: yes
+            ? [label, const SizedBox(width: 6), icon]
+            : [icon, const SizedBox(width: 6), label],
+      ),
     );
   }
 }

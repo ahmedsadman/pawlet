@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/models/finance/pairing_suggestion.dart';
@@ -101,10 +102,53 @@ void main() {
     final bodyTop = tester.getBottomLeft(find.byType(AppBar)).dy;
     final bodyBottom = tester.getSize(find.byType(Scaffold).last).height;
     final above = tester.getTopLeft(find.byType(PairingCard)).dy - bodyTop;
-    final hint = find.text('Swipe right for yes, left for no');
+    final hint = find.byKey(const ValueKey('swipe-legend'));
     final below = bodyBottom - tester.getBottomLeft(hint).dy;
     expect(above, greaterThan(16));
     expect((above - below).abs(), lessThan(2));
+  });
+
+  testWidgets('shows a swipe legend with No on the left, Yes on the right', (
+    tester,
+  ) async {
+    await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
+
+    final legend = find.byKey(const ValueKey('swipe-legend'));
+    final no = find.descendant(of: legend, matching: find.text('No'));
+    final yes = find.descendant(of: legend, matching: find.text('Yes'));
+    expect(no, findsOneWidget);
+    expect(yes, findsOneWidget);
+    expect(tester.getCenter(no).dx, lessThan(tester.getCenter(yes).dx));
+  });
+
+  testWidgets('answering gives a haptic tick', (tester) async {
+    final haptics = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await _pump(
+      tester,
+      FakePairingStore([transferSuggestion(1, 2), cardSuggestion(3, 4)]),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Yes, pair'));
+    await tester.pumpAndSettle();
+    await tester.fling(find.byType(PairingCard), const Offset(-600, 0), 1500);
+    await tester.pumpAndSettle();
+
+    expect(haptics, hasLength(2));
   });
 
   testWidgets('Yes accepts, advances and offers Undo', (tester) async {
@@ -113,7 +157,7 @@ void main() {
       FakePairingStore([transferSuggestion(1, 2), cardSuggestion(3, 4)]),
     );
 
-    await tester.tap(find.text('Yes, pair'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Yes, pair'));
     await tester.pumpAndSettle();
 
     expect(store.accepted, ['1-2']);
@@ -161,7 +205,7 @@ void main() {
   ) async {
     await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
 
-    await tester.tap(find.text('No'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'No'));
     await tester.pump();
     await tester.pump();
 
@@ -180,7 +224,7 @@ void main() {
       _FailingAcceptStore([transferSuggestion(1, 2), cardSuggestion(3, 4)]),
     );
 
-    await tester.tap(find.text('Yes, pair'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Yes, pair'));
     await tester.pump();
     await tester.pump();
 
@@ -194,7 +238,7 @@ void main() {
   testWidgets('Undo on All caught up cancels the close', (tester) async {
     await _pump(tester, FakePairingStore([transferSuggestion(1, 2)]));
 
-    await tester.tap(find.text('No'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'No'));
     await tester.pump();
     await tester.pump();
     expect(find.text('All caught up'), findsOneWidget);
@@ -219,7 +263,7 @@ void main() {
       _UndoAppendsStore([transferSuggestion(1, 2), cardSuggestion(3, 4)]),
     );
 
-    await tester.tap(find.text('Yes, pair'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Yes, pair'));
     await tester.pumpAndSettle();
     expect(find.text('Did this pay your card?'), findsOneWidget);
 
