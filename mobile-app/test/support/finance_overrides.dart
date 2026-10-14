@@ -63,9 +63,10 @@ List<Override> financeOverrides({
     ),
   ),
   billsProvider.overrideWith(
-    (ref, bankId) async => const CachedResult(
+    (ref, query) async => const CachedResult(
       data: BillsPage(bills: [], total: 0, page: 1, pageSize: 20),
     ),
   ),
+  olderBillCountProvider.overrideWith((ref, key) async => 0),
   pairingSuggestionsProvider.overrideWith((ref) async => pairings),
 ];

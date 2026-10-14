@@ -3,12 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../models/finance/bank.dart';
 import '../../../models/finance/bill.dart';
+import '../../../models/finance/bills_query.dart';
 import '../../../state/finance_providers.dart';
+import '../../../utils/date_range.dart';
 import '../section_header.dart';
 import '../skeleton.dart';
 import 'bill_row.dart';
 
-/// Per credit-card bills. Each card shows its latest bill by default; tapping
+// The window's bills fit one page: a card gets about one bill a month.
+const _windowPageSize = 100;
+
+/// Per credit-card bills from the last 12 months (see [billsWindowStart]).
+/// Each card shows its latest bill by default; tapping
 /// the card header reveals previous bills. Hidden entirely when the user has no
 /// credit cards.
 class CreditCardBillsSection extends ConsumerWidget {
@@ -63,7 +69,16 @@ class _BankBillsState extends ConsumerState<_BankBills> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currency = ref.watch(currencyProvider).value?.data ?? '';
-    final async = ref.watch(billsProvider(widget.bank.id));
+    final since = billsWindowStart(DateTime.now());
+    final async = ref.watch(
+      billsProvider(
+        BillsQuery(
+          bankId: widget.bank.id,
+          pageSize: _windowPageSize,
+          since: since,
+        ),
+      ),
+    );
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -73,8 +88,7 @@ class _BankBillsState extends ConsumerState<_BankBills> {
             _header(theme, trailing: const Skeleton(width: 56, height: 12)),
         error: (_, _) => _header(theme, subtitle: 'Could not load bills.'),
         data: (result) {
-          final bills = [...result.data.bills]
-            ..sort((a, b) => b.receivedAt.compareTo(a.receivedAt));
+          final bills = result.data.bills;
           if (bills.isEmpty) {
             return _header(theme, subtitle: 'No bills yet.');
           }

@@ -14,6 +14,9 @@ class BillsPage {
   final int page;
   final int pageSize;
 
+  int get totalPages =>
+      pageSize <= 0 ? 1 : (total / pageSize).ceil().clamp(1, 1 << 30);
+
   factory BillsPage.fromJson(Map<String, dynamic> json) => BillsPage(
     bills: (json['bills'] as List)
         .map((e) => Bill.fromJson(e as Map<String, dynamic>))

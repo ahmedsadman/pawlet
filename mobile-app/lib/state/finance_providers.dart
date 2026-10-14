@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/finance_repository.dart';
 import '../models/finance/bank.dart';
 import '../models/finance/bills_page.dart';
+import '../models/finance/bills_query.dart';
 import '../models/finance/sms_message.dart';
 import '../models/finance/summary.dart';
+import '../models/finance/transaction.dart';
 import '../models/finance/trends.dart';
 import '../models/finance/transactions_page.dart';
 import '../models/finance/tx_query.dart';
+import '../services/finance/bill_actions.dart';
 import '../utils/date_range.dart';
 import 'providers.dart';
 
@@ -43,10 +46,37 @@ final transactionsProvider = FutureProvider.autoDispose
     });
 
 final billsProvider = FutureProvider.autoDispose
-    .family<CachedResult<BillsPage>, int>((ref, bankId) {
+    .family<CachedResult<BillsPage>, BillsQuery>((ref, query) {
       ref.watch(dataRevisionProvider);
-      return ref.watch(financeRepositoryProvider).bills(bankId);
+      return ref
+          .watch(financeRepositoryProvider)
+          .bills(
+            query.bankId,
+            page: query.page,
+            pageSize: query.pageSize,
+            since: query.since,
+          );
     });
+
+/// How many of a card's bills fall before `before` (the section's window).
+final olderBillCountProvider = FutureProvider.autoDispose
+    .family<int, ({int bankId, DateTime before})>((ref, key) {
+      ref.watch(dataRevisionProvider);
+      return ref
+          .watch(financeRepositoryProvider)
+          .olderBillCount(key.bankId, key.before);
+    });
+
+/// A bill's linked payment legs, oldest first.
+final billTransactionsProvider = FutureProvider.autoDispose
+    .family<List<TransactionItem>, int>((ref, billId) {
+      ref.watch(dataRevisionProvider);
+      return ref.watch(financeRepositoryProvider).billTransactions(billId);
+    });
+
+final billActionsProvider = Provider<BillActions>(
+  (ref) => BillActions(ref.watch(databaseProvider)),
+);
 
 // Deliberately does NOT watch dataRevisionProvider: a message's stored content
 // (sender/body/timestamp) is immutable after write, so re-reading it on a bump
@@ -66,5 +96,7 @@ void refreshAllFinance(WidgetRef ref) {
   ref.invalidate(summaryProvider);
   ref.invalidate(transactionsProvider);
   ref.invalidate(billsProvider);
+  ref.invalidate(olderBillCountProvider);
+  ref.invalidate(billTransactionsProvider);
   ref.invalidate(messageProvider);
 }
