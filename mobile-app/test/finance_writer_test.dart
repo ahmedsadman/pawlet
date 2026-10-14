@@ -227,6 +227,57 @@ void main() {
       await db.close();
     });
 
+    test(
+      'a BRAC card SMS showing only the last four lands on the card',
+      () async {
+        // Without last-four matching the sender routes this to the BRAC deposit
+        // and the card's available credit overwrites the deposit balance.
+        final db = await openTestDb();
+        final repo = BanksRepository(db);
+        final deposit = await repo.create(
+          name: 'BRAC Bank',
+          matchers: const ['brac', 'brac-bank'],
+          lastBalance: '1000.00',
+          lastBalanceAt: _jan,
+        );
+        final card = await repo.create(
+          name: 'BRAC Bank',
+          accountType: 'credit',
+          cardDigits: '4111|0000',
+        );
+        final rec = await seedSms(
+          db,
+          sender: 'BRACBANK',
+          content:
+              'BDT 12,000 transacted at SHWAPNO on 17/09/26 [11:00:10 AM BST] '
+              'using Card#***0000. Available balance: BDT 88,000. '
+              'Helpline 16221.',
+        );
+        await FinanceWriter(db, nowMs: () => 0).apply(
+          record: rec,
+          outcome: tx(
+            const MetadataResult(
+              balance: '88000',
+              amount: '12000',
+              originalAmount: '12000',
+              transactionType: 'expense',
+              originalCurrency: 'BDT',
+            ),
+          ),
+          banks: [deposit, card],
+          currency: 'BDT',
+        );
+        expect((await db.query('transactions')).first['bank_id'], card.id);
+        final row = (await db.query(
+          'banks',
+          where: 'id = ?',
+          whereArgs: [deposit.id],
+        )).first;
+        expect(row['last_balance'], '1000.00');
+        await db.close();
+      },
+    );
+
     test('a loose card match still wins when no sender matches', () async {
       final db = await openTestDb();
       final card = await BanksRepository(db).create(
@@ -535,6 +586,29 @@ void main() {
       final rows = await db.query('bills');
       expect(rows.length, 1);
       expect(rows.first['bank_id'], card.id);
+      await db.close();
+    });
+
+    test('records a BRAC bill that shows only the last four', () async {
+      final db = await openTestDb();
+      final card = await BanksRepository(db).create(
+        name: 'BRAC Bank',
+        accountType: 'credit',
+        cardDigits: '4111|0000',
+      );
+      final rec = await seedSms(
+        db,
+        sender: 'BRACBANK',
+        content: 'Card#***0000 statement: Total Due BDT 8,020',
+      );
+      final cat = await FinanceWriter(db, nowMs: () => 0).apply(
+        record: rec,
+        outcome: bill(billMeta),
+        banks: [card],
+        currency: 'BDT',
+      );
+      expect(cat, 'bill');
+      expect((await db.query('bills')).first['bank_id'], card.id);
       await db.close();
     });
 

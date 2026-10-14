@@ -348,7 +348,10 @@ void main() {
       () {
         final gated = gateBanks('RANDOM', 'stmt 4238****3241', [mtb, ebl]);
         expect(gated, [ebl]);
-        expect(matchCreditCardInContent('stmt 4238****3241', [mtb, ebl]), ebl);
+        expect(
+          matchCreditCardInContent('RANDOM', 'stmt 4238****3241', [mtb, ebl]),
+          ebl,
+        );
       },
     );
 
@@ -372,7 +375,10 @@ void main() {
         accountType: 'credit',
         cardDigits: '0009|4111',
       );
-      expect(matchCreditCardInContent('stmt 000***111 due', [mtb, card]), card);
+      expect(
+        matchCreditCardInContent('RANDOM', 'stmt 000***111 due', [mtb, card]),
+        card,
+      );
       expect(gateBanks('RANDOM', 'stmt 000***111 due', [mtb, card]), [card]);
     });
 
@@ -388,14 +394,17 @@ void main() {
       // null on ambiguity, and this test would pass without the exact pass
       // having won anything.
       const content = 'card 000***111 paid via 4238 12 3241';
-      expect(matchCreditCardInContent(content, [loose, ebl]), ebl);
-      expect(matchCreditCardInContent(content, [ebl, loose]), ebl);
+      expect(matchCreditCardInContent('RANDOM', content, [loose, ebl]), ebl);
+      expect(matchCreditCardInContent('RANDOM', content, [ebl, loose]), ebl);
     });
 
     test('refuses to guess when two cards both loosely match', () {
       final a = _bank('A', accountType: 'credit', cardDigits: '0009|4111');
       final b = _bank('B', accountType: 'credit', cardDigits: '0008|3111');
-      expect(matchCreditCardInContent('stmt 000***111', [a, b]), isNull);
+      expect(
+        matchCreditCardInContent('RANDOM', 'stmt 000***111', [a, b]),
+        isNull,
+      );
     });
 
     test('the gate stays permissive where the writer refuses to guess', () {
@@ -405,7 +414,10 @@ void main() {
       final a = _bank('A', accountType: 'credit', cardDigits: '0009|4111');
       final b = _bank('B', accountType: 'credit', cardDigits: '0008|3111');
       expect(gateBanks('RANDOM', 'stmt 000***111', [a, b]), [a, b]);
-      expect(matchCreditCardInContent('stmt 000***111', [a, b]), isNull);
+      expect(
+        matchCreditCardInContent('RANDOM', 'stmt 000***111', [a, b]),
+        isNull,
+      );
     });
 
     test('a deposit bank carrying card digits is not gated by content', () {
@@ -414,7 +426,7 @@ void main() {
         cardDigits: '4238|3241', // deposit type → card fallback must not apply
       );
       expect(
-        matchCreditCardInContent('4238****3241', [depositWithDigits]),
+        matchCreditCardInContent('RANDOM', '4238****3241', [depositWithDigits]),
         isNull,
       );
       expect(gateBanks('RANDOM', '4238****3241', [depositWithDigits]), isEmpty);
@@ -518,6 +530,113 @@ void main() {
         resolveTransactionBank('RANDOM', 'card 4238****3241 used', [twin, ebl]),
         twin,
       );
+    });
+  });
+
+  group('lastFour tier (catalog-flagged banks)', () {
+    // Names are catalog labels: the tier finds its policy and sender matchers
+    // through bankCatalogByLabel(bank.name). Deposit and card share the name,
+    // so assertions compare identity with same().
+    final bracDeposit = _bank(
+      'BRAC Bank',
+      matchers: const ['brac', 'brac-bank'],
+    );
+    final bracCard = _bank(
+      'BRAC Bank',
+      accountType: 'credit',
+      cardDigits: '4111|0000',
+    );
+    const cardSms =
+        'BDT 12,000 transacted at SHWAPNO using Card#***0000. '
+        'Available balance: BDT 88,000.';
+
+    test("attaches a suffix-only card from the bank's own sender", () {
+      expect(
+        matchCreditCardInContent('BRACBANK', cardSms, [bracCard]),
+        same(bracCard),
+      );
+      expect(
+        resolveTransactionBank('BRACBANK', cardSms, [bracCard]),
+        same(bracCard),
+      );
+    });
+
+    test("ignores the same text from another bank's sender", () {
+      expect(
+        matchCreditCardInContent('CITYTOUCH', cardSms, [bracCard]),
+        isNull,
+      );
+      expect(gateBanks('CITYTOUCH', cardSms, [bracCard]), isEmpty);
+    });
+
+    test('does not apply to banks the catalog leaves unflagged', () {
+      final cityCard = _bank(
+        'City Bank',
+        accountType: 'credit',
+        cardDigits: '4111|0000',
+      );
+      expect(
+        matchCreditCardInContent('CITYTOUCH', cardSms, [cityCard]),
+        isNull,
+      );
+    });
+
+    test('fails closed when the card name is not a catalog label', () {
+      final legacy = _bank(
+        'Brac Card',
+        accountType: 'credit',
+        cardDigits: '4111|0000',
+      );
+      expect(matchCreditCardInContent('BRACBANK', cardSms, [legacy]), isNull);
+    });
+
+    test('outranks the sender match, which would land on the deposit', () {
+      expect(
+        resolveTransactionBank('BRACBANK', cardSms, [bracDeposit, bracCard]),
+        same(bracCard),
+      );
+    });
+
+    test('a non-card BRAC SMS still falls back to the deposit', () {
+      expect(
+        resolveTransactionBank('BRACBANK', 'A/C debited BDT 50. Bal 950', [
+          bracDeposit,
+          bracCard,
+        ]),
+        same(bracDeposit),
+      );
+    });
+
+    test('flagged banks still match on both card groups', () {
+      expect(
+        matchCreditCardInContent('RANDOM', 'stmt 4111****0000', [bracCard]),
+        same(bracCard),
+      );
+    });
+
+    test('two cards sharing the last four tie and fall through', () {
+      final twin = _bank(
+        'BRAC Bank',
+        accountType: 'credit',
+        cardDigits: '5222|0000',
+      );
+      expect(
+        matchCreditCardInContent('BRACBANK', cardSms, [bracCard, twin]),
+        isNull,
+      );
+      expect(
+        resolveTransactionBank('BRACBANK', cardSms, [
+          bracDeposit,
+          bracCard,
+          twin,
+        ]),
+        same(bracDeposit),
+      );
+    });
+
+    test('gates in a card with no deposit set up', () {
+      expect(gateBanks('BRACBANK', cardSms, [bracCard]), [bracCard]);
+      expect(hasGateBank('BRACBANK', cardSms, [bracCard]), isTrue);
     });
   });
 }
