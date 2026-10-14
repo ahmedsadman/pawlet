@@ -130,20 +130,6 @@ bool contentMatchesMaskedLastFour(String content, String? cardDigits) {
   return false;
 }
 
-/// The single bank whose matchers match [sender], or null when zero or more
-/// than one match. Ambiguity (e.g. two accounts sharing matchers) resolves to
-/// null so the caller leaves the row unlinked rather than guessing.
-Bank? singleSenderMatch(String sender, List<Bank> banks) {
-  Bank? found;
-  for (final bank in banks) {
-    if (senderMatchesBank(sender, bank)) {
-      if (found != null) return null;
-      found = bank;
-    }
-  }
-  return found;
-}
-
 /// The kinds of evidence tying an SMS to a bank, strongest first. Enum order is
 /// the precedence: every resolver walks the tiers it accepts in this order, and
 /// the first tier that settles on a bank wins.
