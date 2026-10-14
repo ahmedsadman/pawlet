@@ -23,13 +23,19 @@ and resolve as ambiguous. The consequence is that **finding the digits in the me
 is a credit card's only route through the layer-1 gate**. A card whose digits are never
 found is invisible to the pipeline and its messages are discarded unread.
 
-### Two matchers
+### Three matchers
 
-**Strict.** Both stored groups must appear in the body in full, separated by at most a
+**Exact card.** Both stored groups must appear in the body in full, separated by at most a
 short run of mask characters, digits, spaces or hyphens. This covers the common printed
 forms — `4238****3241`, `4238 12 3241`, `4238-XXXX-XXXX-3241`, and the bare number.
 
-**Loose.** Some banks expose only *three* digits per side (`000***111`). The loose matcher
+**Masked last four.** For banks flagged in the catalog (`lib/data/bank_catalog.dart`), a
+suffix-only masked card ending in the stored last four — mask characters, then the four
+digits, with no visible first group (e.g. `Card#***0000`, `XXXX-XXXX-XXXX-0000`). Requires
+at least two mask characters and that the sender contains one of that bank's catalog
+matchers. Currently applies to BRAC Bank only.
+
+**Loose card.** Some banks expose only *three* digits per side (`000***111`). The loose matcher
 handles those by pairing up the digit runs in the message and testing each pair:
 
 - the leading run must be a prefix of the stored first four, or vice versa (so a six-digit
@@ -50,34 +56,28 @@ is never reconsidered — `Trx 500 000***111` would pair `500` with `000` and th
 Working from whole runs also means a leading group can never be read out of the middle of
 a longer number.
 
-**Out of scope:** messages that show only the trailing digits (`****1234`, `card ending
-1234`). They are common, but four trailing digits alone are a weak signal, and supporting
-them needs its own decision about attribution risk.
+### Ranked matching
 
-### Who wins when signals disagree
+Matching is ranked by tier (`BankMatchTier` in `lib/services/classification/sender_matcher.dart`),
+strongest first: exact card → masked last four → sender → loose card.
 
-The two matchers are used with different strictness depending on what a mistake costs.
-
-| Caller | Order | Why |
+| Caller | Tiers | Tie rule |
 |---|---|---|
-| Layer-1 gate (`classifier.dart`) | strict **or** loose, no tie-break | A false positive costs one wasted LLM call; a false negative discards a real bill unseen. |
-| Transaction (`finance_writer.dart`) | exact card → single sender match → loose card | Eight matching digits outrank a sender; three per side do not. |
-| Bill (`finance_writer.dart`) | exact card → loose card | A bill has no meaningful sender fallback. |
+| Layer-1 gate (`classifier.dart`) | all four | no tie rule; any tier wins |
+| Transaction (`finance_writer.dart`) | all four | exact takes first match; others must be unique |
+| Bill (`finance_writer.dart`) | exact, masked last four, loose (no sender) | exact takes first match; others must be unique |
 
-A **loose** match must be unique. If two cards both fit the visible digits, nothing is
-attributed rather than guessing — the same posture `singleSenderMatch` already takes for
-ambiguous senders. The consequence differs by row type: a transaction is stored with no
-account linked, while a bill with no identified card is **dropped**, because a bill that
-belongs to no card is meaningless.
+Under **exact card** the first matching bank wins: eight digits make a collision
+implausible. Every weaker tier must land on exactly one bank; a tie falls through to the
+next tier rather than guessing. The consequence differs by row type: a transaction is
+stored with no account linked, while a bill with no identified card is **dropped**,
+because a bill that belongs to no card is meaningless.
 
-The sender deliberately outranks a *loose* card match for transactions. A deposit SMS
-printing a masked account number (`A/C 123***678 debited`) can resemble a card, and
-attributing it to a credit card would silently stop that deposit's balance from updating,
-since balances are not tracked for credit accounts.
-
-Three visible digits discriminate less than four: two cards from the same issuer share
-their leading digits, leaving the trailing three as the only real distinguisher. Trying
-the exact form first, and refusing an ambiguous loose result, is what contains that.
+Sender deliberately outranks loose card for transactions: a deposit SMS printing a masked
+account number (`A/C 123***678 debited`) can resemble a card, and attributing it to a
+credit card would silently stop that deposit's balance from updating. Masked last four
+outranks sender because card rows carry no matchers — a sender match on a card SMS can
+only reach the deposit, which would take the card's balance.
 
 ## Relationship matchers
 
@@ -119,6 +119,7 @@ Snapshot — verify against the named source.
 | Value | Setting | Source |
 |---|---|---|
 | 4 digits | each stored card group, first and last | `sender_matcher.dart`, `banks_page.dart` |
+| 2 masks | fewest mask characters before a last-four group | `sender_matcher.dart` |
 | 3–6 digits | leading run the loose matcher accepts | `sender_matcher.dart` |
 | 3–4 digits | trailing run the loose matcher accepts | `sender_matcher.dart` |
 | 16 chars | widest gap between a card's two visible groups | `sender_matcher.dart` |

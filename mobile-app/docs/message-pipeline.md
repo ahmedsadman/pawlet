@@ -162,11 +162,11 @@ all (§5):
    and free; then **Layer 3 — the cloud LLM**, only for what the first two could not
    settle:
    - **Layer-1 gate (local, free):** does the sender match one of your banks' matchers,
-     or does the body contain one of your registered card numbers — in full, or masked
-     down to three digits a side? If not, the message is **ignored with no LLM call** —
-     this is what stops OTPs, promos, and personal texts from spending API quota. See
-     [Matching](matching.md), which also explains why card digits are a credit card's
-     *only* way through this gate.
+     or does the body contain one of your registered card numbers — in full, masked
+     down to three digits a side, or (for catalog-flagged banks) showing only the masked
+     last four? If not, the message is **ignored with no LLM call** — this is what stops
+     OTPs, promos, and personal texts from spending API quota. See [Matching](matching.md),
+     which also explains why card digits are a credit card's *only* way through this gate.
    - **On-device model (local, free):** a message that passes the gate is first run through
      a bundled fused model (a small BERT-family encoder exported to TFLite and run via
      LiteRT — `tflite_local_classifier.dart`). In one pass it both classifies the message
