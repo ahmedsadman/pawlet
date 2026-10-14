@@ -159,7 +159,9 @@ enum BankMatchTier {
   /// A suffix-only masked card ([contentMatchesMaskedLastFour]) from a bank the
   /// catalog flags with [BankCatalogEntry.cardLastFourOnly], sent by that bank.
   /// Outranks [sender]: card rows carry no matchers, so a sender match can only
-  /// reach the deposit, which would take the card's balance.
+  /// reach the deposit, which would take the card's balance. This accepts that
+  /// a deposit SMS masking its account to the card's last four lands on the
+  /// card; the catalog flag and sender check keep that narrow.
   lastFour,
 
   /// The sender contains one of the bank's own matchers. Card rows carry none,

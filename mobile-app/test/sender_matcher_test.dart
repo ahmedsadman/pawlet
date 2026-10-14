@@ -590,6 +590,18 @@ void main() {
       expect(matchCreditCardInContent('BRACBANK', cardSms, [legacy]), isNull);
     });
 
+    test('a deposit carrying card digits never matches by last four', () {
+      // Legacy or restored rows can leave digits on a deposit; only credit
+      // rows may take card evidence.
+      final odd = _bank(
+        'BRAC Bank',
+        matchers: const ['brac', 'brac-bank'],
+        cardDigits: '4111|0000',
+      );
+      expect(matchCreditCardInContent('BRACBANK', cardSms, [odd]), isNull);
+      expect(resolveTransactionBank('BRACBANK', cardSms, [odd]), same(odd));
+    });
+
     test('outranks the sender match, which would land on the deposit', () {
       expect(
         resolveTransactionBank('BRACBANK', cardSms, [bracDeposit, bracCard]),
