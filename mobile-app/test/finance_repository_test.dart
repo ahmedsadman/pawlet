@@ -332,7 +332,7 @@ void main() {
         final page = (await repo.bills(bank)).data;
 
         expect(page.total, 2);
-        // Newest received_at first (b2 ts=200 before b1 ts=100 -> b2 first).
+        // Newest statement period first (b2 July before b1 June).
         expect(page.bills.first.id, b2);
         expect(page.bills.first.isPaid, isTrue);
         expect(page.bills.first.linkedTransactionIds, [tx]);
@@ -368,6 +368,11 @@ void main() {
           sender: 'EBL',
           ts: DateTime(2026, 7, 20).millisecondsSinceEpoch,
         );
+        final cutoffMsg = await insertSms(
+          db,
+          sender: 'EBL',
+          ts: DateTime(2025, 11, 10).millisecondsSinceEpoch,
+        );
         final old = await insertBill(
           db,
           messageId: lateMsg,
@@ -388,17 +393,28 @@ void main() {
           bankId: bank,
           totalDue: '3',
         );
+        final cutoff = await insertBill(
+          db,
+          messageId: cutoffMsg,
+          bankId: bank,
+          totalDue: '4',
+          statementPeriod: DateTime(2025, 11, 1),
+        );
         final repo = FinanceRepository(db);
 
         final all = (await repo.bills(bank)).data;
-        expect(all.bills.map((b) => b.id), [aug, july, old]);
+        expect(all.bills.map((b) => b.id), [aug, july, cutoff, old]);
 
         final windowed = (await repo.bills(
           bank,
           since: DateTime(2025, 11, 1),
         )).data;
-        expect(windowed.bills.map((b) => b.id), [aug, july]);
-        expect(windowed.total, 2);
+        expect(windowed.bills.map((b) => b.id), [aug, july, cutoff]);
+        expect(windowed.total, 3);
+        expect(
+          windowed.total + await repo.olderBillCount(bank, DateTime(2025, 11, 1)),
+          all.total,
+        );
 
         expect(await repo.olderBillCount(bank, DateTime(2025, 11, 1)), 1);
         expect(await repo.olderBillCount(bank, DateTime(2024, 1, 1)), 0);

@@ -290,7 +290,7 @@ void main() {
         whereArgs: [bill],
       );
 
-      await actions.undo(d!);
+      await actions.undo(d);
 
       expect((await row(out))['type'], 'expense');
       expect((await row(out))['paired_with_id'], isNull);
