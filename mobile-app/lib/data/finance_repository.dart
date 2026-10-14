@@ -41,6 +41,29 @@ class FinanceRepository {
   static final Decimal _flatPp = Decimal.parse('1.0');
   static final Decimal _hundred = Decimal.fromInt(100);
 
+  // Shared by [transactions] and [billTransactions]; callers append WHERE,
+  // ORDER BY and LIMIT.
+  static const String _txSelect =
+      '''
+      SELECT t.id, t.message_id, t.bank_id,
+             b.name AS bank_name, b.account_type AS bank_account_type,
+             COALESCE(s.sender, b.name) AS sender,
+             t.normalized_amount, t.normalized_currency,
+             t.original_amount, t.original_currency,
+             t.type, t.date, t.paired_with_id,
+             p.message_id AS paired_with_message_id,
+             t.bill_id
+      FROM ${AppDatabase.transactionsTable} t
+      LEFT JOIN ${AppDatabase.smsTable} s ON s.id = t.message_id
+      LEFT JOIN ${AppDatabase.banksTable} b ON b.id = t.bank_id
+      LEFT JOIN ${AppDatabase.transactionsTable} p ON p.id = t.paired_with_id
+  ''';
+
+  // A bill's place in time: its statement period, else when it arrived. Drives
+  // both the bills ordering and the Finance page's 12-month window.
+  static const String _billTimeKey =
+      'COALESCE(bl.statement_period, s.timestamp)';
+
   CachedResult<T> _ok<T>(T data) => CachedResult(data: data);
 
   // ---- simple reads -------------------------------------------------------
@@ -136,18 +159,7 @@ class FinanceRepository {
 
     final rows = await _db.rawQuery(
       '''
-      SELECT t.id, t.message_id, t.bank_id,
-             b.name AS bank_name, b.account_type AS bank_account_type,
-             COALESCE(s.sender, b.name) AS sender,
-             t.normalized_amount, t.normalized_currency,
-             t.original_amount, t.original_currency,
-             t.type, t.date, t.paired_with_id,
-             p.message_id AS paired_with_message_id,
-             t.bill_id
-      FROM ${AppDatabase.transactionsTable} t
-      LEFT JOIN ${AppDatabase.smsTable} s ON s.id = t.message_id
-      LEFT JOIN ${AppDatabase.banksTable} b ON b.id = t.bank_id
-      LEFT JOIN ${AppDatabase.transactionsTable} p ON p.id = t.paired_with_id
+      $_txSelect
       $filterClause
       ORDER BY $orderCol $dir, t.id DESC
       LIMIT ? OFFSET ?
@@ -217,16 +229,39 @@ class FinanceRepository {
     );
   }
 
+  /// The payment legs linked to bill [billId] (the card payment and its paired
+  /// bank debit), oldest first.
+  Future<List<TransactionItem>> billTransactions(int billId) async {
+    final rows = await _db.rawQuery(
+      '$_txSelect WHERE t.bill_id = ? ORDER BY t.date ASC, t.id ASC',
+      [billId],
+    );
+    return rows.map(_txFromRow).toList();
+  }
+
   // ---- bills --------------------------------------------------------------
 
+  /// A page of [bankId]'s bills, newest first by statement period (received
+  /// time when the period is unknown). [since] keeps only bills at or after it.
   Future<CachedResult<BillsPage>> bills(
     int bankId, {
     int page = 1,
     int pageSize = 20,
+    DateTime? since,
   }) async {
+    final where = ['bl.bank_id = ?'];
+    final args = <Object?>[bankId];
+    if (since != null) {
+      where.add('$_billTimeKey >= ?');
+      args.add(since.millisecondsSinceEpoch);
+    }
+    final whereClause = where.join(' AND ');
+
     final countRows = await _db.rawQuery(
-      'SELECT COUNT(*) c FROM ${AppDatabase.billsTable} WHERE bank_id = ?',
-      [bankId],
+      'SELECT COUNT(*) c FROM ${AppDatabase.billsTable} bl '
+      'JOIN ${AppDatabase.smsTable} s ON s.id = bl.message_id '
+      'WHERE $whereClause',
+      args,
     );
     final total = (countRows.first['c'] as int?) ?? 0;
 
@@ -241,11 +276,11 @@ class FinanceRepository {
       FROM ${AppDatabase.billsTable} bl
       JOIN ${AppDatabase.smsTable} s ON s.id = bl.message_id
       LEFT JOIN ${AppDatabase.banksTable} b ON b.id = bl.bank_id
-      WHERE bl.bank_id = ?
-      ORDER BY s.timestamp DESC, bl.id DESC
+      WHERE $whereClause
+      ORDER BY $_billTimeKey DESC, s.timestamp DESC, bl.id DESC
       LIMIT ? OFFSET ?
     ''',
-      [bankId, pageSize, offset],
+      [...args, pageSize, offset],
     );
 
     final billIds = rows.map((r) => r['id'] as int).toList();
@@ -268,6 +303,18 @@ class FinanceRepository {
     return _ok(
       BillsPage(bills: bills, total: total, page: page, pageSize: pageSize),
     );
+  }
+
+  /// How many of [bankId]'s bills fall before [before] (same time key as
+  /// [bills]); drives the bills section's "View more" link.
+  Future<int> olderBillCount(int bankId, DateTime before) async {
+    final rows = await _db.rawQuery(
+      'SELECT COUNT(*) c FROM ${AppDatabase.billsTable} bl '
+      'JOIN ${AppDatabase.smsTable} s ON s.id = bl.message_id '
+      'WHERE bl.bank_id = ? AND $_billTimeKey < ?',
+      [bankId, before.millisecondsSinceEpoch],
+    );
+    return (rows.first['c'] as int?) ?? 0;
   }
 
   // ---- summary ------------------------------------------------------------
