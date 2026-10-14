@@ -34,7 +34,7 @@ class AppDatabase {
 
   /// Schema version. Every bump needs a matching [onUpgrade] branch and a
   /// parity test — see the guard in `test/database_test.dart`.
-  static const int version = 9;
+  static const int version = 10;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), fileName);
@@ -145,7 +145,10 @@ class AppDatabase {
         original_currency TEXT,
         statement_period INTEGER,
         paid_at INTEGER,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        -- 1 once the user marks the bill paid/unpaid by hand; FinanceMatcher
+        -- then leaves it alone.
+        status_overridden INTEGER NOT NULL DEFAULT 0
       )
     ''');
     await db.execute('''
@@ -291,6 +294,14 @@ class AppDatabase {
     if (oldVersion < 9) {
       // Additive: a new, empty table.
       await _createPairingRejectionsTable(db);
+    }
+
+    if (oldVersion < 10) {
+      // Additive; existing bills start matcher-managed.
+      await db.execute(
+        'ALTER TABLE $billsTable '
+        'ADD COLUMN status_overridden INTEGER NOT NULL DEFAULT 0',
+      );
     }
   }
 }
