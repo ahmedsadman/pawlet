@@ -63,7 +63,7 @@ strongest first: exact card → masked last four → sender → loose card.
 
 | Caller | Tiers | Tie rule |
 |---|---|---|
-| Layer-1 gate (`classifier.dart`) | all four | no tie rule; any tier wins |
+| Layer-1 gate (`processing_service.dart`, `bulk_import/bulk_gate.dart`) | all four | no tie rule; any tier wins |
 | Transaction (`finance_writer.dart`) | all four | exact takes first match; others must be unique |
 | Bill (`finance_writer.dart`) | exact, masked last four, loose (no sender) | exact takes first match; others must be unique |
 
