@@ -8,6 +8,7 @@ import 'widgets/finance/bill_row.dart';
 import 'widgets/finance/bill_sheet.dart';
 import 'widgets/finance/finance_placeholders.dart';
 import 'widgets/pagination_bar.dart';
+import 'widgets/section_header.dart';
 import 'widgets/skeleton.dart';
 
 const _pageSize = 10;
@@ -30,35 +31,45 @@ class _BillHistoryPageState extends ConsumerState<BillHistoryPage> {
   @override
   Widget build(BuildContext context) {
     final currency = ref.watch(currencyProvider).value?.data ?? '';
-    final async = ref.watch(
-      billsProvider(
-        BillsQuery(bankId: widget.bank.id, page: _page, pageSize: _pageSize),
-      ),
+    final query = BillsQuery(
+      bankId: widget.bank.id,
+      page: _page,
+      pageSize: _pageSize,
     );
+    final async = ref.watch(billsProvider(query));
     return Scaffold(
       appBar: AppBar(title: Text(widget.bank.name)),
       body: async.when(
         skipLoadingOnReload: true,
         loading: () => const SingleChildScrollView(
-          padding: EdgeInsets.all(16),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: TransactionRowsSkeleton(count: _pageSize),
         ),
-        error: (_, _) => const Padding(
-          padding: EdgeInsets.all(16),
-          child: FinanceError('Could not load bills.'),
+        error: (_, _) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: FinanceError(
+            'Could not load bills.',
+            onRetry: () => ref.invalidate(billsProvider(query)),
+          ),
         ),
         data: (result) {
           final page = result.data;
+          if (page.bills.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: EmptyHint('No bills yet.'),
+            );
+          }
           return ListView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             children: [
-              for (final bill in page.bills) ...[
+              for (var i = 0; i < page.bills.length; i++) ...[
                 BillRow(
-                  bill: bill,
+                  bill: page.bills[i],
                   currency: currency,
-                  onLongPress: () => showBillSheet(context, ref, bill),
+                  onLongPress: () => showBillSheet(context, ref, page.bills[i]),
                 ),
-                const Divider(height: 1),
+                if (i < page.bills.length - 1) const Divider(height: 1),
               ],
               if (page.totalPages > 1)
                 PaginationBar(
