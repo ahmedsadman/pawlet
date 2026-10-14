@@ -14,9 +14,8 @@ import 'bill_row.dart';
 const _windowPageSize = 100;
 
 /// Per credit-card bills from the last 12 months (see [billsWindowStart]).
-/// Each card shows its latest bill by default; tapping
-/// the card header reveals previous bills. Hidden entirely when the user has no
-/// credit cards.
+/// Each card shows its latest bill by default; tapping the card header reveals
+/// previous bills. Hidden entirely when the user has no credit cards.
 class CreditCardBillsSection extends ConsumerWidget {
   const CreditCardBillsSection({super.key});
 

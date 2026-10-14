@@ -412,7 +412,8 @@ void main() {
         expect(windowed.bills.map((b) => b.id), [aug, july, cutoff]);
         expect(windowed.total, 3);
         expect(
-          windowed.total + await repo.olderBillCount(bank, DateTime(2025, 11, 1)),
+          windowed.total +
+              await repo.olderBillCount(bank, DateTime(2025, 11, 1)),
           all.total,
         );
 
