@@ -161,17 +161,12 @@
       ]
     ],
     "class_label": "expense",
-    "class_conf": 0.9997,
+    "class_conf": 0.9996,
     "spans": [
       {
         "ent": "AMOUNT",
         "text": "500.00",
-        "conf": 0.9841
-      },
-      {
-        "ent": "BALANCE",
-        "text": "1,200.50",
-        "conf": 0.7431
+        "conf": 0.999
       }
     ]
   },
@@ -288,7 +283,13 @@
     ],
     "class_label": "null",
     "class_conf": 1.0,
-    "spans": []
+    "spans": [
+      {
+        "ent": "AMOUNT",
+        "text": "3",
+        "conf": 0.9981
+      }
+    ]
   },
   {
     "text": "Monthly bill 423800******3241 AUG2026; Total Due: BDT 4924.35, Min Due: BDT 4833.35",
@@ -492,22 +493,22 @@
       {
         "ent": "PERIOD",
         "text": "AUG2026",
-        "conf": 0.9989
+        "conf": 0.9998
       },
       {
         "ent": "DUE",
         "text": "4924.35",
-        "conf": 0.9993
+        "conf": 1.0
       },
       {
         "ent": "DUE",
         "text": "48",
-        "conf": 0.9989
+        "conf": 0.9895
       },
       {
         "ent": "DUE",
         "text": ".35",
-        "conf": 0.5286
+        "conf": 0.6002
       }
     ]
   },
@@ -688,17 +689,17 @@
       ]
     ],
     "class_label": "bill",
-    "class_conf": 1.0,
+    "class_conf": 0.9999,
     "spans": [
       {
         "ent": "PERIOD",
         "text": "JUL 2026",
-        "conf": 0.9885
+        "conf": 0.9998
       },
       {
         "ent": "DUE",
         "text": "4111.79",
-        "conf": 1.0
+        "conf": 0.9999
       }
     ]
   },
@@ -779,7 +780,7 @@
       ]
     ],
     "class_label": "null",
-    "class_conf": 1.0,
+    "class_conf": 0.9998,
     "spans": []
   },
   {
@@ -999,12 +1000,12 @@
       {
         "ent": "AMOUNT",
         "text": "9,20.00",
-        "conf": 0.9995
+        "conf": 1.0
       },
       {
         "ent": "BALANCE",
         "text": "11,200.50",
-        "conf": 0.9989
+        "conf": 0.9993
       }
     ]
   },
@@ -1320,12 +1321,12 @@
       {
         "ent": "PERIOD",
         "text": "Sep'26",
-        "conf": 0.9587
+        "conf": 0.9986
       },
       {
         "ent": "DUE",
         "text": "5,900.00",
-        "conf": 0.9623
+        "conf": 0.9999
       }
     ]
   },
@@ -1536,7 +1537,7 @@
       {
         "ent": "AMOUNT",
         "text": "1,25,00,000.00",
-        "conf": 0.9993
+        "conf": 0.9992
       }
     ]
   }
