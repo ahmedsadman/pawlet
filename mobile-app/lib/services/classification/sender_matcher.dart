@@ -156,17 +156,17 @@ Bank? _resolve(
 ) {
   for (final tier in tiers) {
     Bank? found;
-    var tied = false;
     for (final bank in banks) {
       if (!_tierMatches(tier, sender, content, bank)) continue;
       if (tier == BankMatchTier.exactCard) return bank;
       if (found != null) {
-        tied = true;
+        // A tie: this tier cannot settle on one bank, so try the next.
+        found = null;
         break;
       }
       found = bank;
     }
-    if (found != null && !tied) return found;
+    if (found != null) return found;
   }
   return null;
 }
