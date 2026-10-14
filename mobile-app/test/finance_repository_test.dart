@@ -341,6 +341,123 @@ void main() {
         await db.close();
       },
     );
+
+    test(
+      'since filters and orders on statement period, else received',
+      () async {
+        final db = await openTestDb();
+        final bank = await insertBank(
+          db,
+          name: 'EBL Card',
+          accountType: 'credit',
+          cardDigits: '4238|3241',
+        );
+        // Received late but for an old period: must sort and filter by period.
+        final lateMsg = await insertSms(
+          db,
+          sender: 'EBL',
+          ts: DateTime(2026, 9, 3).millisecondsSinceEpoch,
+        );
+        final mid = await insertSms(
+          db,
+          sender: 'EBL',
+          ts: DateTime(2026, 8, 3).millisecondsSinceEpoch,
+        );
+        final noPeriod = await insertSms(
+          db,
+          sender: 'EBL',
+          ts: DateTime(2026, 7, 20).millisecondsSinceEpoch,
+        );
+        final old = await insertBill(
+          db,
+          messageId: lateMsg,
+          bankId: bank,
+          totalDue: '1',
+          statementPeriod: DateTime(2025, 1, 1),
+        );
+        final aug = await insertBill(
+          db,
+          messageId: mid,
+          bankId: bank,
+          totalDue: '2',
+          statementPeriod: DateTime(2026, 8, 1),
+        );
+        final july = await insertBill(
+          db,
+          messageId: noPeriod,
+          bankId: bank,
+          totalDue: '3',
+        );
+        final repo = FinanceRepository(db);
+
+        final all = (await repo.bills(bank)).data;
+        expect(all.bills.map((b) => b.id), [aug, july, old]);
+
+        final windowed = (await repo.bills(
+          bank,
+          since: DateTime(2025, 11, 1),
+        )).data;
+        expect(windowed.bills.map((b) => b.id), [aug, july]);
+        expect(windowed.total, 2);
+
+        expect(await repo.olderBillCount(bank, DateTime(2025, 11, 1)), 1);
+        expect(await repo.olderBillCount(bank, DateTime(2024, 1, 1)), 0);
+        await db.close();
+      },
+    );
+
+    test('billTransactions returns the linked legs, oldest first', () async {
+      final db = await openTestDb();
+      final card = await insertBank(
+        db,
+        name: 'EBL Card',
+        accountType: 'credit',
+        cardDigits: '4238|3241',
+      );
+      final mtb = await insertBank(db, name: 'MTB');
+      final bm = await insertSms(db, sender: 'EBL', ts: 1);
+      final bill = await insertBill(
+        db,
+        messageId: bm,
+        bankId: card,
+        totalDue: '50',
+      );
+      final m1 = await insertSms(db, sender: 'MTB', ts: 2);
+      final m2 = await insertSms(db, sender: 'EBL', ts: 3);
+      final m3 = await insertSms(db, sender: 'EBL', ts: 4);
+      final cardLeg = await insertTx(
+        db,
+        messageId: m2,
+        bankId: card,
+        billId: bill,
+        amount: '50',
+        type: 'transfer',
+        date: DateTime(2026, 7, 8, 10, 5),
+      );
+      final bankLeg = await insertTx(
+        db,
+        messageId: m1,
+        bankId: mtb,
+        billId: bill,
+        amount: '50',
+        type: 'transfer',
+        date: DateTime(2026, 7, 8, 10, 0),
+      );
+      await insertTx(
+        db,
+        messageId: m3,
+        bankId: card,
+        amount: '9',
+        type: 'expense',
+        date: DateTime(2026, 7, 9),
+      );
+
+      final legs = await FinanceRepository(db).billTransactions(bill);
+
+      expect(legs.map((t) => t.id), [bankLeg, cardLeg]);
+      expect(legs.first.bankName, 'MTB');
+      await db.close();
+    });
   });
 
   group('updateTransactionType', () {
