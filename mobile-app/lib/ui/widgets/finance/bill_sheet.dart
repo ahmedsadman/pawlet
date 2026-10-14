@@ -65,10 +65,25 @@ class _BillSheetState extends ConsumerState<BillSheet> {
       );
       if (ok != true || !mounted) return;
     }
+    final messenger = ScaffoldMessenger.of(context);
+    final revision = ref.read(dataRevisionProvider.notifier);
     setState(() => _busy = true);
-    await ref.read(billActionsProvider).setPaid(bill.id, paid: markPaid);
+    try {
+      await ref.read(billActionsProvider).setPaid(bill.id, paid: markPaid);
+    } catch (_) {
+      if (mounted) setState(() => _busy = false);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text("Couldn't save that. Try again."),
+          ),
+        );
+      return;
+    }
+    revision.bump();
     if (!mounted) return;
-    refreshAllFinance(ref);
     Navigator.of(context).pop();
   }
 
@@ -95,7 +110,6 @@ class _BillSheetState extends ConsumerState<BillSheet> {
               ),
               if (bill.linkedTransactionIds.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                const _Label('Payment'),
                 _PaymentLegs(
                   billId: bill.id,
                   currency: currency,
@@ -248,15 +262,18 @@ class _PaymentLegs extends ConsumerWidget {
     return async.when(
       loading: () => const MessageLinesSkeleton(),
       error: (_, _) => const FinanceError('Could not load the payment.'),
-      data: (legs) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < legs.length; i++) ...[
-            if (i > 0) const SizedBox(height: 8),
-            _leg(context, legs[i]),
-          ],
-        ],
-      ),
+      data: (legs) => legs.isEmpty
+          ? const SizedBox.shrink()
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _Label('Payment'),
+                for (var i = 0; i < legs.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 8),
+                  _leg(context, legs[i]),
+                ],
+              ],
+            ),
     );
   }
 

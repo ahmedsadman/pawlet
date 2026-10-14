@@ -23,6 +23,16 @@ class _FakeBillActions implements BillActions {
       calls.add((billId, paid));
 }
 
+class _ThrowingBillActions implements BillActions {
+  int calls = 0;
+
+  @override
+  Future<void> setPaid(int billId, {required bool paid}) async {
+    calls++;
+    throw Exception('Write failed');
+  }
+}
+
 Bill _bill({DateTime? paidAt, List<int> links = const []}) => Bill(
   id: 7,
   messageId: 70,
@@ -182,5 +192,94 @@ void main() {
   testWidgets('opening the sheet retires the bill hint', (tester) async {
     final (_, prefs) = await _pump(tester, _bill());
     expect(prefs.getBool('bill_actions_hint_seen'), isTrue);
+  });
+
+  testWidgets('hides amounts and SMS in legs while balances are hidden', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      _bill(paidAt: DateTime(2026, 9, 12), links: [1, 2]),
+      legs: [
+        _leg(1, messageId: 11),
+        _leg(2, bank: 'Cash'),
+      ],
+      hidden: true,
+    );
+
+    expect(find.text('8,020.00 BDT'), findsNothing);
+    expect(find.textContaining('****'), findsWidgets);
+    expect(find.text('SMS body for 11'), findsNothing);
+    expect(find.textContaining('Cash'), findsOneWidget);
+    final cashText = tester.widget<Text>(find.textContaining('Cash'));
+    expect(cashText.data, isNot(contains('8,020.00')));
+  });
+
+  testWidgets('hides Payment label when legs are empty', (tester) async {
+    await _pump(tester, _bill(links: [1, 2]), legs: []);
+
+    expect(find.text('Payment'), findsNothing);
+  });
+
+  testWidgets('shows error and re-enables button when setPaid throws', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final actions = _ThrowingBillActions();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsRepositoryProvider.overrideWithValue(
+            SettingsRepository(prefs),
+          ),
+          overrideBalanceHidden(false),
+          billActionsProvider.overrideWithValue(actions),
+          currencyProvider.overrideWith(
+            (ref) async => const CachedResult(data: 'BDT'),
+          ),
+          billTransactionsProvider.overrideWith((ref, billId) async => []),
+          messageProvider.overrideWith(
+            (ref, id) async => CachedResult(
+              data: ApiMessage(
+                id: id,
+                sender: 'SENDER-$id',
+                content: 'SMS body for $id',
+                receivedAt: DateTime(2026, 9, 5),
+              ),
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.theme,
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) => TextButton(
+                onPressed: () => showBillSheet(context, ref, _bill()),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Mark paid'));
+    await tester.pump();
+    expect(actions.calls, 1);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining("Couldn't save that. Try again."),
+      findsOneWidget,
+    );
+    final button = tester.widget<FilledButton>(find.byType(FilledButton));
+    expect(button.onPressed, isNotNull);
+
+    await tester.tap(find.text('Mark paid'));
+    await tester.pump();
+    expect(actions.calls, 2);
   });
 }
