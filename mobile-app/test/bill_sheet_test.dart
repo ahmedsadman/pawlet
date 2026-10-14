@@ -29,6 +29,7 @@ class _ThrowingBillActions implements BillActions {
   @override
   Future<void> setPaid(int billId, {required bool paid}) async {
     calls++;
+    await Future<void>.delayed(Duration.zero);
     throw Exception('Write failed');
   }
 }
@@ -60,21 +61,22 @@ TransactionItem _leg(int id, {int? messageId, String bank = 'MTB'}) =>
       date: DateTime(2026, 9, 10),
     );
 
-Future<(_FakeBillActions, SharedPreferences)> _pump(
+Future<(BillActions, SharedPreferences)> _pump(
   WidgetTester tester,
   Bill bill, {
   bool hidden = false,
   List<TransactionItem> legs = const [],
+  BillActions? actions,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
-  final actions = _FakeBillActions();
+  final billActions = actions ?? _FakeBillActions();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         settingsRepositoryProvider.overrideWithValue(SettingsRepository(prefs)),
         overrideBalanceHidden(hidden),
-        billActionsProvider.overrideWithValue(actions),
+        billActionsProvider.overrideWithValue(billActions),
         currencyProvider.overrideWith(
           (ref) async => const CachedResult(data: 'BDT'),
         ),
@@ -105,7 +107,7 @@ Future<(_FakeBillActions, SharedPreferences)> _pump(
   );
   await tester.tap(find.text('open'));
   await tester.pumpAndSettle();
-  return (actions, prefs);
+  return (billActions, prefs);
 }
 
 void main() {
@@ -119,7 +121,7 @@ void main() {
     await tester.tap(find.text('Mark paid'));
     await tester.pumpAndSettle();
 
-    expect(actions.calls, [(7, true)]);
+    expect((actions as _FakeBillActions).calls, [(7, true)]);
     expect(find.text('Mark paid'), findsNothing); // sheet closed
   });
 
@@ -135,7 +137,7 @@ void main() {
     await tester.tap(find.text('Mark unpaid'));
     await tester.pumpAndSettle();
 
-    expect(actions.calls, [(7, false)]);
+    expect((actions as _FakeBillActions).calls, [(7, false)]);
   });
 
   testWidgets('unpaying a bill with a linked payment asks first', (
@@ -149,19 +151,20 @@ void main() {
         _leg(2, messageId: 12, bank: 'EBL'),
       ],
     );
+    final fake = actions as _FakeBillActions;
 
     await tester.tap(find.text('Mark unpaid'));
     await tester.pumpAndSettle();
     expect(find.textContaining('unlinks the payment'), findsOneWidget);
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
-    expect(actions.calls, isEmpty);
+    expect(fake.calls, isEmpty);
 
     await tester.tap(find.text('Mark unpaid'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Unlink'));
     await tester.pumpAndSettle();
-    expect(actions.calls, [(7, false)]);
+    expect(fake.calls, [(7, false)]);
   });
 
   testWidgets('lists the payment legs, SMS or manual', (tester) async {
@@ -186,7 +189,7 @@ void main() {
     expect(find.text('Hidden while balances are hidden.'), findsOneWidget);
     await tester.tap(find.text('Mark paid'));
     await tester.pumpAndSettle();
-    expect(actions.calls, [(7, true)]);
+    expect((actions as _FakeBillActions).calls, [(7, true)]);
   });
 
   testWidgets('opening the sheet retires the bill hint', (tester) async {
@@ -224,62 +227,37 @@ void main() {
   testWidgets('shows error and re-enables button when setPaid throws', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
     final actions = _ThrowingBillActions();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          settingsRepositoryProvider.overrideWithValue(
-            SettingsRepository(prefs),
-          ),
-          overrideBalanceHidden(false),
-          billActionsProvider.overrideWithValue(actions),
-          currencyProvider.overrideWith(
-            (ref) async => const CachedResult(data: 'BDT'),
-          ),
-          billTransactionsProvider.overrideWith((ref, billId) async => []),
-          messageProvider.overrideWith(
-            (ref, id) async => CachedResult(
-              data: ApiMessage(
-                id: id,
-                sender: 'SENDER-$id',
-                content: 'SMS body for $id',
-                receivedAt: DateTime(2026, 9, 5),
-              ),
-            ),
-          ),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.theme,
-          home: Scaffold(
-            body: Consumer(
-              builder: (context, ref, _) => TextButton(
-                onPressed: () => showBillSheet(context, ref, _bill()),
-                child: const Text('open'),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+    await _pump(tester, _bill(), actions: actions);
 
     await tester.tap(find.text('Mark paid'));
     await tester.pump();
     expect(actions.calls, 1);
     await tester.pumpAndSettle();
 
-    expect(
-      find.textContaining("Couldn't save that. Try again."),
-      findsOneWidget,
-    );
+    expect(find.text("Couldn't save that. Try again."), findsOneWidget);
     final button = tester.widget<FilledButton>(find.byType(FilledButton));
     expect(button.onPressed, isNotNull);
 
     await tester.tap(find.text('Mark paid'));
     await tester.pump();
+    expect(find.text("Couldn't save that. Try again."), findsNothing);
     expect(actions.calls, 2);
+    await tester.pumpAndSettle();
+    expect(find.text("Couldn't save that. Try again."), findsOneWidget);
+  });
+
+  testWidgets('bumps data revision after successful mark paid', (tester) async {
+    await _pump(tester, _bill());
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('open')),
+    );
+    final revisionBefore = container.read(dataRevisionProvider);
+
+    await tester.tap(find.text('Mark paid'));
+    await tester.pumpAndSettle();
+
+    final revisionAfter = container.read(dataRevisionProvider);
+    expect(revisionAfter, revisionBefore + 1);
   });
 }

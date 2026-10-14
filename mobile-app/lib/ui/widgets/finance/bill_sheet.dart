@@ -39,6 +39,7 @@ class BillSheet extends ConsumerStatefulWidget {
 
 class _BillSheetState extends ConsumerState<BillSheet> {
   bool _busy = false;
+  String? _error;
 
   Future<void> _toggle() async {
     final bill = widget.bill;
@@ -65,21 +66,20 @@ class _BillSheetState extends ConsumerState<BillSheet> {
       );
       if (ok != true || !mounted) return;
     }
-    final messenger = ScaffoldMessenger.of(context);
     final revision = ref.read(dataRevisionProvider.notifier);
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       await ref.read(billActionsProvider).setPaid(bill.id, paid: markPaid);
     } catch (_) {
-      if (mounted) setState(() => _busy = false);
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            behavior: SnackBarBehavior.floating,
-            content: Text("Couldn't save that. Try again."),
-          ),
-        );
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = "Couldn't save that. Try again.";
+        });
+      }
       return;
     }
     revision.bump();
@@ -108,15 +108,23 @@ class _BillSheetState extends ConsumerState<BillSheet> {
                 hidden: hidden,
                 child: BackingMessage(id: bill.messageId),
               ),
-              if (bill.linkedTransactionIds.isNotEmpty) ...[
-                const SizedBox(height: 16),
+              if (bill.linkedTransactionIds.isNotEmpty)
                 _PaymentLegs(
                   billId: bill.id,
                   currency: currency,
                   hidden: hidden,
                 ),
-              ],
               const SizedBox(height: 24),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    _error!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
               FilledButton.icon(
                 onPressed: _busy ? null : _toggle,
                 icon: Icon(bill.isPaid ? Icons.undo : Icons.check),
@@ -267,6 +275,7 @@ class _PaymentLegs extends ConsumerWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                const SizedBox(height: 16),
                 const _Label('Payment'),
                 for (var i = 0; i < legs.length; i++) ...[
                   if (i > 0) const SizedBox(height: 8),
