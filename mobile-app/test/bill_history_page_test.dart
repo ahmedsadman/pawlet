@@ -37,8 +37,11 @@ Bill _bill(int id) => Bill(
   createdAt: DateTime(2024, id, 5),
 );
 
-Future<List<BillsQuery>> _pump(WidgetTester tester) async {
-  SharedPreferences.setMockInitialValues({});
+Future<({List<BillsQuery> queries, SharedPreferences prefs})> _pump(
+  WidgetTester tester, {
+  List<Bill> bills = const [],
+}) async {
+  SharedPreferences.setMockInitialValues({'bill_actions_hint_seen': true});
   final prefs = await SharedPreferences.getInstance();
   final queries = <BillsQuery>[];
   await tester.pumpWidget(
@@ -51,10 +54,13 @@ Future<List<BillsQuery>> _pump(WidgetTester tester) async {
         ),
         billsProvider.overrideWith((ref, query) async {
           queries.add(query);
+          final pageBills = bills.isEmpty
+              ? [_bill(query.page)]
+              : bills.skip((query.page - 1) * query.pageSize).take(query.pageSize).toList();
           return CachedResult(
             data: BillsPage(
-              bills: [_bill(query.page)],
-              total: 25,
+              bills: pageBills,
+              total: bills.isEmpty ? 25 : bills.length,
               page: query.page,
               pageSize: query.pageSize,
             ),
@@ -79,30 +85,78 @@ Future<List<BillsQuery>> _pump(WidgetTester tester) async {
     ),
   );
   await tester.pumpAndSettle();
-  return queries;
+  return (queries: queries, prefs: prefs);
 }
 
 void main() {
   testWidgets('lists every bill of the card, ten per page', (tester) async {
-    final queries = await _pump(tester);
+    final result = await _pump(tester);
 
     expect(find.text('EBL Visa'), findsOneWidget); // app bar
     expect(find.text('1.00 BDT'), findsOneWidget);
     expect(find.text('Page 1 of 3'), findsOneWidget);
-    expect(queries.last.pageSize, 10);
-    expect(queries.last.since, isNull);
+    expect(result.queries.last.pageSize, 10);
+    expect(result.queries.last.since, isNull);
+    expect(result.queries.last.bankId, 1);
 
     await tester.tap(find.byIcon(Icons.chevron_right));
     await tester.pumpAndSettle();
     expect(find.text('Page 2 of 3'), findsOneWidget);
     expect(find.text('2.00 BDT'), findsOneWidget);
-    expect(queries.last.page, 2);
+    expect(result.queries.last.page, 2);
   });
 
   testWidgets('long-press opens the bill sheet', (tester) async {
-    await _pump(tester);
+    final result = await _pump(tester);
     await tester.longPress(find.text('1.00 BDT'));
     await tester.pumpAndSettle();
     expect(find.text('Mark paid'), findsOneWidget);
+    expect(result.prefs.getBool('bill_actions_hint_seen'), true);
+  });
+
+  testWidgets('an empty card shows No bills yet', (tester) async {
+    SharedPreferences.setMockInitialValues({'bill_actions_hint_seen': true});
+    final prefs = await SharedPreferences.getInstance();
+    final queries = <BillsQuery>[];
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsRepositoryProvider.overrideWithValue(SettingsRepository(prefs)),
+          overrideBalanceHidden(false),
+          currencyProvider.overrideWith(
+            (ref) async => const CachedResult(data: 'BDT'),
+          ),
+          billsProvider.overrideWith((ref, query) async {
+            queries.add(query);
+            return CachedResult(
+              data: BillsPage(
+                bills: const [],
+                total: 0,
+                page: 1,
+                pageSize: 10,
+              ),
+            );
+          }),
+          billTransactionsProvider.overrideWith((ref, billId) async => const []),
+          messageProvider.overrideWith(
+            (ref, id) async => CachedResult(
+              data: ApiMessage(
+                id: id,
+                sender: 'EBL',
+                content: 'SMS body for $id',
+                receivedAt: DateTime(2024, 1, 5),
+              ),
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.theme,
+          home: BillHistoryPage(bank: _bank),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('No bills yet.'), findsOneWidget);
   });
 }
