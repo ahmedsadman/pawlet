@@ -128,9 +128,10 @@ class FinanceWriter {
   ) async {
     if (meta.normalizedTotalDue == null) return false;
 
-    // Strict: the bill's card must appear in the content; that credit bank is
+    // Strict: the bill needs card evidence — the card in the content, or a
+    // masked last four sent by the card's own bank. That credit bank is
     // authoritative (the LLM's bank guess is not enough on its own).
-    final bank = matchCreditCardInContent(record.content, banks);
+    final bank = matchCreditCardInContent(record.sender, record.content, banks);
     if (bank == null) return false;
 
     if (await _exists(db, AppDatabase.billsTable, record.id!)) return true;

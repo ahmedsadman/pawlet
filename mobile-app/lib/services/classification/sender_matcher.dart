@@ -1,3 +1,4 @@
+import '../../data/bank_catalog.dart';
 import '../../models/finance/bank.dart';
 
 /// Layer 1 of the pipeline: decide whether an incoming SMS belongs to any of the
@@ -107,8 +108,9 @@ const _minLastFourMasks = 2;
 /// [BankMatchTier.lastFour] tier also requires a catalog-flagged bank and that
 /// bank's sender. A visible first group ("5123****0000") is rejected here —
 /// that form is for the exact and loose matchers to judge, and a mismatching
-/// head means a different card. Any digit before the mask counts as one, even
-/// across whitespace, so "Tk 500 ***0000" does not match.
+/// head means a different card. Any digit before the mask, even across
+/// whitespace, reads as a visible first group, so "Tk 500 ***0000" does not
+/// match.
 bool contentMatchesMaskedLastFour(String content, String? cardDigits) {
   final digits = _parseCardDigits(cardDigits);
   if (digits == null) return false;
@@ -154,6 +156,12 @@ enum BankMatchTier {
   /// ([contentMatchesCardDigits]).
   exactCard,
 
+  /// A suffix-only masked card ([contentMatchesMaskedLastFour]) from a bank the
+  /// catalog flags with [BankCatalogEntry.cardLastFourOnly], sent by that bank.
+  /// Outranks [sender]: card rows carry no matchers, so a sender match can only
+  /// reach the deposit, which would take the card's balance.
+  lastFour,
+
   /// The sender contains one of the bank's own matchers. Card rows carry none,
   /// so in practice this reaches deposits only.
   sender,
@@ -172,10 +180,24 @@ bool _tierMatches(
 ) => switch (tier) {
   BankMatchTier.exactCard =>
     bank.isCredit && contentMatchesCardDigits(content, bank.cardDigits),
+  BankMatchTier.lastFour => _lastFourMatches(sender, content, bank),
   BankMatchTier.sender => senderMatchesBank(sender, bank),
   BankMatchTier.looseCard =>
     bank.isCredit && contentLooselyMatchesCardDigits(content, bank.cardDigits),
 };
+
+/// [BankMatchTier.lastFour]'s evidence. The sender is checked against the
+/// catalog entry's matchers, not the card row's (which are deliberately empty),
+/// so the [BankMatchTier.sender] tier still reaches only deposits. A card whose
+/// name is not a catalog label never matches.
+bool _lastFourMatches(String sender, String content, Bank bank) {
+  if (!bank.isCredit) return false;
+  final entry = bankCatalogByLabel(bank.name);
+  if (entry == null || !entry.cardLastFourOnly) return false;
+  final lower = sender.toLowerCase();
+  if (!entry.matchers.any(lower.contains)) return false;
+  return contentMatchesMaskedLastFour(content, bank.cardDigits);
+}
 
 /// The bank [tiers] settle on, or null when none does.
 ///
@@ -212,10 +234,14 @@ final _cardTiers = [
     if (tier != BankMatchTier.sender) tier,
 ];
 
-/// The credit bank whose card appears in [content], or null.
-/// Used by the finance writer to attach a bill to a card.
-Bank? matchCreditCardInContent(String content, List<Bank> banks) =>
-    _resolve('', content, banks, _cardTiers);
+/// The credit bank whose card evidence appears in this SMS, or null.
+/// Used by the finance writer to attach a bill to a card. [sender] is needed
+/// because a masked last four only counts when the card's own bank sent it.
+Bank? matchCreditCardInContent(
+  String sender,
+  String content,
+  List<Bank> banks,
+) => _resolve(sender, content, banks, _cardTiers);
 
 /// The account a transaction SMS belongs to, or null when nothing fits.
 ///
