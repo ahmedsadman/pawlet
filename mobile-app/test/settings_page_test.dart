@@ -111,6 +111,10 @@ void main() {
     );
 
     expect(find.textContaining("Pawlet's service"), findsOneWidget);
+    expect(
+      find.textContaining('By design, Pawlet cannot identify users.'),
+      findsOneWidget,
+    );
     expect(find.text('Use LLM to improve accuracy'), findsNothing);
   });
 
