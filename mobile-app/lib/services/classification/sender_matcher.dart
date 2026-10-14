@@ -107,75 +107,97 @@ Bank? singleSenderMatch(String sender, List<Bank> banks) {
   return found;
 }
 
-/// The first credit bank whose full card digits appear in [content], or null.
+/// The kinds of evidence tying an SMS to a bank, strongest first. Enum order is
+/// the precedence: every resolver walks the tiers it accepts in this order, and
+/// the first tier that settles on a bank wins.
 ///
-/// Callers that weigh the card against another signal use this rather than
-/// [matchCreditCardInContent]: eight matching digits are strong evidence, three
-/// per side are not, so only the exact form should outrank a sender match.
-Bank? matchExactCreditCardInContent(String content, List<Bank> banks) {
-  for (final bank in banks) {
-    if (bank.isCredit && contentMatchesCardDigits(content, bank.cardDigits)) {
-      return bank;
+/// [sender] outranks [looseCard] because a deposit SMS printing a masked account
+/// number can resemble a card, and landing on a card would silently stop the
+/// deposit's balance from updating.
+enum BankMatchTier {
+  /// Both four-digit card groups appear in the content
+  /// ([contentMatchesCardDigits]).
+  exactCard,
+
+  /// The sender contains one of the bank's own matchers. Card rows carry none,
+  /// so in practice this reaches deposits only.
+  sender,
+
+  /// At least three visible digits on each side of a masked card
+  /// ([contentLooselyMatchesCardDigits]).
+  looseCard,
+}
+
+/// Whether [bank] shows [tier]'s evidence in this SMS.
+bool _tierMatches(
+  BankMatchTier tier,
+  String sender,
+  String content,
+  Bank bank,
+) => switch (tier) {
+  BankMatchTier.exactCard =>
+    bank.isCredit && contentMatchesCardDigits(content, bank.cardDigits),
+  BankMatchTier.sender => senderMatchesBank(sender, bank),
+  BankMatchTier.looseCard =>
+    bank.isCredit && contentLooselyMatchesCardDigits(content, bank.cardDigits),
+};
+
+/// The bank [tiers] settle on, or null when none does.
+///
+/// [tiers] must be in enum order. Under [BankMatchTier.exactCard] the first
+/// matching bank wins: eight digits make a collision implausible, and that is
+/// how existing cards have always resolved. Every weaker tier must land on
+/// exactly one bank; a tie falls through to the next tier rather than guessing.
+Bank? _resolve(
+  String sender,
+  String content,
+  List<Bank> banks,
+  List<BankMatchTier> tiers,
+) {
+  for (final tier in tiers) {
+    Bank? found;
+    var tied = false;
+    for (final bank in banks) {
+      if (!_tierMatches(tier, sender, content, bank)) continue;
+      if (tier == BankMatchTier.exactCard) return bank;
+      if (found != null) {
+        tied = true;
+        break;
+      }
+      found = bank;
     }
+    if (found != null && !tied) return found;
   }
   return null;
 }
 
-/// The credit bank whose card digits appear in [content], or null.
-/// Reused by the finance writer (Phase 5) to attach a bill/transaction to a card.
-///
-/// An exact match anywhere in the list wins outright. Only when no card matches
-/// exactly does the loose fallback run, and it must land on exactly one card —
-/// three visible digits leave the trailing group as the sole discriminator, so
-/// an ambiguous result is left unattributed rather than guessed.
-///
-/// The two passes are deliberately asymmetric: the exact pass keeps its original
-/// first-hit-wins behaviour, since four digits per side already make a collision
-/// implausible and changing it would alter how existing cards resolve.
-Bank? matchCreditCardInContent(String content, List<Bank> banks) =>
-    matchExactCreditCardInContent(content, banks) ??
-    matchLooseCreditCardInContent(content, banks);
+/// The tiers that count as card evidence: all but [BankMatchTier.sender].
+final _cardTiers = [
+  for (final tier in BankMatchTier.values)
+    if (tier != BankMatchTier.sender) tier,
+];
 
-/// The one credit bank whose partially-masked card digits fit [content], or
-/// null when none or more than one fits.
-///
-/// Three visible digits leave the trailing group as the sole discriminator, so
-/// an ambiguous result is left unattributed rather than guessed.
-Bank? matchLooseCreditCardInContent(String content, List<Bank> banks) {
-  Bank? found;
-  for (final bank in banks) {
-    if (bank.isCredit &&
-        contentLooselyMatchesCardDigits(content, bank.cardDigits)) {
-      if (found != null) return null;
-      found = bank;
-    }
-  }
-  return found;
-}
+/// The credit bank whose card appears in [content], or null.
+/// Used by the finance writer to attach a bill to a card.
+Bank? matchCreditCardInContent(String content, List<Bank> banks) =>
+    _resolve('', content, banks, _cardTiers);
 
 /// The account a transaction SMS belongs to, or null when nothing fits.
 ///
-/// Bank identity is deterministic (no model guesses it): a full card-digit
-/// match in the content wins, then the single bank whose matchers match the
-/// sender, then a partially-masked card. The sender outranks the masked card
-/// because a deposit SMS printing a masked account number can resemble one,
-/// and landing on a card would silently stop the deposit's balance from
-/// updating. Ambiguous resolves to null, leaving the row unlinked.
+/// Bank identity is deterministic (no model guesses it): every tier, in
+/// [BankMatchTier] order. Ambiguous resolves to null, leaving the row unlinked.
 ///
 /// Shared so the writer and the bulk import's orphan relink cannot drift apart
 /// — a relink that resolved differently would move rows between accounts.
 Bank? resolveTransactionBank(String sender, String content, List<Bank> banks) =>
-    matchExactCreditCardInContent(content, banks) ??
-    singleSenderMatch(sender, banks) ??
-    matchLooseCreditCardInContent(content, banks);
+    _resolve(sender, content, banks, BankMatchTier.values);
 
-/// Layer-1 gate: the banks an SMS plausibly belongs to — sender-token match, or
-/// (for credit cards) card digits found in the content. An empty result means
-/// the SMS is ignored with no LLM call.
+/// Layer-1 gate: the banks an SMS plausibly belongs to — any bank showing any
+/// tier's evidence. An empty result means the SMS is ignored with no LLM call.
 ///
-/// Deliberately more permissive than [matchCreditCardInContent]: a loose card
-/// match gates the SMS in without any ambiguity check, because a false positive
-/// here costs one LLM call while a false negative discards a real bill unseen.
+/// Deliberately more permissive than [resolveTransactionBank]: no tie rule
+/// applies, because a false positive here costs one LLM call while a false
+/// negative discards a real bill unseen.
 List<Bank> gateBanks(String sender, String content, List<Bank> banks) {
   return banks.where((b) => _gateMatches(sender, content, b)).toList();
 }
@@ -187,8 +209,6 @@ List<Bank> gateBanks(String sender, String content, List<Bank> banks) {
 bool hasGateBank(String sender, String content, List<Bank> banks) =>
     banks.any((b) => _gateMatches(sender, content, b));
 
-bool _gateMatches(String sender, String content, Bank bank) =>
-    senderMatchesBank(sender, bank) ||
-    (bank.isCredit &&
-        (contentMatchesCardDigits(content, bank.cardDigits) ||
-            contentLooselyMatchesCardDigits(content, bank.cardDigits)));
+bool _gateMatches(String sender, String content, Bank bank) => BankMatchTier
+    .values
+    .any((tier) => _tierMatches(tier, sender, content, bank));
