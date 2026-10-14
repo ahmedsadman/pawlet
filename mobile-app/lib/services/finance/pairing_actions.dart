@@ -93,9 +93,9 @@ class PairingActions {
 
   /// Reverses [d]. An accepted pairing is only reversed while the two legs
   /// still point at each other. Undoing a card payment always clears the bank
-  /// leg's bill, but clears the card leg's bill and the bill's `paid_at` only
-  /// when this accept made that link ([PairingDecision.linkedBillId]) and the
-  /// user did not override the bill's status.
+  /// leg's bill; the card leg's bill is cleared only when this accept made that
+  /// link ([PairingDecision.linkedBillId]), and then the bill's `paid_at` is
+  /// cleared too unless the user overrode the bill's status.
   Future<void> undo(PairingDecision d) async {
     final s = d.suggestion;
     if (!d.accepted) {

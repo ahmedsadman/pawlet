@@ -104,4 +104,20 @@ void main() {
     expect(row['paid_at'], isNull);
     expect(row['status_overridden'], 1);
   });
+
+  test('marking paid keeps existing payment links', () async {
+    final msg = await insertSms(db, sender: 'MTB', ts: 2);
+    final tx = await insertTx(
+      db,
+      messageId: msg,
+      billId: bill,
+      amount: '50',
+      type: 'transfer',
+      date: DateTime(2026, 7, 8),
+    );
+
+    await actions.setPaid(bill, paid: true);
+
+    expect(await billIdOf(tx), bill);
+  });
 }
