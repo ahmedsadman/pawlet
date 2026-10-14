@@ -129,7 +129,7 @@ void main() {
     );
 
     expect(queries, isNotEmpty);
-    expect(queries.last.since, billsWindowStart(DateTime.now()));
+    expect(queries.last.since, billsWindowStart(now));
     expect(queries.last.pageSize, 100);
     expect(queries.last.bankId, 1);
   });
