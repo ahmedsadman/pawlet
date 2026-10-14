@@ -256,4 +256,22 @@ void main() {
 
     expect(await db.query('pairing_rejections'), isEmpty);
   });
+
+  test('accepting a card payment leaves an overridden bill alone', () async {
+    final (out, card, bill) = await cardPairWithBill();
+    await db.update(
+      'bills',
+      {'status_overridden': 1},
+      where: 'id = ?',
+      whereArgs: [bill],
+    );
+
+    final d = await actions.accept(await only());
+
+    expect(d!.linkedBillId, isNull);
+    expect((await row(out))['paired_with_id'], card);
+    expect((await row(card))['bill_id'], isNull);
+    expect((await row(out))['bill_id'], isNull);
+    expect((await db.query('bills')).single['paid_at'], isNull);
+  });
 }
