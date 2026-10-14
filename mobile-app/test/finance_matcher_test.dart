@@ -622,5 +622,23 @@ void main() {
       expect(row['paid_at'], isNull);
       await db.close();
     });
+
+    test(
+      'payment-side linking leaves a bill the user marked paid alone',
+      () async {
+        final (db, bill, transfer) = await overriddenBillAndPayment(
+          paidAt: DateTime(2026, 7, 6),
+        );
+        expect(await findAndLinkBillForPayment(db, transfer), isNull);
+        expect((await txRow(db, transfer))['bill_id'], isNull);
+        final row = (await db.query(
+          'bills',
+          where: 'id = ?',
+          whereArgs: [bill],
+        )).single;
+        expect(row['paid_at'], DateTime(2026, 7, 6).millisecondsSinceEpoch);
+        await db.close();
+      },
+    );
   });
 }
