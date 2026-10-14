@@ -6,16 +6,21 @@ import '../../../models/finance/bill.dart';
 import '../../../models/finance/bills_query.dart';
 import '../../../state/finance_providers.dart';
 import '../../../utils/date_range.dart';
+import '../../bill_history_page.dart';
+import '../hint_banner.dart';
 import '../section_header.dart';
 import '../skeleton.dart';
 import 'bill_row.dart';
+import 'bill_sheet.dart';
 
 // The window's bills fit one page: a card gets about one bill a month.
 const _windowPageSize = 100;
 
 /// Per credit-card bills from the last 12 months (see [billsWindowStart]).
 /// Each card shows its latest bill by default; tapping the card header reveals
-/// previous bills. Hidden entirely when the user has no credit cards.
+/// the rest of the window, and "View more" opens the card's full history when
+/// it has older bills. Long-press a bill for its SMS and the paid/unpaid
+/// action. Hidden entirely when the user has no credit cards.
 class CreditCardBillsSection extends ConsumerWidget {
   const CreditCardBillsSection({super.key});
 
@@ -32,6 +37,7 @@ class CreditCardBillsSection extends ConsumerWidget {
     }
     final creditCards = banks.where((b) => b.isCredit).toList();
     if (creditCards.isEmpty) return const SizedBox.shrink();
+    final hintSeen = ref.watch(billHintSeenProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -40,6 +46,16 @@ class CreditCardBillsSection extends ConsumerWidget {
         Card(
           child: Column(
             children: [
+              if (!hintSeen)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  child: HintBanner(
+                    'Tip: long-press a bill to see its SMS or mark it '
+                    'paid/unpaid.',
+                    onDismiss: () =>
+                        ref.read(billHintSeenProvider.notifier).markSeen(),
+                  ),
+                ),
               for (var i = 0; i < creditCards.length; i++) ...[
                 if (i > 0) const Divider(height: 1),
                 _BankBills(bank: creditCards[i]),
@@ -78,6 +94,13 @@ class _BankBillsState extends ConsumerState<_BankBills> {
         ),
       ),
     );
+    final older =
+        ref
+            .watch(
+              olderBillCountProvider((bankId: widget.bank.id, before: since)),
+            )
+            .value ??
+        0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -89,7 +112,18 @@ class _BankBillsState extends ConsumerState<_BankBills> {
         data: (result) {
           final bills = result.data.bills;
           if (bills.isEmpty) {
-            return _header(theme, subtitle: 'No bills yet.');
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _header(
+                  theme,
+                  subtitle: older > 0
+                      ? 'No bills in the last 12 months.'
+                      : 'No bills yet.',
+                ),
+                if (older > 0) _viewMore(),
+              ],
+            );
           }
           final rest = bills.skip(1).toList();
           return Column(
@@ -113,16 +147,34 @@ class _BankBillsState extends ConsumerState<_BankBills> {
                         ),
                 ),
               ),
-              BillRow(bill: bills.first, currency: currency),
+              _row(bills.first, currency),
               if (_expanded)
-                for (final Bill bill in rest)
-                  BillRow(bill: bill, currency: currency),
+                for (final bill in rest) _row(bill, currency),
+              if (older > 0) _viewMore(),
             ],
           );
         },
       ),
     );
   }
+
+  Widget _row(Bill bill, String currency) => BillRow(
+    bill: bill,
+    currency: currency,
+    onLongPress: () => showBillSheet(context, ref, bill),
+  );
+
+  Widget _viewMore() => Align(
+    alignment: Alignment.centerLeft,
+    child: TextButton(
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => BillHistoryPage(bank: widget.bank),
+        ),
+      ),
+      child: const Text('View more'),
+    ),
+  );
 
   Widget _header(ThemeData theme, {Widget? trailing, String? subtitle}) {
     return Row(
