@@ -93,10 +93,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     // be wrong for two of them.
     return switch (mode) {
       LlmMode.proxy =>
-        'All data stays on device. Messages the local classification model '
-            "can't categorize may be sent to Pawlet's service to be classified, "
-            'where they are never stored or logged. No identifying information is '
-            'recorded externally.',
+        'All data stays on your device. Messages the on-device model can\'t '
+            "categorize may be sent to Pawlet's service, which never stores or "
+            'logs them, and are marked "LLM". By design, Pawlet cannot identify '
+            'users.',
       LlmMode.byok =>
         'Messages the on-device model cannot categorize are sent to OpenRouter '
             "with your own API key; Pawlet's service never sees them. The app "
