@@ -39,9 +39,10 @@ Bill _bill(int id) => Bill(
 
 Future<({List<BillsQuery> queries, SharedPreferences prefs})> _pump(
   WidgetTester tester, {
-  List<Bill> bills = const [],
+  List<Bill>? bills,
+  Map<String, Object> prefsSeed = const {'bill_actions_hint_seen': true},
 }) async {
-  SharedPreferences.setMockInitialValues({'bill_actions_hint_seen': true});
+  SharedPreferences.setMockInitialValues(prefsSeed);
   final prefs = await SharedPreferences.getInstance();
   final queries = <BillsQuery>[];
   await tester.pumpWidget(
@@ -54,7 +55,7 @@ Future<({List<BillsQuery> queries, SharedPreferences prefs})> _pump(
         ),
         billsProvider.overrideWith((ref, query) async {
           queries.add(query);
-          final pageBills = bills.isEmpty
+          final pageBills = bills == null
               ? [_bill(query.page)]
               : bills
                     .skip((query.page - 1) * query.pageSize)
@@ -63,7 +64,7 @@ Future<({List<BillsQuery> queries, SharedPreferences prefs})> _pump(
           return CachedResult(
             data: BillsPage(
               bills: pageBills,
-              total: bills.isEmpty ? 25 : bills.length,
+              total: bills == null ? 25 : bills.length,
               page: query.page,
               pageSize: query.pageSize,
             ),
@@ -110,7 +111,8 @@ void main() {
   });
 
   testWidgets('long-press opens the bill sheet', (tester) async {
-    final result = await _pump(tester);
+    final result = await _pump(tester, prefsSeed: const {});
+    expect(result.prefs.getBool('bill_actions_hint_seen'), isNull);
     await tester.longPress(find.text('1.00 BDT'));
     await tester.pumpAndSettle();
     expect(find.text('Mark paid'), findsOneWidget);
@@ -118,47 +120,7 @@ void main() {
   });
 
   testWidgets('an empty card shows No bills yet', (tester) async {
-    SharedPreferences.setMockInitialValues({'bill_actions_hint_seen': true});
-    final prefs = await SharedPreferences.getInstance();
-    final queries = <BillsQuery>[];
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          settingsRepositoryProvider.overrideWithValue(
-            SettingsRepository(prefs),
-          ),
-          overrideBalanceHidden(false),
-          currencyProvider.overrideWith(
-            (ref) async => const CachedResult(data: 'BDT'),
-          ),
-          billsProvider.overrideWith((ref, query) async {
-            queries.add(query);
-            return CachedResult(
-              data: BillsPage(bills: const [], total: 0, page: 1, pageSize: 10),
-            );
-          }),
-          billTransactionsProvider.overrideWith(
-            (ref, billId) async => const [],
-          ),
-          messageProvider.overrideWith(
-            (ref, id) async => CachedResult(
-              data: ApiMessage(
-                id: id,
-                sender: 'EBL',
-                content: 'SMS body for $id',
-                receivedAt: DateTime(2024, 1, 5),
-              ),
-            ),
-          ),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.theme,
-          home: BillHistoryPage(bank: _bank),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
+    await _pump(tester, bills: const []);
     expect(find.text('No bills yet.'), findsOneWidget);
   });
 }

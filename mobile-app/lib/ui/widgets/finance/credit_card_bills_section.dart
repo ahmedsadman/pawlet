@@ -16,6 +16,12 @@ import 'bill_sheet.dart';
 // The window's bills fit one page: a card gets about one bill a month.
 const _windowPageSize = 100;
 
+BillsQuery _billsQuery(Bank bank) => BillsQuery(
+  bankId: bank.id,
+  pageSize: _windowPageSize,
+  since: billsWindowStart(DateTime.now()),
+);
+
 /// Per credit-card bills from the last 12 months (see [billsWindowStart]).
 /// Each card shows its latest bill by default; tapping the card header reveals
 /// the rest of the window, and "View more" opens the card's full history when
@@ -38,6 +44,16 @@ class CreditCardBillsSection extends ConsumerWidget {
     final creditCards = banks.where((b) => b.isCredit).toList();
     if (creditCards.isEmpty) return const SizedBox.shrink();
     final hintSeen = ref.watch(billHintSeenProvider);
+    final anyBills = creditCards.any(
+      (bank) =>
+          ref
+              .watch(billsProvider(_billsQuery(bank)))
+              .value
+              ?.data
+              .bills
+              .isNotEmpty ??
+          false,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -46,9 +62,9 @@ class CreditCardBillsSection extends ConsumerWidget {
         Card(
           child: Column(
             children: [
-              if (!hintSeen)
+              if (!hintSeen && anyBills)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: HintBanner(
                     'Tip: long-press a bill to see its SMS or mark it '
                     'paid/unpaid.',
@@ -58,7 +74,10 @@ class CreditCardBillsSection extends ConsumerWidget {
                 ),
               for (var i = 0; i < creditCards.length; i++) ...[
                 if (i > 0) const Divider(height: 1),
-                _BankBills(bank: creditCards[i]),
+                _BankBills(
+                  key: ValueKey(creditCards[i].id),
+                  bank: creditCards[i],
+                ),
               ],
             ],
           ),
@@ -69,7 +88,7 @@ class CreditCardBillsSection extends ConsumerWidget {
 }
 
 class _BankBills extends ConsumerStatefulWidget {
-  const _BankBills({required this.bank});
+  const _BankBills({super.key, required this.bank});
 
   final Bank bank;
 
@@ -84,20 +103,15 @@ class _BankBillsState extends ConsumerState<_BankBills> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currency = ref.watch(currencyProvider).value?.data ?? '';
-    final since = billsWindowStart(DateTime.now());
-    final async = ref.watch(
-      billsProvider(
-        BillsQuery(
-          bankId: widget.bank.id,
-          pageSize: _windowPageSize,
-          since: since,
-        ),
-      ),
-    );
+    final query = _billsQuery(widget.bank);
+    final async = ref.watch(billsProvider(query));
     final older =
         ref
             .watch(
-              olderBillCountProvider((bankId: widget.bank.id, before: since)),
+              olderBillCountProvider((
+                bankId: widget.bank.id,
+                before: query.since!,
+              )),
             )
             .value ??
         0;

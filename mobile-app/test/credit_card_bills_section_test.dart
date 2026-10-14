@@ -47,11 +47,15 @@ Bill _bill(int id, DateTime received, String total) => Bill(
   createdAt: received,
 );
 
-Future<void> _pump(
+Future<
+  ({SharedPreferences prefs, List<({int bankId, DateTime before})>? olderKeys})
+>
+_pump(
   WidgetTester tester, {
   required List<Bank> banks,
   List<Bill> bills = const [],
   List<BillsQuery>? queries,
+  List<({int bankId, DateTime before})>? olderKeys,
   int older = 0,
   Map<String, Object> prefsSeed = const {'bill_actions_hint_seen': true},
 }) async {
@@ -80,7 +84,10 @@ Future<void> _pump(
             stale: false,
           );
         }),
-        olderBillCountProvider.overrideWith((ref, key) async => older),
+        olderBillCountProvider.overrideWith((ref, key) async {
+          olderKeys?.add(key);
+          return older;
+        }),
         billTransactionsProvider.overrideWith((ref, billId) async => const []),
         messageProvider.overrideWith(
           (ref, id) async => CachedResult(
@@ -102,6 +109,7 @@ Future<void> _pump(
     ),
   );
   await tester.pumpAndSettle();
+  return (prefs: prefs, olderKeys: olderKeys);
 }
 
 void main() {
@@ -141,18 +149,23 @@ void main() {
 
   testWidgets('asks for the last 12 months of bills', (tester) async {
     final queries = <BillsQuery>[];
+    final olderKeys = <({int bankId, DateTime before})>[];
     final now = DateTime.now();
     await _pump(
       tester,
       banks: [_credit('Visa')],
       bills: [_bill(1, DateTime(now.year, now.month - 1, 5), '300.00')],
       queries: queries,
+      olderKeys: olderKeys,
     );
 
     expect(queries, isNotEmpty);
     expect(queries.last.since, billsWindowStart(now));
     expect(queries.last.pageSize, 100);
     expect(queries.last.bankId, 1);
+    expect(olderKeys, isNotEmpty);
+    expect(olderKeys.last.before, billsWindowStart(now));
+    expect(olderKeys.last.bankId, 1);
   });
 
   testWidgets('offers View more only when older bills exist', (tester) async {
@@ -198,7 +211,7 @@ void main() {
   });
 
   testWidgets('shows the one-time hint until dismissed', (tester) async {
-    await _pump(
+    final result = await _pump(
       tester,
       banks: [_credit('Visa')],
       bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
@@ -209,6 +222,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.close));
     await tester.pump();
     expect(find.textContaining('long-press a bill'), findsNothing);
+    expect(result.prefs.getBool('bill_actions_hint_seen'), true);
   });
 
   testWidgets('a long-press retires the hint', (tester) async {
@@ -222,6 +236,16 @@ void main() {
     await tester.pumpAndSettle();
     Navigator.of(tester.element(find.text('Mark paid'))).pop();
     await tester.pumpAndSettle();
+    expect(find.textContaining('long-press a bill'), findsNothing);
+  });
+
+  testWidgets('no hint when card has no bills', (tester) async {
+    await _pump(
+      tester,
+      banks: [_credit('Visa')],
+      bills: const [],
+      prefsSeed: const {},
+    );
     expect(find.textContaining('long-press a bill'), findsNothing);
   });
 }
