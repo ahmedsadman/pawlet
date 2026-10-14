@@ -274,4 +274,29 @@ void main() {
     expect((await row(out))['bill_id'], isNull);
     expect((await db.query('bills')).single['paid_at'], isNull);
   });
+
+  test(
+    'undo leaves an overridden bill paid_at alone while unpairing',
+    () async {
+      final (out, card, bill) = await cardPairWithBill();
+      final d = await actions.accept(await only());
+      final billPaidAt = (await db.query('bills')).single['paid_at'];
+      await db.update(
+        'bills',
+        {'status_overridden': 1},
+        where: 'id = ?',
+        whereArgs: [bill],
+      );
+
+      await actions.undo(d!);
+
+      expect((await row(out))['type'], 'expense');
+      expect((await row(out))['paired_with_id'], isNull);
+      expect((await row(out))['bill_id'], isNull);
+      expect((await row(card))['type'], 'transfer');
+      expect((await row(card))['paired_with_id'], isNull);
+      expect((await row(card))['bill_id'], isNull);
+      expect((await db.query('bills')).single['paid_at'], billPaidAt);
+    },
+  );
 }
