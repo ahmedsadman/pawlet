@@ -212,6 +212,7 @@ plus user-entered manual transactions (which have no backing SMS).
 | `statement_period` | INTEGER | nullable, epoch ms |
 | `paid_at` | INTEGER | nullable, epoch ms |
 | `created_at` | INTEGER | required, epoch ms |
+| `status_overridden` | INTEGER | `0`/`1`, default `0`; `1` = paid/unpaid set by the user. Optional on restore (older backups omit it) |
 
 **`pairing_rejections`** — optional; user's "No" answers in pairing review. See
 [Pairing Review](pairing-review.md).

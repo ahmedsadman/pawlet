@@ -103,6 +103,11 @@ skipped** and left unpaired.
   closest in time. It sets `bill_id` on the transfer and its paired debit, and stamps
   `paid_at` on the bill. Running from **both** directions — payment→bill and bill→payment —
   means a late-arriving counterpart still links to whichever record showed up first.
+- **User overrides** — a bill the user marked paid or unpaid from its long-press sheet
+  (`lib/services/finance/bill_actions.dart`) carries `status_overridden = 1` and is
+  skipped by bill linking from both directions, including the pairing review's accept.
+  Marking a bill unpaid also clears `bill_id` on its linked payment legs; those legs can
+  then link to another bill on the card if one matches.
 
 The whole sweep is **look-back bounded to the bill window**: older rows can no longer
 acquire a new counterpart, so they are skipped.
