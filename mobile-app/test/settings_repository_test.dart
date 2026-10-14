@@ -200,4 +200,16 @@ void main() {
       expect(r.exportAll().containsKey('update_prompt_snoozed_until'), isFalse);
     },
   );
+
+  test('billActionsHintSeen defaults false and persists', () async {
+    final r = await repo();
+    expect(r.billActionsHintSeen, isFalse);
+    await r.setBillActionsHintSeen(true);
+    expect(r.billActionsHintSeen, isTrue);
+  });
+
+  test('exportAll includes the bill hint flag once set', () async {
+    final r = await repo({'bill_actions_hint_seen': true});
+    expect(r.exportAll()['bill_actions_hint_seen'], true);
+  });
 }

@@ -100,3 +100,20 @@ void refreshAllFinance(WidgetRef ref) {
   ref.invalidate(billTransactionsProvider);
   ref.invalidate(messageProvider);
 }
+
+/// Whether the one-time "long-press a bill" hint is retired. Shared rather
+/// than widget-local because the bill history page can retire it too.
+class BillHintSeen extends Notifier<bool> {
+  @override
+  bool build() => ref.watch(settingsRepositoryProvider).billActionsHintSeen;
+
+  Future<void> markSeen() async {
+    if (state) return;
+    state = true;
+    await ref.read(settingsRepositoryProvider).setBillActionsHintSeen(true);
+  }
+}
+
+final billHintSeenProvider = NotifierProvider<BillHintSeen, bool>(
+  BillHintSeen.new,
+);
