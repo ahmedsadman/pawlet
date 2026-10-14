@@ -249,6 +249,62 @@ void main() {
     });
   });
 
+  group('contentMatchesMaskedLastFour', () {
+    const digits = '4111|0000';
+
+    test('matches suffix-only masked cards', () {
+      for (final content in const [
+        'using Card#***0000.',
+        'Card XXXX-XXXX-XXXX-0000 used',
+        'card **** 0000 used',
+        'card xx0000',
+        '***0000',
+      ]) {
+        expect(
+          contentMatchesMaskedLastFour(content, digits),
+          isTrue,
+          reason: content,
+        );
+      }
+    });
+
+    test('needs at least two mask characters', () {
+      expect(contentMatchesMaskedLastFour('Card#*0000', digits), isFalse);
+      expect(contentMatchesMaskedLastFour('BDT 0000 paid', digits), isFalse);
+      // A lone "X" ending a word is one mask character, not two.
+      expect(contentMatchesMaskedLastFour('TAX 0000', digits), isFalse);
+    });
+
+    test('leaves cards with a visible first group to the other matchers', () {
+      // A matching head is exactCard's job; a mismatching head is another card.
+      expect(contentMatchesMaskedLastFour('5123****0000', digits), isFalse);
+      expect(contentMatchesMaskedLastFour('4111****0000', digits), isFalse);
+      expect(contentMatchesMaskedLastFour('4111 XXXX 0000', digits), isFalse);
+    });
+
+    test('rejects a different last four', () {
+      expect(contentMatchesMaskedLastFour('Card#***0001', digits), isFalse);
+    });
+
+    test('does not read the last four out of a longer number', () {
+      expect(contentMatchesMaskedLastFour('Card#***10000', digits), isFalse);
+      expect(contentMatchesMaskedLastFour('Card#***00001', digits), isFalse);
+    });
+
+    test('keeps looking past an unmasked occurrence of the digits', () {
+      expect(
+        contentMatchesMaskedLastFour('Ref 0000, Card#***0000', digits),
+        isTrue,
+      );
+    });
+
+    test('null / malformed card digits never match', () {
+      expect(contentMatchesMaskedLastFour('***0000', null), isFalse);
+      expect(contentMatchesMaskedLastFour('***0000', '0000'), isFalse);
+      expect(contentMatchesMaskedLastFour('***0000', '411|0000'), isFalse);
+    });
+  });
+
   group('singleSenderMatch', () {
     test('returns the one bank whose matcher hits the sender', () {
       expect(singleSenderMatch('AD-MTB', [mtb, ebl]), mtb);
