@@ -120,15 +120,17 @@ void main() {
 
   testWidgets('asks for the last 12 months of bills', (tester) async {
     final queries = <BillsQuery>[];
+    final now = DateTime.now();
     await _pump(
       tester,
       banks: [_credit('Visa')],
-      bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
+      bills: [_bill(1, DateTime(now.year, now.month - 1, 5), '300.00')],
       queries: queries,
     );
 
     expect(queries, isNotEmpty);
     expect(queries.last.since, billsWindowStart(DateTime.now()));
+    expect(queries.last.pageSize, 100);
     expect(queries.last.bankId, 1);
   });
 }
