@@ -285,4 +285,90 @@ void main() {
     );
     expect(find.textContaining('long-press a bill'), findsNothing);
   });
+
+  testWidgets('tapping the latest bill row expands and collapses the card', (
+    tester,
+  ) async {
+    await _pump(tester, banks: [_credit('Visa')], bills: twoBills);
+    // Second bill hidden initially.
+    expect(find.text('200.00 BDT'), findsNothing);
+
+    // Tap the latest bill's amount to expand.
+    await tester.tap(find.text('300.00 BDT'));
+    await tester.pumpAndSettle();
+    expect(find.text('200.00 BDT'), findsOneWidget);
+
+    // Tap again to collapse.
+    await tester.tap(find.text('300.00 BDT'));
+    await tester.pumpAndSettle();
+    expect(find.text('200.00 BDT'), findsNothing);
+  });
+
+  testWidgets(
+    'long-pressing the latest bill opens the sheet without expanding',
+    (tester) async {
+      await _pump(tester, banks: [_credit('Visa')], bills: twoBills);
+      expect(find.text('200.00 BDT'), findsNothing);
+
+      await tester.longPress(find.text('300.00 BDT'));
+      await tester.pumpAndSettle();
+      expect(find.text('Mark paid'), findsOneWidget);
+
+      // Close the sheet.
+      Navigator.of(tester.element(find.text('Mark paid'))).pop();
+      await tester.pumpAndSettle();
+
+      // Card should still be collapsed.
+      expect(find.text('200.00 BDT'), findsNothing);
+    },
+  );
+
+  testWidgets('tapping an older row while expanded keeps the card expanded', (
+    tester,
+  ) async {
+    await _pump(tester, banks: [_credit('Visa')], bills: twoBills);
+    // Expand the card.
+    await tester.tap(find.text('Visa'));
+    await tester.pumpAndSettle();
+    expect(find.text('200.00 BDT'), findsOneWidget);
+
+    // Tap the older bill.
+    await tester.tap(find.text('200.00 BDT'));
+    await tester.pumpAndSettle();
+
+    // Should still be expanded.
+    expect(find.text('200.00 BDT'), findsOneWidget);
+  });
+
+  testWidgets('one-bill card stays non-tappable in accordion', (tester) async {
+    await _pump(
+      tester,
+      banks: [_credit('Visa'), _credit('Amex', id: 5)],
+      bills: [
+        ...twoBills,
+        _bill(11, DateTime(2025, 3, 7), '310.00', bankId: 5),
+      ],
+    );
+    // Expand Visa.
+    await tester.tap(find.text('Visa'));
+    await tester.pumpAndSettle();
+    expect(find.text('200.00 BDT'), findsOneWidget);
+
+    // Tap Amex header (one bill, so header is non-interactive).
+    await tester.tap(find.text('Amex'));
+    await tester.pumpAndSettle();
+
+    // Visa should still be expanded.
+    expect(find.text('200.00 BDT'), findsOneWidget);
+
+    // Tap Amex's only bill.
+    await tester.tap(find.text('310.00 BDT'));
+    await tester.pumpAndSettle();
+
+    // Visa should still be expanded.
+    expect(find.text('200.00 BDT'), findsOneWidget);
+
+    // Only Visa's chevron should exist.
+    expect(find.byIcon(Icons.expand_more), findsOneWidget);
+  });
 }
