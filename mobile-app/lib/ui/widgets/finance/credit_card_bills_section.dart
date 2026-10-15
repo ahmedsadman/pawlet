@@ -193,9 +193,13 @@ class _BankBillsState extends ConsumerState<_BankBills>
                         ),
                 ),
               ),
-              _row(bills.first, currency),
-              // SizeTransition clips, and keeps the rows built while they
-              // slide shut so collapse mirrors expand.
+              _row(
+                bills.first,
+                currency,
+                onTap: rest.isEmpty ? null : widget.onToggle,
+              ),
+              // SizeTransition clips the reveal; the rows stay built until the
+              // collapse finishes so it mirrors the expand.
               if (rest.isNotEmpty && !_controller.isDismissed)
                 SizeTransition(
                   sizeFactor: _reveal,
@@ -215,9 +219,10 @@ class _BankBillsState extends ConsumerState<_BankBills>
     );
   }
 
-  Widget _row(Bill bill, String currency) => BillRow(
+  Widget _row(Bill bill, String currency, {VoidCallback? onTap}) => BillRow(
     bill: bill,
     currency: currency,
+    onTap: onTap,
     onLongPress: () => showBillSheet(context, ref, bill),
   );
 

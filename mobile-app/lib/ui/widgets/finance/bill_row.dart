@@ -14,12 +14,16 @@ class BillRow extends ConsumerWidget {
   const BillRow({
     required this.bill,
     required this.currency,
+    this.onTap,
     this.onLongPress,
     super.key,
   });
 
   final Bill bill;
   final String currency;
+
+  // Typically expands/collapses the card (latest bill only).
+  final VoidCallback? onTap;
 
   // Opens the bill sheet; allowed even while balances are hidden (the sheet
   // masks amounts and SMS bodies itself).
@@ -32,6 +36,7 @@ class BillRow extends ConsumerWidget {
     final period = bill.statementPeriod ?? bill.receivedAt.toLocal();
 
     return InkWell(
+      onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),

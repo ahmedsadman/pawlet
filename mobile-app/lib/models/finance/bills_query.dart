@@ -1,4 +1,5 @@
-/// Immutable bills read for one card: its pagination. Value-equal so it can key a Riverpod family without churn.
+/// Immutable bills read for one card: its pagination. Value-equal so it can
+/// key a Riverpod family without churn.
 class BillsQuery {
   const BillsQuery({required this.bankId, this.page = 1, this.pageSize = 20});
 
