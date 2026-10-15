@@ -9,21 +9,22 @@ import '../../../utils/time_format.dart';
 import 'finance_badge.dart';
 
 /// A single credit-card bill: statement period, sender, paid/due status,
-/// total. Long-press opens its details.
+/// total. Long-press opens its details. Without [onLongPress] it builds no ink
+/// of its own, so a parent can make it part of a larger tappable surface.
 class BillRow extends ConsumerWidget {
   const BillRow({
     required this.bill,
     required this.currency,
-    this.onTap,
     this.onLongPress,
+    this.padding = const EdgeInsets.symmetric(vertical: 8),
     super.key,
   });
 
   final Bill bill;
   final String currency;
 
-  // Typically expands/collapses the card (latest bill only).
-  final VoidCallback? onTap;
+  // Inside the ink, so a horizontal inset still lets the ink run edge to edge.
+  final EdgeInsetsGeometry padding;
 
   // Opens the bill sheet; allowed even while balances are hidden (the sheet
   // masks amounts and SMS bodies itself).
@@ -35,48 +36,46 @@ class BillRow extends ConsumerWidget {
     final hidden = ref.watch(balanceHiddenProvider);
     final period = bill.statementPeriod ?? bill.receivedAt.toLocal();
 
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    monthYearLabel(period),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+    final content = Padding(
+      padding: padding,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  monthYearLabel(period),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: [
-                      FinanceBadge(bill.sender),
-                      bill.isPaid
-                          ? FinanceBadge('Paid', color: AppTheme.income)
-                          : FinanceBadge('Due', color: AppTheme.flavor.peach),
-                    ],
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    FinanceBadge(bill.sender),
+                    bill.isPaid
+                        ? FinanceBadge('Paid', color: AppTheme.income)
+                        : FinanceBadge('Due', color: AppTheme.flavor.peach),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Text(
-              formatAmount(bill.normalizedTotalDue, currency, hidden: hidden),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            formatAmount(bill.normalizedTotalDue, currency, hidden: hidden),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.bold,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+    if (onLongPress == null) return content;
+    return InkWell(onLongPress: onLongPress, child: content);
   }
 }

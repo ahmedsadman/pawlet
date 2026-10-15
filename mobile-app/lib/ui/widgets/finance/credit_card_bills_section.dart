@@ -3,7 +3,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../models/finance/bank.dart';
-import '../../../models/finance/bill.dart';
 import '../../../models/finance/bills_query.dart';
 import '../../../state/finance_providers.dart';
 import '../../bill_history_page.dart';
@@ -19,6 +18,9 @@ const _latestBillCount = 12;
 /// Expand/collapse timing, shared by the bill rows and the header chevron.
 const _expandDuration = Duration(milliseconds: 250);
 const _expandCurve = Curves.easeInOut;
+
+/// Vertical space above and below each card's content.
+const _gap = 8.0;
 
 BillsQuery _billsQuery(Bank bank) =>
     BillsQuery(bankId: bank.id, pageSize: _latestBillCount);
@@ -123,6 +125,8 @@ class _CreditCardBillsSectionState
         _AfterLayout(
           onLayout: _keepAnchored,
           child: Card(
+            // Keeps the cards' ink inside the rounded corners.
+            clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
                 if (!hintSeen && anyBills)
@@ -204,6 +208,9 @@ class _BankBillsState extends ConsumerState<_BankBills>
   late final AnimationController _controller;
   late final CurvedAnimation _reveal;
 
+  /// The reveal's complement, for the bottom gap that moves into the reveal.
+  late final Animation<double> _collapse = ReverseAnimation(_reveal);
+
   @override
   void initState() {
     super.initState();
@@ -241,69 +248,101 @@ class _BankBillsState extends ConsumerState<_BankBills>
     final currency = ref.watch(currencyProvider).value?.data ?? '';
     final async = ref.watch(billsProvider(_billsQuery(widget.bank)));
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: async.when(
-        skipLoadingOnReload: true,
-        loading: () =>
-            _header(theme, trailing: const Skeleton(width: 56, height: 12)),
-        error: (_, _) => _header(theme, subtitle: 'Could not load bills.'),
-        data: (result) {
-          final bills = result.data.bills;
-          if (bills.isEmpty) return _header(theme, subtitle: 'No bills yet.');
-          final rest = bills.skip(1).toList();
-          final hasMore = result.data.total > _latestBillCount;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              InkWell(
-                onTap: rest.isEmpty ? null : widget.onToggle,
-                child: _header(
-                  theme,
-                  trailing: rest.isEmpty
-                      ? null
-                      : AnimatedRotation(
-                          turns: widget.expanded ? 0.5 : 0,
-                          duration: _expandDuration,
-                          curve: _expandCurve,
-                          child: Icon(
-                            Icons.expand_more,
-                            color: theme.colorScheme.outline,
-                          ),
-                        ),
-                ),
-              ),
-              _row(
-                bills.first,
-                currency,
-                onTap: rest.isEmpty ? null : widget.onToggle,
-              ),
-              // SizeTransition clips the reveal; the rows stay built until the
-              // collapse finishes so it mirrors the expand.
-              if (rest.isNotEmpty && !_controller.isDismissed)
-                SizeTransition(
-                  sizeFactor: _reveal,
-                  alignment: AlignmentDirectional.topStart,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (final bill in rest) _row(bill, currency),
-                      if (hasMore) _viewMore(),
-                    ],
-                  ),
-                ),
-            ],
-          );
-        },
+    return async.when(
+      skipLoadingOnReload: true,
+      loading: () => _inset(
+        _header(theme, trailing: const Skeleton(width: 56, height: 12)),
       ),
+      error: (_, _) =>
+          _inset(_header(theme, subtitle: 'Could not load bills.')),
+      data: (result) {
+        final bills = result.data.bills;
+        if (bills.isEmpty) {
+          return _inset(_header(theme, subtitle: 'No bills yet.'));
+        }
+        final latest = bills.first;
+        final rest = bills.skip(1).toList();
+        final hasMore = result.data.total > _latestBillCount;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Header and latest bill are one surface: one ink, one toggle.
+            // The padding sits inside so the ink spans the card edge to edge.
+            InkWell(
+              onTap: rest.isEmpty ? null : widget.onToggle,
+              onLongPress: () => showBillSheet(context, ref, latest),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _header(
+                      theme,
+                      trailing: rest.isEmpty
+                          ? null
+                          : AnimatedRotation(
+                              turns: widget.expanded ? 0.5 : 0,
+                              duration: _expandDuration,
+                              curve: _expandCurve,
+                              child: Icon(
+                                Icons.expand_more,
+                                color: theme.colorScheme.outline,
+                              ),
+                            ),
+                    ),
+                    BillRow(bill: latest, currency: currency),
+                    // The card's bottom gap: inside the ink while collapsed,
+                    // handed to the end of the reveal as it opens, so the
+                    // layout matches a fixed gap below everything.
+                    if (rest.isEmpty)
+                      const SizedBox(height: _gap)
+                    else
+                      SizeTransition(
+                        sizeFactor: _collapse,
+                        child: const SizedBox(height: _gap),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            // SizeTransition clips the reveal; the rows stay built until the
+            // collapse finishes so it mirrors the expand.
+            if (rest.isNotEmpty && !_controller.isDismissed)
+              SizeTransition(
+                sizeFactor: _reveal,
+                alignment: AlignmentDirectional.topStart,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final bill in rest)
+                      BillRow(
+                        bill: bill,
+                        currency: currency,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        onLongPress: () => showBillSheet(context, ref, bill),
+                      ),
+                    if (hasMore)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _viewMore(),
+                      ),
+                    const SizedBox(height: _gap),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _row(Bill bill, String currency, {VoidCallback? onTap}) => BillRow(
-    bill: bill,
-    currency: currency,
-    onTap: onTap,
-    onLongPress: () => showBillSheet(context, ref, bill),
+  /// A header-only card (loading, error, no bills): plain, no ink.
+  Widget _inset(Widget child) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: _gap),
+    child: child,
   );
 
   Widget _viewMore() => Align(
