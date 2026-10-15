@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../models/finance/bank.dart';
@@ -40,9 +41,55 @@ class _CreditCardBillsSectionState
   /// The one card whose bill list is open, if any.
   int? _expandedBankId;
 
-  void _toggle(int bankId) => setState(
-    () => _expandedBankId = _expandedBankId == bankId ? null : bankId,
-  );
+  /// One key per card, to find where it sits on screen.
+  final _cardKeys = <int, GlobalKey<_BankBillsState>>{};
+
+  /// While the open card collapses above the tapped one, the tapped card's
+  /// offset from the top of the scroll viewport, held there until both settle.
+  ({int bankId, double top, ScrollPosition position, RenderBox viewport})?
+  _anchor;
+
+  void _toggle(int bankId, List<Bank> cards) {
+    _anchor = null;
+    final open = cards.indexWhere((b) => b.id == _expandedBankId);
+    // Switching to a card below the open one: the collapse above would shove
+    // the tapped card up, maybe off screen, so pin it where it was tapped.
+    if (open != -1 && open < cards.indexWhere((b) => b.id == bankId)) {
+      final scrollable = Scrollable.maybeOf(context);
+      final viewport = scrollable?.context.findRenderObject();
+      final top = viewport is RenderBox ? _topIn(viewport, bankId) : null;
+      if (viewport is RenderBox && top != null) {
+        _anchor = (
+          bankId: bankId,
+          top: top,
+          position: scrollable!.position,
+          viewport: viewport,
+        );
+      }
+    }
+    setState(() => _expandedBankId = _expandedBankId == bankId ? null : bankId);
+  }
+
+  double? _topIn(RenderBox viewport, int bankId) {
+    final box = _cardKeys[bankId]?.currentContext?.findRenderObject();
+    return box is RenderBox
+        ? box.localToGlobal(Offset.zero, ancestor: viewport).dy
+        : null;
+  }
+
+  // Runs after the section lays out but before paint, so the scroll moves in
+  // the same frame as the drift and the anchored card never visibly jumps.
+  // The viewport clamps the corrected offset to its extents right after.
+  void _keepAnchored() {
+    final anchor = _anchor;
+    if (anchor == null) return;
+    final top = _topIn(anchor.viewport, anchor.bankId);
+    if (top != null) anchor.position.correctBy(top - anchor.top);
+    final animating = _cardKeys.values.any(
+      (key) => key.currentState?._controller.isAnimating ?? false,
+    );
+    if (!animating) _anchor = null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,33 +120,66 @@ class _CreditCardBillsSectionState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SectionHeader('Credit Card Bills'),
-        Card(
-          child: Column(
-            children: [
-              if (!hintSeen && anyBills)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: HintBanner(
-                    'Tip: long-press a bill to see its SMS or mark it '
-                    'paid/unpaid.',
-                    onDismiss: () =>
-                        ref.read(billHintSeenProvider.notifier).markSeen(),
+        _AfterLayout(
+          onLayout: _keepAnchored,
+          child: Card(
+            child: Column(
+              children: [
+                if (!hintSeen && anyBills)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: HintBanner(
+                      'Tip: long-press a bill to see its SMS or mark it '
+                      'paid/unpaid.',
+                      onDismiss: () =>
+                          ref.read(billHintSeenProvider.notifier).markSeen(),
+                    ),
                   ),
-                ),
-              for (var i = 0; i < creditCards.length; i++) ...[
-                if (i > 0) const Divider(height: 1),
-                _BankBills(
-                  key: ValueKey(creditCards[i].id),
-                  bank: creditCards[i],
-                  expanded: _expandedBankId == creditCards[i].id,
-                  onToggle: () => _toggle(creditCards[i].id),
-                ),
+                for (var i = 0; i < creditCards.length; i++) ...[
+                  if (i > 0) const Divider(height: 1),
+                  _BankBills(
+                    key: _cardKeys.putIfAbsent(
+                      creditCards[i].id,
+                      GlobalKey<_BankBillsState>.new,
+                    ),
+                    bank: creditCards[i],
+                    expanded: _expandedBankId == creditCards[i].id,
+                    onToggle: () => _toggle(creditCards[i].id, creditCards),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ],
     );
+  }
+}
+
+/// Calls [onLayout] right after [child] lays out, before anything paints.
+class _AfterLayout extends SingleChildRenderObjectWidget {
+  const _AfterLayout({required this.onLayout, super.child});
+
+  final VoidCallback onLayout;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderAfterLayout(onLayout);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderAfterLayout render) =>
+      render.onLayout = onLayout;
+}
+
+class _RenderAfterLayout extends RenderProxyBox {
+  _RenderAfterLayout(this.onLayout);
+
+  VoidCallback onLayout;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    onLayout();
   }
 }
 

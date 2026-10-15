@@ -53,6 +53,7 @@ Future<SharedPreferences> _pump(
   List<BillsQuery>? queries,
   int? total,
   Map<String, Object> prefsSeed = const {'bill_actions_hint_seen': true},
+  bool tall = false,
 }) async {
   SharedPreferences.setMockInitialValues(prefsSeed);
   final prefs = await SharedPreferences.getInstance();
@@ -94,8 +95,19 @@ Future<SharedPreferences> _pump(
       ],
       child: MaterialApp(
         theme: AppTheme.theme,
-        home: const Scaffold(
-          body: SingleChildScrollView(child: CreditCardBillsSection()),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            // Tall surroundings leave room to scroll the section mid-screen.
+            child: tall
+                ? const Column(
+                    children: [
+                      SizedBox(height: 400),
+                      CreditCardBillsSection(),
+                      SizedBox(height: 2000),
+                    ],
+                  )
+                : const CreditCardBillsSection(),
+          ),
         ),
       ),
     ),
@@ -370,5 +382,86 @@ void main() {
 
     // Only Visa's chevron should exist.
     expect(find.byIcon(Icons.expand_more), findsOneWidget);
+  });
+
+  group('scroll anchoring', () {
+    // Visa (id 1) above Amex (id 5), six bills each.
+    final banks = [_credit('Visa'), _credit('Amex', id: 5)];
+    final bills = [
+      for (var m = 1; m <= 6; m++) ...[
+        _bill(m, DateTime(2025, 7 - m, 5), '${m}00.00'),
+        _bill(10 + m, DateTime(2025, 7 - m, 7), '${m}10.00', bankId: 5),
+      ],
+    ];
+    ScrollPosition position(WidgetTester tester) =>
+        tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+
+    testWidgets(
+      'switching to a card below the open one keeps its header still',
+      (tester) async {
+        await _pump(tester, banks: banks, bills: bills, tall: true);
+        await tester.tap(find.text('Visa'));
+        await tester.pumpAndSettle();
+        expect(find.text('600.00 BDT'), findsOneWidget);
+
+        // Scroll Amex's header to mid-screen, below the open Visa list.
+        final amexTop = tester.getTopLeft(find.text('Amex')).dy;
+        position(tester).jumpTo(position(tester).pixels + amexTop - 300);
+        await tester.pump();
+        final before = tester.getTopLeft(find.text('Amex')).dy;
+        expect(before, closeTo(300, 1));
+
+        await tester.tap(find.text('Amex'));
+        var elapsed = 0;
+        for (final ms in [0, 50, 125, 250]) {
+          await tester.pump(Duration(milliseconds: ms - elapsed));
+          elapsed = ms;
+          expect(
+            tester.getTopLeft(find.text('Amex')).dy,
+            closeTo(before, 1),
+            reason: '${ms}ms into the animation',
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(tester.getTopLeft(find.text('Amex')).dy, closeTo(before, 1));
+        expect(find.text('600.00 BDT'), findsNothing);
+        expect(find.text('610.00 BDT'), findsOneWidget);
+      },
+    );
+
+    testWidgets('collapsing the open card leaves the scroll alone', (
+      tester,
+    ) async {
+      await _pump(tester, banks: banks, bills: bills, tall: true);
+      position(tester).jumpTo(200);
+      await tester.pump();
+
+      await tester.tap(find.text('Amex'));
+      await tester.pumpAndSettle();
+      expect(find.text('610.00 BDT'), findsOneWidget);
+      expect(position(tester).pixels, 200);
+
+      await tester.tap(find.text('Amex'));
+      await tester.pumpAndSettle();
+      expect(find.text('610.00 BDT'), findsNothing);
+      expect(position(tester).pixels, 200);
+    });
+
+    testWidgets('switching to a card above the open one needs no anchor', (
+      tester,
+    ) async {
+      await _pump(tester, banks: banks, bills: bills, tall: true);
+      position(tester).jumpTo(200);
+      await tester.tap(find.text('Amex'));
+      await tester.pumpAndSettle();
+
+      final visaTop = tester.getTopLeft(find.text('Visa')).dy;
+      await tester.tap(find.text('Visa'));
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(find.text('Visa')).dy, visaTop);
+      expect(find.text('600.00 BDT'), findsOneWidget);
+      expect(find.text('610.00 BDT'), findsNothing);
+      expect(position(tester).pixels, 200);
+    });
   });
 }
