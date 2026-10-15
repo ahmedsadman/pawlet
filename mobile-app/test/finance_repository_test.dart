@@ -342,86 +342,74 @@ void main() {
       },
     );
 
-    test(
-      'since filters and orders on statement period, else received',
-      () async {
-        final db = await openTestDb();
-        final bank = await insertBank(
-          db,
-          name: 'EBL Card',
-          accountType: 'credit',
-          cardDigits: '4238|3241',
-        );
-        // Received late but for an old period: must sort and filter by period.
-        final lateMsg = await insertSms(
-          db,
-          sender: 'EBL',
-          ts: DateTime(2026, 9, 3).millisecondsSinceEpoch,
-        );
-        final mid = await insertSms(
-          db,
-          sender: 'EBL',
-          ts: DateTime(2026, 8, 3).millisecondsSinceEpoch,
-        );
-        final noPeriod = await insertSms(
-          db,
-          sender: 'EBL',
-          ts: DateTime(2026, 7, 20).millisecondsSinceEpoch,
-        );
-        final cutoffMsg = await insertSms(
-          db,
-          sender: 'EBL',
-          ts: DateTime(2025, 11, 10).millisecondsSinceEpoch,
-        );
-        final old = await insertBill(
-          db,
-          messageId: lateMsg,
-          bankId: bank,
-          totalDue: '1',
-          statementPeriod: DateTime(2025, 1, 1),
-        );
-        final aug = await insertBill(
-          db,
-          messageId: mid,
-          bankId: bank,
-          totalDue: '2',
-          statementPeriod: DateTime(2026, 8, 1),
-        );
-        final july = await insertBill(
-          db,
-          messageId: noPeriod,
-          bankId: bank,
-          totalDue: '3',
-        );
-        final cutoff = await insertBill(
-          db,
-          messageId: cutoffMsg,
-          bankId: bank,
-          totalDue: '4',
-          statementPeriod: DateTime(2025, 11, 1),
-        );
-        final repo = FinanceRepository(db);
+    test('orders on statement period, else received', () async {
+      final db = await openTestDb();
+      final bank = await insertBank(
+        db,
+        name: 'EBL Card',
+        accountType: 'credit',
+        cardDigits: '4238|3241',
+      );
+      // Received late but for an old period: must sort by period.
+      final lateMsg = await insertSms(
+        db,
+        sender: 'EBL',
+        ts: DateTime(2026, 9, 3).millisecondsSinceEpoch,
+      );
+      final mid = await insertSms(
+        db,
+        sender: 'EBL',
+        ts: DateTime(2026, 8, 3).millisecondsSinceEpoch,
+      );
+      final noPeriod = await insertSms(
+        db,
+        sender: 'EBL',
+        ts: DateTime(2026, 7, 20).millisecondsSinceEpoch,
+      );
+      final novMsg = await insertSms(
+        db,
+        sender: 'EBL',
+        ts: DateTime(2025, 11, 10).millisecondsSinceEpoch,
+      );
+      final old = await insertBill(
+        db,
+        messageId: lateMsg,
+        bankId: bank,
+        totalDue: '1',
+        statementPeriod: DateTime(2025, 1, 1),
+      );
+      final aug = await insertBill(
+        db,
+        messageId: mid,
+        bankId: bank,
+        totalDue: '2',
+        statementPeriod: DateTime(2026, 8, 1),
+      );
+      final july = await insertBill(
+        db,
+        messageId: noPeriod,
+        bankId: bank,
+        totalDue: '3',
+      );
+      final nov = await insertBill(
+        db,
+        messageId: novMsg,
+        bankId: bank,
+        totalDue: '4',
+        statementPeriod: DateTime(2025, 11, 1),
+      );
+      final repo = FinanceRepository(db);
 
-        final all = (await repo.bills(bank)).data;
-        expect(all.bills.map((b) => b.id), [aug, july, cutoff, old]);
+      final all = (await repo.bills(bank)).data;
+      expect(all.bills.map((b) => b.id), [aug, july, nov, old]);
+      expect(all.total, 4);
 
-        final windowed = (await repo.bills(
-          bank,
-          since: DateTime(2025, 11, 1),
-        )).data;
-        expect(windowed.bills.map((b) => b.id), [aug, july, cutoff]);
-        expect(windowed.total, 3);
-        expect(
-          windowed.total +
-              await repo.olderBillCount(bank, DateTime(2025, 11, 1)),
-          all.total,
-        );
-
-        expect(await repo.olderBillCount(bank, DateTime(2025, 11, 1)), 1);
-        expect(await repo.olderBillCount(bank, DateTime(2024, 1, 1)), 0);
-        await db.close();
-      },
-    );
+      // A short page keeps the newest and still counts every bill.
+      final latest = (await repo.bills(bank, pageSize: 2)).data;
+      expect(latest.bills.map((b) => b.id), [aug, july]);
+      expect(latest.total, 4);
+      await db.close();
+    });
 
     test('billTransactions returns the linked legs, oldest first', () async {
       final db = await openTestDb();

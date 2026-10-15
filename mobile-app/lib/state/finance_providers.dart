@@ -50,21 +50,7 @@ final billsProvider = FutureProvider.autoDispose
       ref.watch(dataRevisionProvider);
       return ref
           .watch(financeRepositoryProvider)
-          .bills(
-            query.bankId,
-            page: query.page,
-            pageSize: query.pageSize,
-            since: query.since,
-          );
-    });
-
-/// How many of a card's bills fall before `before` (the section's window).
-final olderBillCountProvider = FutureProvider.autoDispose
-    .family<int, ({int bankId, DateTime before})>((ref, key) {
-      ref.watch(dataRevisionProvider);
-      return ref
-          .watch(financeRepositoryProvider)
-          .olderBillCount(key.bankId, key.before);
+          .bills(query.bankId, page: query.page, pageSize: query.pageSize);
     });
 
 /// A bill's linked payment legs, oldest first.
@@ -96,7 +82,6 @@ void refreshAllFinance(WidgetRef ref) {
   ref.invalidate(summaryProvider);
   ref.invalidate(transactionsProvider);
   ref.invalidate(billsProvider);
-  ref.invalidate(olderBillCountProvider);
   ref.invalidate(billTransactionsProvider);
   ref.invalidate(messageProvider);
 }
