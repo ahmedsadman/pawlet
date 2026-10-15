@@ -60,7 +60,7 @@ class FinanceRepository {
   ''';
 
   // A bill's place in time: its statement period, else when it arrived. Drives
-  // both the bills ordering and the Finance page's 12-month window.
+  // the bills ordering.
   static const String _billTimeKey =
       'COALESCE(bl.statement_period, s.timestamp)';
 
@@ -242,26 +242,17 @@ class FinanceRepository {
   // ---- bills --------------------------------------------------------------
 
   /// A page of [bankId]'s bills, newest first by statement period (received
-  /// time when the period is unknown). [since] keeps only bills at or after it.
+  /// time when the period is unknown).
   Future<CachedResult<BillsPage>> bills(
     int bankId, {
     int page = 1,
     int pageSize = 20,
-    DateTime? since,
   }) async {
-    final where = ['bl.bank_id = ?'];
-    final args = <Object?>[bankId];
-    if (since != null) {
-      where.add('$_billTimeKey >= ?');
-      args.add(since.millisecondsSinceEpoch);
-    }
-    final whereClause = where.join(' AND ');
-
     final countRows = await _db.rawQuery(
       'SELECT COUNT(*) c FROM ${AppDatabase.billsTable} bl '
       'JOIN ${AppDatabase.smsTable} s ON s.id = bl.message_id '
-      'WHERE $whereClause',
-      args,
+      'WHERE bl.bank_id = ?',
+      [bankId],
     );
     final total = (countRows.first['c'] as int?) ?? 0;
 
@@ -276,11 +267,11 @@ class FinanceRepository {
       FROM ${AppDatabase.billsTable} bl
       JOIN ${AppDatabase.smsTable} s ON s.id = bl.message_id
       LEFT JOIN ${AppDatabase.banksTable} b ON b.id = bl.bank_id
-      WHERE $whereClause
+      WHERE bl.bank_id = ?
       ORDER BY $_billTimeKey DESC, s.timestamp DESC, bl.id DESC
       LIMIT ? OFFSET ?
     ''',
-      [...args, pageSize, offset],
+      [bankId, pageSize, offset],
     );
 
     final billIds = rows.map((r) => r['id'] as int).toList();
@@ -303,18 +294,6 @@ class FinanceRepository {
     return _ok(
       BillsPage(bills: bills, total: total, page: page, pageSize: pageSize),
     );
-  }
-
-  /// How many of [bankId]'s bills fall before [before] (same time key as
-  /// [bills]); drives the bills section's "View more" link.
-  Future<int> olderBillCount(int bankId, DateTime before) async {
-    final rows = await _db.rawQuery(
-      'SELECT COUNT(*) c FROM ${AppDatabase.billsTable} bl '
-      'JOIN ${AppDatabase.smsTable} s ON s.id = bl.message_id '
-      'WHERE bl.bank_id = ? AND $_billTimeKey < ?',
-      [bankId, before.millisecondsSinceEpoch],
-    );
-    return (rows.first['c'] as int?) ?? 0;
   }
 
   // ---- summary ------------------------------------------------------------

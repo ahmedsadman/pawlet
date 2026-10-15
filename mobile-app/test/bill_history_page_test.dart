@@ -100,7 +100,6 @@ void main() {
     expect(find.text('1.00 BDT'), findsOneWidget);
     expect(find.text('Page 1 of 3'), findsOneWidget);
     expect(result.queries.last.pageSize, 10);
-    expect(result.queries.last.since, isNull);
     expect(result.queries.last.bankId, 1);
 
     await tester.tap(find.byIcon(Icons.chevron_right));
