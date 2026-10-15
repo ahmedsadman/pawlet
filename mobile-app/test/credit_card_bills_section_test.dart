@@ -384,6 +384,41 @@ void main() {
     expect(find.byIcon(Icons.expand_more), findsOneWidget);
   });
 
+  testWidgets('header and latest bill share one edge-to-edge ink surface', (
+    tester,
+  ) async {
+    await _pump(tester, banks: [_credit('Visa')], bills: twoBills);
+    InkWell nearestInk(Finder of) => tester.widget<InkWell>(
+      find.ancestor(of: of, matching: find.byType(InkWell)).first,
+    );
+
+    final header = nearestInk(find.text('Visa'));
+    expect(identical(header, nearestInk(find.text('300.00 BDT'))), isTrue);
+    expect(header.onTap, isNotNull);
+    expect(header.onLongPress, isNotNull);
+    // The Card's surface, inside its margin.
+    final cardWidth = tester
+        .getSize(
+          find
+              .descendant(
+                of: find.byType(Card),
+                matching: find.byType(Material),
+              )
+              .first,
+        )
+        .width;
+    expect(tester.getSize(find.byWidget(header)).width, cardWidth);
+
+    // Older rows keep their own ink, also spanning the card.
+    await tester.tap(find.text('Visa'));
+    await tester.pumpAndSettle();
+    final older = nearestInk(find.text('200.00 BDT'));
+    expect(identical(older, header), isFalse);
+    expect(older.onTap, isNull);
+    expect(older.onLongPress, isNotNull);
+    expect(tester.getSize(find.byWidget(older)).width, cardWidth);
+  });
+
   group('scroll anchoring', () {
     // Visa (id 1) above Amex (id 5), six bills each.
     final banks = [_credit('Visa'), _credit('Amex', id: 5)];
