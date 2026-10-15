@@ -13,13 +13,12 @@ import 'package:pawlet/state/providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
 import 'package:pawlet/ui/bill_history_page.dart';
 import 'package:pawlet/ui/widgets/finance/credit_card_bills_section.dart';
-import 'package:pawlet/utils/date_range.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/balance_test_overrides.dart';
 
-Bank _credit(String name) => Bank(
-  id: 1,
+Bank _credit(String name, {int id = 1}) => Bank(
+  id: id,
   name: name,
   accountType: 'credit',
   cardDigits: '1234|5678',
@@ -34,12 +33,12 @@ Bank _deposit(String name) => Bank(
   createdAt: DateTime(2025, 1, 1),
 );
 
-Bill _bill(int id, DateTime received, String total) => Bill(
+Bill _bill(int id, DateTime received, String total, {int bankId = 1}) => Bill(
   id: id,
   messageId: id,
   sender: 'VISA-BANK',
   receivedAt: received,
-  bankId: 1,
+  bankId: bankId,
   bankName: 'Visa',
   normalizedTotalDue: total,
   normalizedCurrency: 'BDT',
@@ -47,16 +46,12 @@ Bill _bill(int id, DateTime received, String total) => Bill(
   createdAt: received,
 );
 
-Future<
-  ({SharedPreferences prefs, List<({int bankId, DateTime before})>? olderKeys})
->
-_pump(
+Future<SharedPreferences> _pump(
   WidgetTester tester, {
   required List<Bank> banks,
   List<Bill> bills = const [],
   List<BillsQuery>? queries,
-  List<({int bankId, DateTime before})>? olderKeys,
-  int older = 0,
+  int? total,
   Map<String, Object> prefsSeed = const {'bill_actions_hint_seen': true},
 }) async {
   SharedPreferences.setMockInitialValues(prefsSeed);
@@ -74,19 +69,16 @@ _pump(
         ),
         billsProvider.overrideWith((ref, query) async {
           queries?.add(query);
+          final own = bills.where((b) => b.bankId == query.bankId).toList();
           return CachedResult(
             data: BillsPage(
-              bills: bills,
-              total: bills.length,
+              bills: own,
+              total: total ?? own.length,
               page: query.page,
               pageSize: query.pageSize,
             ),
             stale: false,
           );
-        }),
-        olderBillCountProvider.overrideWith((ref, key) async {
-          olderKeys?.add(key);
-          return older;
         }),
         billTransactionsProvider.overrideWith((ref, billId) async => const []),
         messageProvider.overrideWith(
@@ -109,7 +101,7 @@ _pump(
     ),
   );
   await tester.pumpAndSettle();
-  return (prefs: prefs, olderKeys: olderKeys);
+  return prefs;
 }
 
 void main() {
@@ -147,55 +139,100 @@ void main() {
     expect(find.text('100.00 BDT'), findsOneWidget);
   });
 
-  testWidgets('asks for the last 12 months of bills', (tester) async {
+  testWidgets("asks for each card's latest 12 bills", (tester) async {
     final queries = <BillsQuery>[];
-    final olderKeys = <({int bankId, DateTime before})>[];
-    final now = DateTime.now();
-    await _pump(
-      tester,
-      banks: [_credit('Visa')],
-      bills: [_bill(1, DateTime(now.year, now.month - 1, 5), '300.00')],
-      queries: queries,
-      olderKeys: olderKeys,
-    );
-
-    expect(queries, isNotEmpty);
-    expect(queries.last.since, billsWindowStart(now));
-    expect(queries.last.pageSize, 100);
-    expect(queries.last.bankId, 1);
-    expect(olderKeys, isNotEmpty);
-    expect(olderKeys.last.before, billsWindowStart(now));
-    expect(olderKeys.last.bankId, 1);
-  });
-
-  testWidgets('offers View more only when older bills exist', (tester) async {
     await _pump(
       tester,
       banks: [_credit('Visa')],
       bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
+      queries: queries,
     );
+
+    expect(queries, isNotEmpty);
+    expect(queries.last.pageSize, 12);
+    expect(queries.last.page, 1);
+    expect(queries.last.bankId, 1);
+  });
+
+  // Two bills so the card header expands.
+  final twoBills = [
+    _bill(1, DateTime(2025, 3, 5), '300.00'),
+    _bill(2, DateTime(2025, 2, 5), '200.00'),
+  ];
+
+  testWidgets('hides View more while the card is collapsed', (tester) async {
+    await _pump(tester, banks: [_credit('Visa')], bills: twoBills, total: 20);
+    expect(find.text('View more'), findsNothing);
+  });
+
+  testWidgets('offers View more on an expanded card with over 12 bills', (
+    tester,
+  ) async {
+    await _pump(tester, banks: [_credit('Visa')], bills: twoBills, total: 13);
+    await tester.tap(find.text('Visa'));
+    await tester.pumpAndSettle();
+    expect(find.text('View more'), findsOneWidget);
+  });
+
+  testWidgets('no View more on an expanded card with exactly 12 bills', (
+    tester,
+  ) async {
+    await _pump(tester, banks: [_credit('Visa')], bills: twoBills, total: 12);
+    await tester.tap(find.text('Visa'));
+    await tester.pumpAndSettle();
+    expect(find.text('200.00 BDT'), findsOneWidget);
     expect(find.text('View more'), findsNothing);
   });
 
   testWidgets('View more opens the card history', (tester) async {
-    await _pump(
-      tester,
-      banks: [_credit('Visa')],
-      bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
-      older: 4,
-    );
+    await _pump(tester, banks: [_credit('Visa')], bills: twoBills, total: 20);
+    await tester.tap(find.text('Visa'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('View more'));
     await tester.pumpAndSettle();
     expect(find.byType(BillHistoryPage), findsOneWidget);
   });
 
-  testWidgets('a card with only older bills says so and offers View more', (
-    tester,
-  ) async {
-    await _pump(tester, banks: [_credit('Visa')], older: 2);
-    expect(find.text('No bills in the last 12 months.'), findsOneWidget);
-    expect(find.text('View more'), findsOneWidget);
+  testWidgets('expanding one card collapses the other', (tester) async {
+    await _pump(
+      tester,
+      banks: [_credit('Visa'), _credit('Amex', id: 5)],
+      bills: [
+        ...twoBills,
+        _bill(11, DateTime(2025, 3, 7), '310.00', bankId: 5),
+        _bill(12, DateTime(2025, 2, 7), '210.00', bankId: 5),
+      ],
+    );
+    expect(find.text('200.00 BDT'), findsNothing);
+    expect(find.text('210.00 BDT'), findsNothing);
+
+    await tester.tap(find.text('Visa'));
+    await tester.pumpAndSettle();
+    expect(find.text('200.00 BDT'), findsOneWidget);
+    expect(find.text('210.00 BDT'), findsNothing);
+
+    await tester.tap(find.text('Amex'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 125));
+    // Mid-animation: Visa is still collapsing while Amex expands.
+    expect(find.text('200.00 BDT'), findsOneWidget);
+    expect(find.text('210.00 BDT'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.text('200.00 BDT'), findsNothing);
+    expect(find.text('210.00 BDT'), findsOneWidget);
+
+    // Tapping the open card's header collapses it.
+    await tester.tap(find.text('Amex'));
+    await tester.pumpAndSettle();
+    expect(find.text('210.00 BDT'), findsNothing);
+  });
+
+  testWidgets('a card without bills says so', (tester) async {
+    await _pump(tester, banks: [_credit('Visa')], total: 0);
+    expect(find.text('No bills yet.'), findsOneWidget);
+    expect(find.text('View more'), findsNothing);
   });
 
   testWidgets('long-press on a bill opens its sheet', (tester) async {
@@ -211,7 +248,7 @@ void main() {
   });
 
   testWidgets('shows the one-time hint until dismissed', (tester) async {
-    final result = await _pump(
+    final prefs = await _pump(
       tester,
       banks: [_credit('Visa')],
       bills: [_bill(1, DateTime(2025, 3, 5), '300.00')],
@@ -222,7 +259,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.close));
     await tester.pump();
     expect(find.textContaining('long-press a bill'), findsNothing);
-    expect(result.prefs.getBool('bill_actions_hint_seen'), true);
+    expect(prefs.getBool('bill_actions_hint_seen'), true);
   });
 
   testWidgets('a long-press retires the hint', (tester) async {
