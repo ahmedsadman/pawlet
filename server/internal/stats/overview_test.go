@@ -128,3 +128,17 @@ func TestCallsPerActiveInstallDayCountsRetryOnlyDays(t *testing.T) {
 		t.Fatalf("calls per active install-day = %v, want 2", v)
 	}
 }
+
+func TestAttemptsTodayCountsRetries(t *testing.T) {
+	today := "2026-10-09"
+	usage := []store.UsageRow{
+		{IDHash: "a", Day: today, Calls: 4, Attempts: 5},
+		{IDHash: "b", Day: today, Attempts: 2},
+		{IDHash: "a", Day: "2026-10-08", Calls: 9, Attempts: 9},
+	}
+
+	k := BuildOverview(OverviewInput{Range: Range{From: today, To: today}, Today: today, Usage: usage}).KPIs
+	if k.CallsToday != 4 || k.AttemptsToday != 7 {
+		t.Fatalf("calls, attempts today = %d, %d; want 4, 7", k.CallsToday, k.AttemptsToday)
+	}
+}
