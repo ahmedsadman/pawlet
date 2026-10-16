@@ -69,6 +69,12 @@ func (a Activity) activeBetween(hash, from, to string) bool {
 	return false
 }
 
+// classified reports whether the install made any classify call that day.
+// Attempts is the signal: a day of retries alone counts no new call. Calls is
+// checked too because a pawletd rolled back past the attempts column writes
+// calls only.
+func classified(u store.UsageRow) bool { return u.Attempts > 0 || u.Calls > 0 }
+
 // BuildActivity marks the days each install was active under mode. Classify
 // calls count in ModeAny and ModeClassify. In ModeAny every install_days row
 // counts, whatever its flags: a row only exists once some signal arrived.
@@ -76,7 +82,7 @@ func BuildActivity(usage []store.UsageRow, days []store.DayRow, mode Mode) Activ
 	a := Activity{}
 	if mode != ModeOpened {
 		for _, u := range usage {
-			if u.Calls > 0 {
+			if classified(u) {
 				a.mark(u.Day, u.IDHash)
 			}
 		}

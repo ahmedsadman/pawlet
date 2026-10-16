@@ -90,10 +90,11 @@ func BuildInstallRows(installs []store.Install, usage []store.UsageRow, today st
 		if u.Day >= weekFrom && u.Day <= today {
 			r.Calls7d += u.Calls
 		}
-		if dailyLimit > 0 && u.Calls >= dailyLimit {
+		// The quota charges every attempt, so a limit day is judged on those.
+		if dailyLimit > 0 && u.Attempts >= dailyLimit {
 			r.QuotaHitDays++
 		}
-		if u.Calls > 0 && u.Day > r.LastActiveDay {
+		if classified(u) && u.Day > r.LastActiveDay {
 			r.LastActiveDay = u.Day
 		}
 	}

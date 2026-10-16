@@ -72,3 +72,11 @@ func TestActiveSeriesRollingWindows(t *testing.T) {
 		t.Fatalf("empty series = %+v", empty)
 	}
 }
+
+func TestBuildActivityCountsRetryOnlyDays(t *testing.T) {
+	usage := []store.UsageRow{{IDHash: "a", Day: "2026-10-01", Attempts: 2}}
+
+	if !BuildActivity(usage, nil, ModeClassify).Active("2026-10-01", "a") {
+		t.Fatal("a day of retries only is not classify activity")
+	}
+}
