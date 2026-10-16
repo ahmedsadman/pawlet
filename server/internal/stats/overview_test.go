@@ -115,3 +115,16 @@ func TestBuildOverviewCountsAttestedSeparately(t *testing.T) {
 		t.Fatalf("installs/attested = %d/%d, want 2/1", ov.KPIs.Installs, ov.KPIs.AttestedInstalls)
 	}
 }
+
+func TestCallsPerActiveInstallDayCountsRetryOnlyDays(t *testing.T) {
+	today := "2026-10-09"
+	usage := []store.UsageRow{
+		{IDHash: "a", Day: today, Calls: 4, Attempts: 5},
+		{IDHash: "b", Day: today, Attempts: 2}, // retries of yesterday's message
+	}
+
+	ov := BuildOverview(OverviewInput{Range: Range{From: today, To: today}, Today: today, Usage: usage})
+	if v := ov.KPIs.CallsPerActiveInstallDay; v == nil || *v != 2 { // 4 calls / 2 install-days
+		t.Fatalf("calls per active install-day = %v, want 2", v)
+	}
+}

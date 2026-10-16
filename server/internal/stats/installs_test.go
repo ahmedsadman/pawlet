@@ -21,7 +21,7 @@ func fixtureInstalls() ([]store.Install, []store.UsageRow) {
 	}
 	usage := []store.UsageRow{
 		{IDHash: "aaaa", Day: "2026-10-09", Calls: 4, Tokens: 40},
-		{IDHash: "aaaa", Day: "2026-10-05", Calls: 200, Tokens: 900},
+		{IDHash: "aaaa", Day: "2026-10-05", Calls: 200, Attempts: 200, Tokens: 900},
 		{IDHash: "aaaa", Day: "2026-09-01", Calls: 10, Tokens: 100},
 		{IDHash: "bbbb", Day: "2026-09-20", Calls: 1, Tokens: 5}, // last activity 19 days ago
 		{IDHash: "zzzz", Day: "2026-10-09", Calls: 9},            // unknown install: ignored
@@ -271,5 +271,31 @@ func TestInstallDailyCarriesFlags(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("InstallDaily() = %+v, want %+v", got, want)
 		}
+	}
+}
+
+func TestQuotaHitDaysCountAttempts(t *testing.T) {
+	day := func(s string) time.Time { t, _ := time.Parse(DayLayout, s); return t }
+	installs := []store.Install{{IDHash: "a", FirstSeen: day("2026-10-01"), LastSeen: day("2026-10-01")}}
+	// The quota charges retries, so 150 messages over 200 attempts hit a
+	// limit of 200.
+	usage := []store.UsageRow{{IDHash: "a", Day: "2026-10-05", Calls: 150, Attempts: 200}}
+
+	rows := BuildInstallRows(installs, usage, "2026-10-09", 200)
+	if rows[0].QuotaHitDays != 1 || rows[0].CallsTotal != 150 {
+		t.Fatalf("row = %+v, want 1 quota hit day and 150 calls", rows[0])
+	}
+}
+
+func TestRetryOnlyDayIsActivity(t *testing.T) {
+	day := func(s string) time.Time { t, _ := time.Parse(DayLayout, s); return t }
+	installs := []store.Install{{IDHash: "a", FirstSeen: day("2026-09-01"), LastSeen: day("2026-09-01")}}
+	// Only retries of a message counted the day before: no new call, but the
+	// install was classifying.
+	usage := []store.UsageRow{{IDHash: "a", Day: "2026-10-05", Attempts: 3}}
+
+	rows := BuildInstallRows(installs, usage, "2026-10-09", 0)
+	if rows[0].LastActiveDay != "2026-10-05" || rows[0].Dormant {
+		t.Fatalf("row = %+v, want last active 2026-10-05 and not dormant", rows[0])
 	}
 }

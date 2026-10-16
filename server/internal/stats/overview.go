@@ -124,7 +124,7 @@ func BuildOverview(in OverviewInput) Overview {
 		calls[u.Day] += u.Calls
 		tokens[u.Day] += u.Tokens
 		rangeCalls += u.Calls
-		if u.Calls > 0 {
+		if classified(u) {
 			activeInstallDays++
 		}
 	}
