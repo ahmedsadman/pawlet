@@ -43,15 +43,17 @@ func ParseServerInfo(m map[string]string) ServerInfo {
 
 // OverviewKPIs are the overview page's tiles.
 type OverviewKPIs struct {
-	Installs                    int      `json:"installs"`
-	AttestedInstalls            int      `json:"attestedInstalls"`
-	Banned                      int      `json:"banned"`
-	NewInstalls                 int      `json:"newInstalls"`
-	NewInstallsPrev             int      `json:"newInstallsPrev"`
-	DAU                         int      `json:"dau"`
-	WAU                         int      `json:"wau"`
-	MAU                         int      `json:"mau"`
-	CallsToday                  int64    `json:"callsToday"`
+	Installs         int   `json:"installs"`
+	AttestedInstalls int   `json:"attestedInstalls"`
+	Banned           int   `json:"banned"`
+	NewInstalls      int   `json:"newInstalls"`
+	NewInstallsPrev  int   `json:"newInstallsPrev"`
+	DAU              int   `json:"dau"`
+	WAU              int   `json:"wau"`
+	MAU              int   `json:"mau"`
+	CallsToday       int64 `json:"callsToday"`
+	// AttemptsToday counts retries too: it is what the global cap charges.
+	AttemptsToday               int64    `json:"attemptsToday"`
 	TokensToday                 int64    `json:"tokensToday"`
 	SuccessRateToday            *float64 `json:"successRateToday"`
 	CallsPerActiveInstallDay    *float64 `json:"callsPerActiveInstallDay"`
@@ -123,6 +125,9 @@ func BuildOverview(in OverviewInput) Overview {
 		}
 		calls[u.Day] += u.Calls
 		tokens[u.Day] += u.Tokens
+		if u.Day == in.Today {
+			k.AttemptsToday += u.Attempts
+		}
 		rangeCalls += u.Calls
 		if classified(u) {
 			activeInstallDays++
