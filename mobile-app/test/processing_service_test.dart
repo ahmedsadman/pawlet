@@ -24,14 +24,17 @@ class _FakeLlm implements LlmProvider {
   ClassifyResult? result;
   LlmException? error;
   int calls = 0;
+  final List<String?> messageKeys = [];
 
   @override
   Future<ClassifyResult> classifyAndExtract({
     required String content,
     required String sender,
     required String currency,
+    String? messageKey,
   }) async {
     calls++;
+    messageKeys.add(messageKey);
     if (error != null) throw error!;
     return result ?? const ClassifyResult.none();
   }
@@ -48,6 +51,7 @@ class _FnLlm implements LlmProvider {
     required String content,
     required String sender,
     required String currency,
+    String? messageKey,
   }) => handler(content);
 }
 
@@ -597,6 +601,26 @@ void main() {
     expect(r['status'], 'queued');
     expect(r['attempts'], 1);
     expect(r['next_attempt_at'], now + 15000); // baseBackoff 15s
+    await db.close();
+  });
+
+  test('a retry sends the same message key as the first attempt', () async {
+    final id = await queue('CHK');
+    final other = await queue('CHK', content: 'debit 50 again');
+    final llm = _FakeLlm(error: const LlmException('rate', retryable: true));
+    await service(llm).process();
+
+    now += 15000; // past the first backoff
+    llm.error = null;
+    await service(llm).process();
+
+    expect(llm.messageKeys, hasLength(4));
+    final firstPass = llm.messageKeys.sublist(0, 2);
+    expect(firstPass, everyElement(isNotNull));
+    expect(llm.messageKeys.sublist(2), firstPass);
+    expect(firstPass.toSet(), hasLength(2)); // one key per message
+    expect((await row(id))['status'], isNot('queued'));
+    expect((await row(other))['status'], isNot('queued'));
     await db.close();
   });
 

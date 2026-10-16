@@ -57,6 +57,7 @@ class PawletProxyProvider implements LlmProvider {
     required String content,
     required String sender,
     required String currency,
+    String? messageKey,
   }) async {
     if (utf8.encode(content).length > maxContentBytes) {
       throw const LlmException(
@@ -66,7 +67,7 @@ class PawletProxyProvider implements LlmProvider {
     }
 
     try {
-      return await _classifyWithBudget(content, sender, currency);
+      return await _classifyWithBudget(content, sender, currency, messageKey);
     } on TimeoutException {
       throw const LlmException('request timed out', retryable: true);
     }
@@ -76,12 +77,16 @@ class PawletProxyProvider implements LlmProvider {
     String content,
     String sender,
     String currency,
+    String? messageKey,
   ) async {
     return Future(() async {
+      // The key lets the server count every retry of this message as one LLM
+      // call. Never content-derived.
       final body = jsonEncode({
         'sender': sender,
         'content': content,
         'currency': currency,
+        'messageKey': ?messageKey,
       });
 
       var resp = await _post(body, await _token());

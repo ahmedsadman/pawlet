@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 import 'finance/transaction.dart';
 
 /// Lifecycle status of a captured SMS as it moves through the processing queue.
@@ -210,6 +214,19 @@ class SmsRecord {
       status == SmsStatus.queued ||
       status == SmsStatus.processing ||
       status == SmsStatus.sending;
+
+  /// Opaque key naming this message to Pawlet's server, identical on every
+  /// retry, so the server counts the message as one LLM call however many
+  /// times it is sent. Hashed from the row id and receive time, never the
+  /// content. Null before insert.
+  String? get llmMessageKey {
+    final id = this.id;
+    if (id == null) return null;
+    return sha256
+        .convert(utf8.encode('$id:$timestamp'))
+        .toString()
+        .substring(0, 32);
+  }
 
   SmsRecord copyWith({
     int? id,
