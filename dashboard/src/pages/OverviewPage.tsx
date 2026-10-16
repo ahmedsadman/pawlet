@@ -60,13 +60,15 @@ export default function OverviewPage() {
                 <div className="rounded-xl bg-ctp-surface0 p-4 ring-1 ring-ctp-surface1/40">
                   <StatTileHeader />
                   <div className="mt-1.5 text-2xl font-semibold">{fmtCount(k.callsToday)}</div>
+                  {/* The cap charges every attempt, so the meter tracks attempts, not calls. */}
                   <Meter
-                    value={k.callsToday}
+                    value={k.attemptsToday}
                     max={d.server.globalDailyCap}
                     label="Share of the global daily cap used"
                   />
                   <div className="mt-1 text-xs text-ctp-subtext0">
-                    of {fmtCount(d.server.globalDailyCap)} global cap
+                    {fmtCount(k.attemptsToday)} attempts of {fmtCount(d.server.globalDailyCap)}{" "}
+                    global cap
                   </div>
                 </div>
                 <StatTile
