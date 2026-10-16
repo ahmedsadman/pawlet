@@ -599,3 +599,117 @@ func TestClassifyRejectsTokenWithShortSubject(t *testing.T) {
 		t.Fatalf("classifier called %d times, want 0", h.classifier.calls)
 	}
 }
+
+// classifyRequestBodyWithKey builds a valid classify request body that names
+// its message.
+func classifyRequestBodyWithKey(content, key string) io.Reader {
+	b, _ := json.Marshal(map[string]string{
+		"sender":     "BANK",
+		"content":    content,
+		"currency":   "BDT",
+		"messageKey": key,
+	})
+	return bytes.NewReader(b)
+}
+
+// classifyWith sends one classify request with body for installHash.
+func (h *testHarness) classifyWith(installHash string, body io.Reader) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/v1/classify", body)
+	req.Header.Set("Authorization", "Bearer "+h.mintToken(installHash))
+	rec := httptest.NewRecorder()
+	h.handler.Classify(rec, req)
+	return rec
+}
+
+func (h *testHarness) callsToday(t *testing.T, installHash string) int64 {
+	t.Helper()
+	u, err := h.store.Usage(context.Background(), installHash, h.now.Format("2006-01-02"))
+	if err != nil {
+		t.Fatalf("Usage() error = %v", err)
+	}
+	return u.Calls
+}
+
+func TestClassifyRetriesOfOneMessageCountOneCall(t *testing.T) {
+	h := newTestHarness(t)
+	installHash := strings.Repeat("m", 64)
+	h.touchInstall(installHash)
+
+	h.classifier.err = &llm.CallError{Status: 502, Retryable: true, Message: "bad gateway"}
+	if rec := h.classifyWith(installHash, classifyRequestBodyWithKey("content", "key-1")); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("first attempt status = %d, want 503", rec.Code)
+	}
+	h.classifier.err = nil
+	if rec := h.classifyWith(installHash, classifyRequestBodyWithKey("content", "key-1")); rec.Code != http.StatusOK {
+		t.Fatalf("retry status = %d, want 200", rec.Code)
+	}
+
+	if h.classifier.calls != 2 {
+		t.Fatalf("classifier calls = %d, want 2 (a retry still calls the LLM)", h.classifier.calls)
+	}
+	if got := h.callsToday(t, installHash); got != 1 {
+		t.Fatalf("calls = %d, want 1", got)
+	}
+}
+
+func TestClassifyDistinctMessageKeysCountSeparately(t *testing.T) {
+	h := newTestHarness(t)
+	installHash := strings.Repeat("n", 64)
+	h.touchInstall(installHash)
+
+	h.classifyWith(installHash, classifyRequestBodyWithKey("content", "key-1"))
+	h.classifyWith(installHash, classifyRequestBodyWithKey("content", "key-2"))
+
+	if got := h.callsToday(t, installHash); got != 2 {
+		t.Fatalf("calls = %d, want 2", got)
+	}
+}
+
+func TestClassifyWithoutMessageKeyCountsEveryCall(t *testing.T) {
+	h := newTestHarness(t)
+	installHash := strings.Repeat("o", 64)
+	h.touchInstall(installHash)
+
+	h.classifyWith(installHash, classifyRequestBody("BANK", "content", "BDT"))
+	h.classifyWith(installHash, classifyRequestBody("BANK", "content", "BDT"))
+
+	if got := h.callsToday(t, installHash); got != 2 {
+		t.Fatalf("calls = %d, want 2", got)
+	}
+}
+
+func TestClassifyQuotaDenialCountsNoCall(t *testing.T) {
+	h := newTestHarness(t)
+	installHash := strings.Repeat("p", 64)
+	h.touchInstall(installHash)
+	h.handler.Limiter = quota.New(quota.Limits{Daily: 0, Burst: 10, GlobalDaily: 1000}, noopSink{}, h.handler.Now)
+
+	if rec := h.classifyWith(installHash, classifyRequestBodyWithKey("content", "key-1")); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", rec.Code)
+	}
+	if got := h.callsToday(t, installHash); got != 0 {
+		t.Fatalf("calls = %d, want 0", got)
+	}
+}
+
+func TestClassifyRejectsInvalidMessageKey(t *testing.T) {
+	for name, key := range map[string]string{
+		"too long":       strings.Repeat("a", 65),
+		"bad characters": "key with spaces",
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newTestHarness(t)
+			installHash := strings.Repeat("q", 64)
+			h.touchInstall(installHash)
+
+			rec := h.classifyWith(installHash, classifyRequestBodyWithKey("content", key))
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+			if h.classifier.calls != 0 {
+				t.Fatalf("classifier calls = %d, want 0", h.classifier.calls)
+			}
+		})
+	}
+}

@@ -39,9 +39,16 @@ type classifyRequest struct {
 	Sender   string `json:"sender"`
 	Content  string `json:"content"`
 	Currency string `json:"currency"`
+	// MessageKey is an opaque per-message value from the app, the same on
+	// every retry of one message, so the message counts as one LLM call.
+	// Optional: older apps don't send it.
+	MessageKey string `json:"messageKey"`
 }
 
-var inputCurrencyPattern = regexp.MustCompile(`^[A-Za-z]{3}$`)
+var (
+	inputCurrencyPattern = regexp.MustCompile(`^[A-Za-z]{3}$`)
+	messageKeyPattern    = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+)
 
 // Classify authenticates the caller, enforces quota, and proxies the SMS
 // classification to the LLM. Privacy is load-bearing: message content is never
@@ -163,6 +170,13 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
+	if req.MessageKey != "" && !messageKeyPattern.MatchString(req.MessageKey) {
+		h.Logger.Warn("invalid message key",
+			"installHash", installHash[:8])
+		count(h.Metrics, metrics.ClassifyOutcome, metrics.BadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
 
 	// 3. Enforce quota. Quota is charged before the LLM call, and tokens are
 	// attributed to the admitted day, not the day the call finishes. A call
@@ -186,7 +200,18 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Call the classifier.
+	// 4. Count the LLM call once per message, however many times the app
+	// retries it; the quota above still charges every attempt. Counted on
+	// admission, so a message whose every attempt fails still counts once.
+	// Best effort: a failed write must not cost the caller the classification,
+	// and a client hanging up mid-call must not cancel it.
+	if _, err := h.Store.CountLLMMessage(context.WithoutCancel(ctx), installHash, decision.Day, req.MessageKey); err != nil {
+		h.Logger.Error("failed to count llm call",
+			"installHash", installHash[:8],
+			"error", err)
+	}
+
+	// 5. Call the classifier.
 	llmReq := llm.Request{
 		Sender:   req.Sender,
 		Content:  req.Content,
@@ -238,7 +263,7 @@ func (h *ClassifyHandler) Classify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. Record tokens against the admitted day.
+	// 6. Record tokens against the admitted day.
 	h.Limiter.RecordTokens(installHash, decision.Day, resp.TotalTokens)
 
 	latency := h.Now().Sub(start)
