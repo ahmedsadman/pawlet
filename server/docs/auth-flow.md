@@ -111,10 +111,14 @@ Every classification request carries the session token. The server:
    claiming to need no signature, is rejected;
 2. **checks the install still exists and is not banned**, so a ban takes effect immediately
    even for an install holding a valid token;
-3. **checks the input** — sizes and the currency code;
+3. **checks the input** — sizes, the currency code and the optional message key;
 4. **checks the quota** — a short burst limit and a daily limit per install, plus a daily
-   ceiling across all installs so a sudden surge cannot drain the OpenRouter account;
-5. **calls OpenRouter** with Pawlet's key and returns the cleaned-up result.
+   ceiling across all installs so a sudden surge cannot drain the OpenRouter account. Every
+   attempt is charged, retries included, because each one calls OpenRouter;
+5. **counts the LLM call** once per message: the app sends an opaque `messageKey` that stays the
+   same across retries, and only its first admitted request counts (see
+   [Stored metrics](metrics.md));
+6. **calls OpenRouter** with Pawlet's key and returns the cleaned-up result.
 
 Message content is never written to disk and never logged. The endpoint is
 `internal/httpapi/classify.go`.
