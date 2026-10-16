@@ -88,12 +88,12 @@ func TestOpenUpgradesLegacyDatabaseKeepingData(t *testing.T) {
 	if rec.Meta != (InstallMeta{}) {
 		t.Errorf("legacy Meta = %+v, want zero (NULL columns)", rec.Meta)
 	}
-	calls, tokens, err := s.Usage(ctx, "legacy", "2026-10-01")
+	u, err := s.Usage(ctx, "legacy", "2026-10-01")
 	if err != nil {
 		t.Fatalf("Usage() error = %v", err)
 	}
-	if calls != 4 || tokens != 90 {
-		t.Errorf("calls, tokens = %d, %d; want 4, 90", calls, tokens)
+	if u.Calls != 4 || u.Attempts != 4 || u.Tokens != 90 {
+		t.Errorf("calls, attempts, tokens = %d, %d, %d; want 4, 4, 90", u.Calls, u.Attempts, u.Tokens)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestOpenTwiceIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Open() error = %v", err)
 	}
-	if err := s1.AddUsage(ctx, []UsageDelta{{IDHash: "a", Day: "2026-10-02", Calls: 3}}); err != nil {
+	if err := s1.AddUsage(ctx, []UsageDelta{{IDHash: "a", Day: "2026-10-02", Attempts: 3}}); err != nil {
 		t.Fatalf("AddUsage() error = %v", err)
 	}
 	if err := s1.Close(); err != nil {
@@ -118,12 +118,12 @@ func TestOpenTwiceIsIdempotent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s2.Close() })
 
-	calls, _, err := s2.Usage(ctx, "a", "2026-10-02")
+	u, err := s2.Usage(ctx, "a", "2026-10-02")
 	if err != nil {
 		t.Fatalf("Usage() error = %v", err)
 	}
-	if calls != 3 {
-		t.Fatalf("calls = %d, want 3", calls)
+	if u.Attempts != 3 {
+		t.Fatalf("attempts = %d, want 3", u.Attempts)
 	}
 	if got := userVersion(t, s2.read); got != SchemaVersion() {
 		t.Fatalf("user_version = %d, want %d", got, SchemaVersion())
@@ -408,5 +408,56 @@ func TestMigration004AddsHeartbeatFlagsToVersion3Database(t *testing.T) {
 		if _, err := s.write.ExecContext(ctx, q); err != nil {
 			t.Errorf("old-shape INSERT failed: %v", err)
 		}
+	}
+}
+
+func TestMigration005SplitsAttemptsFromCallsInVersion4Database(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v4.db")
+
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	for _, m := range []string{migration001, migration002, migration003, migration004} {
+		if _, err := raw.ExecContext(ctx, m); err != nil {
+			t.Fatalf("apply earlier migration: %v", err)
+		}
+	}
+	if _, err := raw.ExecContext(ctx, "PRAGMA user_version = 4"); err != nil {
+		t.Fatalf("set user_version: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO usage (id_hash, day, calls, tokens) VALUES ('old', '2026-10-01', 7, 300)`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	if got := userVersion(t, s.read); got != SchemaVersion() {
+		t.Fatalf("user_version = %d, want %d", got, SchemaVersion())
+	}
+	// Before the split every attempt was a call, so the quota keeps its count.
+	u, err := s.Usage(ctx, "old", "2026-10-01")
+	if err != nil {
+		t.Fatalf("Usage() error = %v", err)
+	}
+	if u.Calls != 7 || u.Attempts != 7 || u.Tokens != 300 {
+		t.Errorf("calls, attempts, tokens = %d, %d, %d; want 7, 7, 300", u.Calls, u.Attempts, u.Tokens)
+	}
+	if _, err := s.CountLLMMessage(ctx, "old", "2026-10-02", "k1"); err != nil {
+		t.Errorf("CountLLMMessage() after migration error = %v", err)
+	}
+	// An older binary's INSERT shape must keep working after a rollback.
+	if _, err := s.write.ExecContext(ctx,
+		`INSERT INTO usage (id_hash, day, calls, tokens) VALUES ('rollback', '2026-10-02', 1, 10)`); err != nil {
+		t.Errorf("old-shape INSERT failed: %v", err)
 	}
 }

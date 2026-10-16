@@ -270,8 +270,11 @@ func Seed(path string, now time.Time, seed int64) (Summary, error) {
 						add(key, "classify_latency_ms", pick(r, latencyMix), 1)
 					}
 				}
-				if _, err := tx.Exec(`INSERT INTO usage (id_hash, day, calls, tokens) VALUES (?,?,?,?)`,
-					hash, key, calls, ok*int64(380+r.Intn(160))); err != nil {
+				// Each outcome above is one attempt. Treat half the failures as
+				// retries of a message already counted, so calls < attempts.
+				distinct := ok + (calls-ok)/2
+				if _, err := tx.Exec(`INSERT INTO usage (id_hash, day, calls, attempts, tokens) VALUES (?,?,?,?,?)`,
+					hash, key, distinct, calls, ok*int64(380+r.Intn(160))); err != nil {
 					return Summary{}, err
 				}
 			}

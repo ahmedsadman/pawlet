@@ -31,11 +31,13 @@ func seedStats(t *testing.T, st *store.Store) {
 		t.Fatal(err)
 	}
 	if err := st.AddUsage(ctx, []store.UsageDelta{
-		{IDHash: hashA, Day: "2026-10-09", Calls: 5, Tokens: 500},
-		{IDHash: hashA, Day: "2026-10-07", Calls: 2, Tokens: 200},
+		{IDHash: hashA, Day: "2026-10-09", Attempts: 5, Tokens: 500},
+		{IDHash: hashA, Day: "2026-10-07", Attempts: 2, Tokens: 200},
 	}); err != nil {
 		t.Fatal(err)
 	}
+	addCalls(t, st, hashA, "2026-10-09", 5)
+	addCalls(t, st, hashA, "2026-10-07", 2)
 	if err := st.AddCounters(ctx, []store.CounterDelta{
 		{Day: "2026-10-09", Metric: "classify_outcome", Key: "ok", Count: 5},
 		{Day: "2026-10-09", Metric: "classify_latency_ms", Key: "2000", Count: 5},
@@ -45,6 +47,16 @@ func seedStats(t *testing.T, st *store.Store) {
 	}
 	if err := st.PutServerInfo(ctx, map[string]string{store.InfoDailyPerInstall: "200", store.InfoModels: "m1"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// addCalls counts n distinct LLM calls for the install on day.
+func addCalls(t *testing.T, st *store.Store, idHash, day string, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		if _, err := st.CountLLMMessage(context.Background(), idHash, day, ""); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
