@@ -100,9 +100,12 @@ class LlmException implements Exception {
 /// call that both classifies the message and extracts the matching metadata,
 /// so the interface can be swapped (OpenRouter today, anything later).
 abstract class LlmProvider {
+  /// [messageKey] names the message, the same on every retry of it. Providers
+  /// that do no per-message accounting ignore it.
   Future<ClassifyResult> classifyAndExtract({
     required String content,
     required String sender,
     required String currency,
+    String? messageKey,
   });
 }

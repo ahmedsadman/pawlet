@@ -89,6 +89,7 @@ class Classifier {
     required String sender,
     required String content,
     required String currency,
+    String? messageKey,
   }) async {
     final llm = _llm;
     // A programming error, not a runtime path: ProcessingService checks
@@ -102,6 +103,7 @@ class Classifier {
       content: content,
       sender: sender,
       currency: currency,
+      messageKey: messageKey,
     );
 
     return ClassificationOutcome(

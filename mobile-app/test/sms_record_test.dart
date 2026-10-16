@@ -191,4 +191,41 @@ void main() {
       expect(r.copyWith(needsLlm: true).needsLlm, isTrue);
     });
   });
+
+  group('llmMessageKey', () {
+    SmsRecord rec({int? id = 7, int timestamp = 1700000000000}) => SmsRecord(
+      id: id,
+      sender: 'BANK',
+      content: 'debit 50',
+      timestamp: timestamp,
+      updatedAt: 0,
+    );
+
+    test('is 32 lowercase hex characters', () {
+      expect(rec().llmMessageKey, matches(RegExp(r'^[0-9a-f]{32}$')));
+    });
+
+    test('stays the same as the row moves through the queue', () {
+      final queued = rec();
+      final retried = SmsRecord(
+        id: 7,
+        sender: 'BANK',
+        content: 'debit 50',
+        timestamp: 1700000000000,
+        updatedAt: 99,
+        status: SmsStatus.queued,
+        attempts: 3,
+      );
+      expect(retried.llmMessageKey, queued.llmMessageKey);
+    });
+
+    test('differs per row and per timestamp', () {
+      expect(rec(id: 8).llmMessageKey, isNot(rec().llmMessageKey));
+      expect(rec(timestamp: 1).llmMessageKey, isNot(rec().llmMessageKey));
+    });
+
+    test('is null for a row not yet stored', () {
+      expect(rec(id: null).llmMessageKey, isNull);
+    });
+  });
 }

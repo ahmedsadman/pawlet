@@ -85,6 +85,22 @@ void main() {
     },
   );
 
+  test('sends the message key when given', () async {
+    await proxy([http.Response(_transaction, 200)]).classifyAndExtract(
+      content: 'debit 50',
+      sender: 'EBL',
+      currency: 'BDT',
+      messageKey: 'abc123',
+    );
+
+    expect(jsonDecode(requests.single.body), {
+      'sender': 'EBL',
+      'content': 'debit 50',
+      'currency': 'BDT',
+      'messageKey': 'abc123',
+    });
+  });
+
   test('a null category is none', () async {
     final r = await run(
       proxy([

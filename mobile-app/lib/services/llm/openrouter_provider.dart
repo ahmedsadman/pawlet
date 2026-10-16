@@ -56,6 +56,7 @@ class OpenRouterProvider implements LlmProvider {
     required String content,
     required String sender,
     required String currency,
+    String? messageKey,
   }) async {
     final b = _bundle();
     final body = jsonEncode({

@@ -383,6 +383,7 @@ class ProcessingService {
         sender: record.sender,
         content: record.content,
         currency: cur,
+        messageKey: record.llmMessageKey,
       );
       // Awaited, like every return in this block: un-awaited, an error from
       // the returned future skips the handlers below and stops the pass.

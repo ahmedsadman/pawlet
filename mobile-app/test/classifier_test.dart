@@ -11,14 +11,17 @@ class _FakeLlm implements LlmProvider {
   _FakeLlm(this.result);
   final ClassifyResult result;
   int calls = 0;
+  String? messageKey;
 
   @override
   Future<ClassifyResult> classifyAndExtract({
     required String content,
     required String sender,
     required String currency,
+    String? messageKey,
   }) async {
     calls++;
+    this.messageKey = messageKey;
     return result;
   }
 }
@@ -176,6 +179,17 @@ void main() {
       expect(outcome.category, SmsCategory.bill);
       expect(outcome.bill!.normalizedTotalDue, '8020');
       expect(outcome.parseSource, ParseSource.llm);
+    });
+
+    test('passes the message key through to the provider', () async {
+      final llm = _FakeLlm(const ClassifyResult.none());
+      await Classifier(llm).classifyRemote(
+        sender: 'MTB',
+        content: 'debit 50 BDT',
+        currency: 'BDT',
+        messageKey: 'abc123',
+      );
+      expect(llm.messageKey, 'abc123');
     });
 
     test('a remote none still reports parseSource llm', () async {
