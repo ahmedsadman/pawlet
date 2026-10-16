@@ -18,11 +18,14 @@ func seedRows(t *testing.T, s *Store) {
 		t.Fatalf("touch a: %v", err)
 	}
 	if err := s.AddUsage(ctx, []UsageDelta{
-		{IDHash: "a", Day: "2026-10-01", Calls: 3, Tokens: 30},
-		{IDHash: "a", Day: "2026-10-02", Calls: 1, Tokens: 10},
-		{IDHash: "b", Day: "2026-10-03", Calls: 5, Tokens: 50},
+		{IDHash: "a", Day: "2026-10-01", Attempts: 3, Tokens: 30},
+		{IDHash: "a", Day: "2026-10-02", Attempts: 2, Tokens: 10},
+		{IDHash: "b", Day: "2026-10-03", Attempts: 5, Tokens: 50},
 	}); err != nil {
 		t.Fatalf("usage: %v", err)
+	}
+	if _, err := s.CountLLMMessage(ctx, "a", "2026-10-02", "k1"); err != nil {
+		t.Fatalf("count message: %v", err)
 	}
 	if err := s.AddCounters(ctx, []CounterDelta{
 		{Day: "2026-10-02", Metric: "classify_outcome", Key: "ok", Count: 4},
@@ -62,7 +65,7 @@ func TestUsageLoaders(t *testing.T) {
 		t.Fatalf("UsageBetween() = %+v, %v", between, err)
 	}
 	mine, err := s.UsageForInstall(ctx, "a")
-	if err != nil || len(mine) != 2 || mine[1] != (UsageRow{IDHash: "a", Day: "2026-10-02", Calls: 1, Tokens: 10}) {
+	if err != nil || len(mine) != 2 || mine[1] != (UsageRow{IDHash: "a", Day: "2026-10-02", Calls: 1, Attempts: 2, Tokens: 10}) {
 		t.Fatalf("UsageForInstall() = %+v, %v", mine, err)
 	}
 }

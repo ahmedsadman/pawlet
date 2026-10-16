@@ -294,11 +294,12 @@ func (s *storeSink) PersistUsage(ctx context.Context, deltas []quota.Delta) erro
 	// Convert quota.Delta to store.UsageDelta.
 	storeDeltas := make([]store.UsageDelta, len(deltas))
 	for i, d := range deltas {
+		// The quota's admitted calls are every attempt, retries included.
 		storeDeltas[i] = store.UsageDelta{
-			IDHash: d.IDHash,
-			Day:    d.Day,
-			Calls:  d.Calls,
-			Tokens: d.Tokens,
+			IDHash:   d.IDHash,
+			Day:      d.Day,
+			Attempts: d.Calls,
+			Tokens:   d.Tokens,
 		}
 	}
 	return s.store.AddUsage(ctx, storeDeltas)

@@ -12,8 +12,13 @@ import (
 type UsageRow struct {
 	IDHash string
 	Day    string
-	Calls  int64
-	Tokens int64
+	// Calls: distinct messages first sent to the LLM that day. Retries of a
+	// message already counted add nothing.
+	Calls int64
+	// Attempts: every admitted classify request, retries included. This is
+	// what the quota charges.
+	Attempts int64
+	Tokens   int64
 }
 
 // DayRow is one install's activity on one UTC day: which signals arrived and
@@ -86,20 +91,20 @@ func (s *Store) AllInstalls(ctx context.Context) ([]Install, error) {
 
 // AllUsage reads every usage row, oldest day first.
 func (s *Store) AllUsage(ctx context.Context) ([]UsageRow, error) {
-	return s.queryUsage(ctx, `SELECT id_hash, day, calls, tokens FROM usage ORDER BY day, id_hash`)
+	return s.queryUsage(ctx, `SELECT id_hash, day, calls, attempts, tokens FROM usage ORDER BY day, id_hash`)
 }
 
 // UsageBetween reads usage rows for days from..to inclusive.
 func (s *Store) UsageBetween(ctx context.Context, from, to string) ([]UsageRow, error) {
 	return s.queryUsage(ctx,
-		`SELECT id_hash, day, calls, tokens FROM usage WHERE day BETWEEN ? AND ? ORDER BY day, id_hash`,
+		`SELECT id_hash, day, calls, attempts, tokens FROM usage WHERE day BETWEEN ? AND ? ORDER BY day, id_hash`,
 		from, to)
 }
 
 // UsageForInstall reads one install's usage rows, oldest first.
 func (s *Store) UsageForInstall(ctx context.Context, idHash string) ([]UsageRow, error) {
 	return s.queryUsage(ctx,
-		`SELECT id_hash, day, calls, tokens FROM usage WHERE id_hash = ? ORDER BY day`, idHash)
+		`SELECT id_hash, day, calls, attempts, tokens FROM usage WHERE id_hash = ? ORDER BY day`, idHash)
 }
 
 func (s *Store) queryUsage(ctx context.Context, q string, args ...any) ([]UsageRow, error) {
@@ -112,7 +117,7 @@ func (s *Store) queryUsage(ctx context.Context, q string, args ...any) ([]UsageR
 	var out []UsageRow
 	for rows.Next() {
 		var u UsageRow
-		if err := rows.Scan(&u.IDHash, &u.Day, &u.Calls, &u.Tokens); err != nil {
+		if err := rows.Scan(&u.IDHash, &u.Day, &u.Calls, &u.Attempts, &u.Tokens); err != nil {
 			return nil, fmt.Errorf("scan usage: %w", err)
 		}
 		out = append(out, u)

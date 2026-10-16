@@ -19,6 +19,9 @@ var migration003 string
 //go:embed migrations/004_heartbeat.sql
 var migration004 string
 
+//go:embed migrations/005_llm_messages.sql
+var migration005 string
+
 // migrations moves the schema forward one version per entry: entry i takes a
 // database from user_version i to i+1. Append only — never edit an entry that
 // has shipped, because databases that already ran it will not run it again.
@@ -31,6 +34,7 @@ var migrations = []string{
 	migration002,
 	migration003,
 	migration004,
+	migration005,
 }
 
 // SchemaVersion is the user_version a database reports once every migration
