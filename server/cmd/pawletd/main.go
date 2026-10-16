@@ -113,12 +113,18 @@ func run(logger *slog.Logger) error {
 		recorder.RunFlusher(ctx, 10*time.Second, logger)
 	}()
 
-	// The model stats rollup writes to the database too, so it joins the same
-	// WaitGroup and is finished before db.Close runs.
+	// The model stats rollup and the LLM message prune write to the database
+	// too, so they join the same WaitGroup and are finished before db.Close
+	// runs.
 	flushers.Add(1)
 	go func() {
 		defer flushers.Done()
 		runModelStatsRollup(ctx, db, rollupInterval, time.Now, logger)
+	}()
+	flushers.Add(1)
+	go func() {
+		defer flushers.Done()
+		runLLMMessagePrune(ctx, db, pruneInterval, time.Now, logger)
 	}()
 
 	// 10. Build the challenge store, its per-IP rate limiter, the
