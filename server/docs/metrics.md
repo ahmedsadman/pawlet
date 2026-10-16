@@ -28,7 +28,8 @@ image tag stays safe.
 | Table | One row per | Written by |
 |---|---|---|
 | `installs` | install | each successful `/v1/session` and each accepted `/v1/heartbeat` |
-| `usage` | install per UTC day | admitted classify calls (tokens on success), written by the quota flusher |
+| `usage` | install per UTC day | `attempts`: every admitted classify request, retries included, with tokens on success, written by the quota flusher. `calls`: distinct messages, written on admission (see LLM calls under [Dashboard definitions](#dashboard-definitions)) |
+| `llm_messages` | install per counted message key | each admitted classify request whose `messageKey` the install had not sent before; keys older than 30 days are pruned daily (`cmd/pawletd/prune.go`) |
 | `install_days` | install per UTC day with a session or a heartbeat | each successful `/v1/session` and each accepted `/v1/heartbeat` |
 | `counters_daily` | day, metric, key | metrics flusher (`internal/metrics/recorder.go`) |
 | `model_stats_daily` | install per UTC day per app version | each accepted `/v1/model-stats` (replaces on resend) |
@@ -276,7 +277,16 @@ How pawlet-admin turns the stored data into numbers (`internal/stats/`).
   versions), bucketed by its message count. It covers `max(range start, today − 89)` through
   today, because older per-install rows are folded into `model_stats_rollup` without install
   identity.
-- **Dormant:** not banned, and no activity (latest of `last_seen` and the last day with calls)
+- **LLM calls** (`usage.calls`): messages sent to the LLM, each counted once. The app sends an
+  opaque `messageKey` per message (hashed from its local row id and receive time, never the
+  content), the same on every retry; the first admitted request with a key counts, on that day,
+  even if every attempt then fails. Retries add nothing, even on a later day. A key is remembered
+  for 30 days, so a retry after that counts again. Requests without a key (older app builds) count
+  every time. The quota and the global cap charge every attempt (`usage.attempts`), so
+  **quota-hit days** compare attempts with the daily limit, and the overview's cap meter shows
+  today's attempts.
+- **Dormant:** not banned, and no activity (latest of `last_seen` and the last day with classify
+  requests)
   for more than 14 days. Both sessions and heartbeats move `last_seen`. The server cannot see uninstalls, so this stands in for churn.
 - **Success rate:** `ok` divided by all classify outcomes that reached the LLM step (`ok`,
   `upstream_429`, `upstream_retryable`, `upstream_rejected`, `internal`). Client errors, quota
@@ -308,7 +318,7 @@ Local-model numbers (`internal/stats/localmodel.go`, `internal/stats/installs.go
   sets the baseline without a marker.
 - **Messages per active install-day** = messages in the range ÷ install-days with at least one
   message; rollup rows contribute their `install_count`. Shown next to calls per active
-  install-day (calls ÷ install-days with at least one call).
+  install-day (calls ÷ install-days with at least one classify request).
 
 Caveats that apply to every number: no-LLM installs are invisible, and verdict, call and model
 numbers cover attested proxy-mode installs only (see Scope). Heartbeats are unauthenticated, so an

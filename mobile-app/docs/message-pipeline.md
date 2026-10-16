@@ -376,6 +376,11 @@ The provider makes exactly one HTTP attempt and classifies the outcome:
 | Unexpected non-LLM error (e.g. DB) | retryable | back off and retry |
 | On-device rejection with no LLM available | **fatal** | mark `failure` (`local_only`) immediately |
 
+In proxy mode every attempt carries the row's message key (`SmsRecord.llmMessageKey` in
+`lib/models/sms_record.dart`, hashed from the row id and receive time, never the content). It is
+the same on every retry, including a Retry tap, so Pawlet's server counts the message as one LLM
+call however many times it is sent. BYOK ignores it.
+
 ### The backoff ladder
 
 `attempts` counts *real* attempts — neither an offline drop nor a deferral (§5) counts.
