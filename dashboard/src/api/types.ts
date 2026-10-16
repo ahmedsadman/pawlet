@@ -34,6 +34,7 @@ export interface OverviewResponse {
     wau: number;
     mau: number;
     callsToday: number;
+    attemptsToday: number;
     tokensToday: number;
     successRateToday: number | null;
     callsPerActiveInstallDay: number | null;

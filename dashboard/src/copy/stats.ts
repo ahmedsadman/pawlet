@@ -63,9 +63,9 @@ export const statCopy = {
   },
   callsToday: {
     title: "Calls today",
-    meaning: "Classify calls the server admitted today, against the global daily cap.",
+    meaning: "Messages sent to the LLM today, each counted once however many times it was retried.",
     computation:
-      "Sum of today's per-install call counters (UTC). The bar shows the share of the global cap used.",
+      "Sum of today's per-install call counters (UTC). The bar shows today's attempts, retries included, as a share of the global cap, which charges every attempt.",
     caveat: "Lags live traffic by up to 10 seconds.",
   },
   tokensToday: {
@@ -134,7 +134,7 @@ export const statCopy = {
   },
   "col.callsTotal": {
     title: "Total calls",
-    meaning: "Every classify call admitted for this install.",
+    meaning: "Every message this install sent to the LLM, counted once across retries.",
     computation: "Sum of all its daily call counters.",
   },
   "col.tokensTotal": {
@@ -145,7 +145,8 @@ export const statCopy = {
   "col.quotaHitDays": {
     title: "Quota days",
     meaning: "Days the install reached its daily call limit.",
-    computation: "Days whose call count is at or above the per-install daily limit.",
+    computation:
+      "Days whose attempt count, retries included, is at or above the per-install daily limit.",
   },
   "col.status": {
     title: "Status",
