@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // LLMMessageRetentionDays is how many UTC days a counted message key is
@@ -98,10 +99,12 @@ func (s *Store) CountLLMMessage(ctx context.Context, idHash, day, key string) (b
 	return true, nil
 }
 
-// PruneLLMMessages forgets message keys first seen before day and returns how
-// many it dropped.
-func (s *Store) PruneLLMMessages(ctx context.Context, before string) (int64, error) {
-	res, err := s.write.ExecContext(ctx, `DELETE FROM llm_messages WHERE day < ?`, before)
+// PruneLLMMessages forgets message keys first seen more than
+// LLMMessageRetentionDays before now's UTC day and returns how many it
+// dropped.
+func (s *Store) PruneLLMMessages(ctx context.Context, now time.Time) (int64, error) {
+	cutoff := now.UTC().AddDate(0, 0, -LLMMessageRetentionDays).Format(dayLayout)
+	res, err := s.write.ExecContext(ctx, `DELETE FROM llm_messages WHERE day < ?`, cutoff)
 	if err != nil {
 		return 0, fmt.Errorf("prune llm messages: %w", err)
 	}

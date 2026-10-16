@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func usageOf(t *testing.T, s *Store, idHash, day string) UsageRow {
@@ -224,12 +225,14 @@ func TestCountLLMMessageCreditsTheFirstDay(t *testing.T) {
 	}
 }
 
-func TestPruneLLMMessagesDropsKeysBeforeDay(t *testing.T) {
+func TestPruneLLMMessagesDropsKeysPastRetention(t *testing.T) {
 	s := newTestStore(t)
-	countMessage(t, s, "a", "2026-09-01", "old")
+	// With 30 days' retention, on 2026-10-31 the oldest kept day is 2026-10-01.
+	countMessage(t, s, "a", "2026-09-30", "old")
 	countMessage(t, s, "a", "2026-10-01", "kept")
 
-	n, err := s.PruneLLMMessages(context.Background(), "2026-10-01")
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	n, err := s.PruneLLMMessages(context.Background(), now)
 	if err != nil {
 		t.Fatalf("PruneLLMMessages() error = %v", err)
 	}
