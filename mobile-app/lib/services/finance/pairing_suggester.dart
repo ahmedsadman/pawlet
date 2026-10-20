@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../data/database.dart';
 import '../../models/finance/pairing_suggestion.dart';
+import '../../models/finance/sms_text.dart';
 import '../../models/finance/transaction.dart';
 import 'finance_matcher.dart';
 
@@ -41,9 +42,11 @@ class PairingSuggester {
       '''
       SELECT t.id, t.message_id, t.bank_id, t.normalized_amount,
              t.normalized_currency, t.type, t.date,
-             b.name AS bank_name, b.account_type, b.card_digits
+             b.name AS bank_name, b.account_type, b.card_digits,
+             s.sender AS message_sender, s.content AS message_content
       FROM ${AppDatabase.transactionsTable} t
       JOIN ${AppDatabase.banksTable} b ON b.id = t.bank_id
+      LEFT JOIN ${AppDatabase.smsTable} s ON s.id = t.message_id
       WHERE t.paired_with_id IS NULL AND t.date >= ?
         AND ((b.account_type = 'deposit' AND t.type IN ('income', 'expense'))
           OR (b.account_type = 'credit' AND t.type = 'transfer'))
@@ -163,5 +166,11 @@ class PairingSuggester {
     currency: r['normalized_currency'] as String,
     type: TxType.fromValue(r['type'] as String),
     date: DateTime.fromMillisecondsSinceEpoch(r['date'] as int),
+    message: r['message_content'] == null
+        ? null
+        : SmsText(
+            sender: r['message_sender'] as String,
+            content: r['message_content'] as String,
+          ),
   );
 }

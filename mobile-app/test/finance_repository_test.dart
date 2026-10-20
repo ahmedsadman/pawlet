@@ -129,11 +129,11 @@ void main() {
       await db.close();
     });
 
-    test('resolves bank join and paired-with message id', () async {
+    test('resolves bank join, paired-with message id and SMS text', () async {
       final db = await openTestDb();
       final bank = await insertBank(db, name: 'City', accountType: 'deposit');
-      final m4 = await insertSms(db, sender: 'D', ts: 4);
-      final m5 = await insertSms(db, sender: 'E', ts: 5);
+      final m4 = await insertSms(db, sender: 'D', content: 'sent 50', ts: 4);
+      final m5 = await insertSms(db, sender: 'E', content: 'got 50', ts: 5);
       final txD = await insertTx(
         db,
         messageId: m4,
@@ -164,6 +164,10 @@ void main() {
       expect(d.bankName, 'City');
       expect(d.bankAccountType, 'deposit');
       expect(d.pairedWithMessageId, m5);
+      expect(d.message?.sender, 'D');
+      expect(d.message?.content, 'sent 50');
+      expect(d.pairedMessage?.sender, 'E');
+      expect(d.pairedMessage?.content, 'got 50');
       await db.close();
     });
   });
@@ -299,7 +303,12 @@ void main() {
           cardDigits: '4238|3241',
         );
         final bm1 = await insertSms(db, sender: 'EBL', ts: 100);
-        final bm2 = await insertSms(db, sender: 'EBL', ts: 200);
+        final bm2 = await insertSms(
+          db,
+          sender: 'EBL',
+          content: 'bill 5000',
+          ts: 200,
+        );
         final b1 = await insertBill(
           db,
           messageId: bm1,
@@ -336,6 +345,8 @@ void main() {
         expect(page.bills.first.id, b2);
         expect(page.bills.first.isPaid, isTrue);
         expect(page.bills.first.linkedTransactionIds, [tx]);
+        expect(page.bills.first.message?.sender, 'EBL');
+        expect(page.bills.first.message?.content, 'bill 5000');
         expect(page.bills.last.id, b1);
         expect(page.bills.last.isPaid, isFalse);
         await db.close();
@@ -427,8 +438,8 @@ void main() {
         bankId: card,
         totalDue: '50',
       );
-      final m1 = await insertSms(db, sender: 'MTB', ts: 2);
-      final m2 = await insertSms(db, sender: 'EBL', ts: 3);
+      final m1 = await insertSms(db, sender: 'MTB', content: 'paid 50', ts: 2);
+      final m2 = await insertSms(db, sender: 'EBL', content: 'recv 50', ts: 3);
       final m3 = await insertSms(db, sender: 'EBL', ts: 4);
       final cardLeg = await insertTx(
         db,
@@ -461,6 +472,9 @@ void main() {
 
       expect(legs.map((t) => t.id), [bankLeg, cardLeg]);
       expect(legs.first.bankName, 'MTB');
+      expect(legs.first.message?.sender, 'MTB');
+      expect(legs.first.message?.content, 'paid 50');
+      expect(legs.last.message?.content, 'recv 50');
       await db.close();
     });
   });
@@ -511,6 +525,8 @@ void main() {
         expect(tx.messageId, isNull);
         expect(tx.bankName, 'City');
         expect(tx.sender, 'City'); // COALESCE(sms.sender, bank.name)
+        expect(tx.message, isNull);
+        expect(tx.pairedMessage, isNull);
         expect(_n(tx.normalizedAmount), 250);
         expect(tx.type, TxType.expense);
         expect(_n(page.totals.expense), 250);

@@ -1,5 +1,6 @@
 import 'package:decimal/decimal.dart';
 
+import 'sms_text.dart';
 import 'transaction.dart';
 
 /// What a pairing-review card asks.
@@ -24,6 +25,7 @@ class PairingLeg {
     required this.currency,
     required this.type,
     required this.date,
+    this.message,
   });
 
   final int id;
@@ -44,6 +46,9 @@ class PairingLeg {
   final String currency;
   final TxType type;
   final DateTime date;
+
+  /// The leg's backing SMS; null for a manual transaction.
+  final SmsText? message;
 
   bool get isCredit => accountType == 'credit';
 

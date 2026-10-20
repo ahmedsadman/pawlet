@@ -1,3 +1,5 @@
+import 'sms_text.dart';
+
 /// Transaction kind. Values mirror the backend `TransactionType` enum.
 enum TxType {
   income('income'),
@@ -30,6 +32,8 @@ class TransactionItem {
     this.pairedWithId,
     this.pairedWithMessageId,
     this.billId,
+    this.message,
+    this.pairedMessage,
   });
 
   final int id;
@@ -51,6 +55,12 @@ class TransactionItem {
   final int? pairedWithId;
   final int? pairedWithMessageId;
   final int? billId;
+
+  /// This row's backing SMS; null for a manual row.
+  final SmsText? message;
+
+  /// The paired transaction's backing SMS, when there is one.
+  final SmsText? pairedMessage;
 
   bool get isCreditCard => bankAccountType == 'credit';
 

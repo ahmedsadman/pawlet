@@ -1,3 +1,5 @@
+import 'sms_text.dart';
+
 /// A credit-card bill from `GET /api/bills`.
 class Bill {
   const Bill({
@@ -15,6 +17,7 @@ class Bill {
     this.paidAt,
     this.linkedTransactionIds = const [],
     required this.createdAt,
+    this.message,
   });
 
   final int id;
@@ -33,6 +36,9 @@ class Bill {
   final DateTime? paidAt;
   final List<int> linkedTransactionIds;
   final DateTime createdAt;
+
+  /// The bill's SMS.
+  final SmsText? message;
 
   bool get isPaid => paidAt != null;
 
