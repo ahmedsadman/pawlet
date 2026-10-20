@@ -85,8 +85,9 @@ Once the queue is empty, `FinanceMatcher.runPending` sweeps *recently-created,
 still-unmatched* rows and stitches related credit-card money movements together. These
 reconstruct the links *between* records that were each classified in isolation.
 
-They are **event-driven, not scheduled**: they run at the tail of every drain pass and on
-resume, replacing what used to be periodic daemon threads. There is no matcher timer — the
+They are **event-driven, not scheduled**: they run at the tail of every drain pass that
+processed at least one message (on any trigger, resume included), replacing what used to be
+periodic daemon threads. A pass that processed nothing skips them. There is no matcher timer — the
 only time values involved are the **matching windows** (how far apart two records may sit
 and still count as the same money movement), not polling intervals.
 
@@ -135,4 +136,4 @@ Snapshot — verify against the named source.
 | 16 chars | widest gap between a card's two visible groups | `sender_matcher.dart` |
 | ±1.00 | amount tolerance, both relationship passes | `finance_matcher.dart` |
 | ±15 minutes | transfer pairing window | `finance_matcher.dart` |
-| ±45 days | bill linking window, and the sweep's look-back bound | `finance_matcher.dart` |
+| ±45 days | bill linking window, and the matching passes' look-back bound | `finance_matcher.dart` |
