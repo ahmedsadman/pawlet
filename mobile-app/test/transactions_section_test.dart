@@ -10,6 +10,7 @@ import 'package:pawlet/models/finance/transactions_page.dart';
 import 'package:pawlet/state/finance_providers.dart';
 import 'package:pawlet/state/providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/widgets/expand_reveal.dart';
 import 'package:pawlet/ui/widgets/finance/transactions_section.dart';
 
 TransactionItem _tx(int id, TxType type, String amount) => TransactionItem(
@@ -232,5 +233,18 @@ void main() {
     expect(find.text('Last 3 months'), findsOneWidget);
     expect(find.text('Highest amount'), findsOneWidget);
     expect(find.text('Reset'), findsOneWidget);
+  });
+
+  testWidgets('a row reveals its message through ExpandReveal', (tester) async {
+    await _pump(tester);
+    await tester.tap(find.text('ACME-1'));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(
+        of: find.text('SMS body for 101'),
+        matching: find.byType(ExpandReveal),
+      ),
+      findsOneWidget,
+    );
   });
 }

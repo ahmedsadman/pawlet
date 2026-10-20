@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../models/finance/transaction.dart';
 import '../../../utils/time_format.dart';
+import '../expand_reveal.dart';
 import 'amount_text.dart';
 import 'backing_message.dart';
 import 'finance_badge.dart';
@@ -93,7 +94,10 @@ class TransactionRow extends StatelessWidget {
             ),
           ),
         ),
-        if (expanded && tx.messageId != null) _MessagePanel(tx: tx),
+        ExpandReveal(
+          expanded: expanded && tx.messageId != null,
+          child: _MessagePanel(tx: tx),
+        ),
         const Divider(height: 1),
       ],
     );
