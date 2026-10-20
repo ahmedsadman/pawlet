@@ -118,15 +118,26 @@ Future<int?> findAndPairTransferCounterpart(
   if (tied.length > 1) return null; // ambiguous — leave for manual reconcile
 
   final winnerId = tied.first['id'] as int;
+  // A card leg linked to its bill before its funding debit arrived carries
+  // `bill_id` alone; pairing hands it to the debit so both legs show on the
+  // bill. Only a missing link is filled — never one leg's overwritten.
+  final winnerBillId = tied.first['bill_id'] as int?;
   await db.update(
     AppDatabase.transactionsTable,
-    {'type': 'transfer', 'paired_with_id': tx.id},
+    {
+      'type': 'transfer',
+      'paired_with_id': tx.id,
+      if (winnerBillId == null && tx.billId != null) 'bill_id': tx.billId,
+    },
     where: 'id = ?',
     whereArgs: [winnerId],
   );
   await db.update(
     AppDatabase.transactionsTable,
-    {'paired_with_id': winnerId},
+    {
+      'paired_with_id': winnerId,
+      if (tx.billId == null && winnerBillId != null) 'bill_id': winnerBillId,
+    },
     where: 'id = ?',
     whereArgs: [tx.id],
   );

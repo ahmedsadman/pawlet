@@ -122,6 +122,74 @@ void main() {
       expect(expenses.length, 2);
       await db.close();
     });
+
+    test(
+      "copies the card leg's bill link onto the debit it pairs with",
+      () async {
+        final db = await openTestDb();
+        final ebl = await insertBank(
+          db,
+          name: 'EBL',
+          accountType: 'credit',
+          cardDigits: '4238|3241',
+        );
+        final billMsg = await insertSms(
+          db,
+          sender: 'EBL',
+          ts: DateTime(2026, 7, 5).millisecondsSinceEpoch,
+        );
+        final bill = await insertBill(
+          db,
+          messageId: billMsg,
+          bankId: ebl,
+          totalDue: '8020',
+        );
+        final pay = DateTime(2026, 7, 8, 10, 0);
+        // Linked to its bill in an earlier pass, before the funding debit existed.
+        final transfer = await tx(
+          db,
+          bankId: ebl,
+          billId: bill,
+          amount: '8020',
+          type: 'transfer',
+          date: pay,
+        );
+        final expense = await tx(
+          db,
+          amount: '8020',
+          type: 'expense',
+          date: pay.add(const Duration(minutes: 5)),
+        );
+
+        expect(await findAndPairTransferCounterpart(db, transfer), expense);
+        expect((await txRow(db, expense))['bill_id'], bill);
+        expect((await txRow(db, transfer))['bill_id'], bill);
+        await db.close();
+      },
+    );
+
+    test('pairing an unlinked transfer leaves both legs unlinked', () async {
+      final db = await openTestDb();
+      final pay = DateTime(2026, 7, 8, 10, 0);
+      final transfer = await tx(
+        db,
+        bankId: null,
+        amount: '500',
+        type: 'transfer',
+        date: pay,
+      );
+      final expense = await tx(
+        db,
+        amount: '500',
+        type: 'expense',
+        date: pay.add(const Duration(minutes: 1)),
+      );
+
+      expect(await findAndPairTransferCounterpart(db, transfer), expense);
+      expect((await txRow(db, expense))['bill_id'], isNull);
+      expect((await txRow(db, transfer))['bill_id'], isNull);
+      await db.close();
+    });
   });
 
   group('bill-payment linking', () {
