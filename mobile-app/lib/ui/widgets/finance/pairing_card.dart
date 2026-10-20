@@ -7,6 +7,7 @@ import '../../../state/providers.dart';
 import '../../../theme/catppuccin_theme.dart';
 import '../../../utils/currency_format.dart';
 import '../../../utils/time_format.dart';
+import '../expand_reveal.dart';
 import 'amount_text.dart';
 import 'backing_message.dart';
 import 'finance_badge.dart';
@@ -100,8 +101,9 @@ class _PairingCardState extends ConsumerState<PairingCard> {
                   ),
                 ),
               ),
-              if (_showMessages)
-                Container(
+              ExpandReveal(
+                expanded: _showMessages,
+                child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceContainerHigh,
@@ -117,6 +119,7 @@ class _PairingCardState extends ConsumerState<PairingCard> {
                     ],
                   ),
                 ),
+              ),
             ],
             const SizedBox(height: 16),
             Row(
