@@ -4,6 +4,7 @@ import '../../models/sms_record.dart';
 import '../../services/processing_service.dart';
 import '../../utils/time_format.dart';
 import 'category_label.dart';
+import 'expand_reveal.dart';
 import 'status_badge.dart';
 
 int _defaultNow() => DateTime.now().millisecondsSinceEpoch;
@@ -177,35 +178,27 @@ class _SmsTileState extends State<SmsTile> {
                     color: theme.colorScheme.outline,
                   ),
                 ),
-                // Collapsible body: failure hint (if any) + message text. Built
-                // only while expanded so it is truly absent (not just hidden)
-                // from the tree when collapsed; AnimatedSize animates the height.
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 180),
-                  alignment: Alignment.topCenter,
-                  child: _expanded
-                      ? Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (isFailure) ...[
-                                Text(
-                                  _failureHint,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.error,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                              ],
-                              Text(
-                                record.content,
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                            ],
+                // Collapsible body: failure hint (if any) + message text.
+                ExpandReveal(
+                  expanded: _expanded,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (isFailure) ...[
+                          Text(
+                            _failureHint,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.error,
+                            ),
                           ),
-                        )
-                      : const SizedBox(width: double.infinity),
+                          const SizedBox(height: 6),
+                        ],
+                        Text(record.content, style: theme.textTheme.bodyMedium),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
