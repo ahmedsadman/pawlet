@@ -49,17 +49,22 @@ Bill _bill({DateTime? paidAt, List<int> links = const []}) => Bill(
   createdAt: DateTime(2026, 9, 5),
 );
 
-TransactionItem _leg(int id, {int? messageId, String bank = 'MTB'}) =>
-    TransactionItem(
-      id: id,
-      messageId: messageId,
-      bankName: bank,
-      sender: bank,
-      normalizedAmount: '8020.00',
-      normalizedCurrency: 'BDT',
-      type: TxType.transfer,
-      date: DateTime(2026, 9, 10),
-    );
+TransactionItem _leg(
+  int id, {
+  int? messageId,
+  String bank = 'MTB',
+  int? bankId,
+}) => TransactionItem(
+  id: id,
+  messageId: messageId,
+  bankId: bankId,
+  bankName: bank,
+  sender: bank,
+  normalizedAmount: '8020.00',
+  normalizedCurrency: 'BDT',
+  type: TxType.transfer,
+  date: DateTime(2026, 9, 10),
+);
 
 Future<(BillActions, SharedPreferences)> _pump(
   WidgetTester tester,
@@ -167,19 +172,52 @@ void main() {
     expect(fake.calls, [(7, false)]);
   });
 
-  testWidgets('lists the payment legs, SMS or manual', (tester) async {
+  testWidgets('groups legs under Paid from and Payment received', (
+    tester,
+  ) async {
+    // _bill() is on bank 1 (the card).
     await _pump(
       tester,
-      _bill(paidAt: DateTime(2026, 9, 12), links: [1, 2]),
+      _bill(paidAt: DateTime(2026, 9, 12), links: [1, 2, 3]),
       legs: [
-        _leg(1, messageId: 11),
-        _leg(2, bank: 'Cash'),
+        _leg(1, messageId: 11, bankId: 2), // funding bank debit
+        _leg(2, bank: 'Cash'), // manual funding leg
+        _leg(3, messageId: 13, bank: 'EBL Visa', bankId: 1), // card leg
       ],
     );
 
-    expect(find.text('Payment'), findsOneWidget);
-    expect(find.text('SMS body for 11'), findsOneWidget);
+    expect(find.text('Payment'), findsNothing);
+    expect(find.text('Paid from'), findsOneWidget);
+    expect(find.text('Payment received'), findsOneWidget);
     expect(find.textContaining('Cash'), findsOneWidget);
+
+    double y(Finder f) => tester.getTopLeft(f).dy;
+    expect(
+      y(find.text('Paid from')),
+      lessThan(y(find.text('SMS body for 11'))),
+    );
+    expect(
+      y(find.text('SMS body for 11')),
+      lessThan(y(find.text('Payment received'))),
+    );
+    expect(
+      y(find.text('Payment received')),
+      lessThan(y(find.text('SMS body for 13'))),
+    );
+  });
+
+  testWidgets('a bill with only the card leg shows just Payment received', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      _bill(paidAt: DateTime(2026, 9, 12), links: [3]),
+      legs: [_leg(3, messageId: 13, bank: 'EBL Visa', bankId: 1)],
+    );
+
+    expect(find.text('Paid from'), findsNothing);
+    expect(find.text('Payment received'), findsOneWidget);
+    expect(find.text('SMS body for 13'), findsOneWidget);
   });
 
   testWidgets('hides SMS bodies while balances are hidden', (tester) async {
@@ -218,10 +256,11 @@ void main() {
     expect(cashText.data, isNot(contains('8,020.00')));
   });
 
-  testWidgets('hides Payment label when legs are empty', (tester) async {
+  testWidgets('shows no payment headings when legs are empty', (tester) async {
     await _pump(tester, _bill(links: [1, 2]), legs: []);
 
-    expect(find.text('Payment'), findsNothing);
+    expect(find.text('Paid from'), findsNothing);
+    expect(find.text('Payment received'), findsNothing);
   });
 
   testWidgets('shows error and re-enables button when setPaid throws', (

@@ -25,9 +25,10 @@ Future<void> showBillSheet(BuildContext context, WidgetRef ref, Bill bill) {
   );
 }
 
-/// A bill's details: header, the bill SMS, any linked payment legs, and a
-/// Mark paid / Mark unpaid action. SMS bodies are withheld while balances are
-/// hidden (they carry amounts); the action stays available.
+/// A bill's details: header, the bill SMS, its linked payment legs grouped as
+/// "Paid from" (the funding bank debit) and "Payment received" (the card's own
+/// leg), and a Mark paid / Mark unpaid action. SMS bodies are withheld while
+/// balances are hidden (they carry amounts); the action stays available.
 class BillSheet extends ConsumerStatefulWidget {
   const BillSheet({required this.bill, super.key});
 
@@ -111,6 +112,7 @@ class _BillSheetState extends ConsumerState<BillSheet> {
               if (bill.linkedTransactionIds.isNotEmpty)
                 _PaymentLegs(
                   billId: bill.id,
+                  cardBankId: bill.bankId,
                   currency: currency,
                   hidden: hidden,
                 ),
@@ -256,11 +258,16 @@ class _MessageBox extends StatelessWidget {
 class _PaymentLegs extends ConsumerWidget {
   const _PaymentLegs({
     required this.billId,
+    required this.cardBankId,
     required this.currency,
     required this.hidden,
   });
 
   final int billId;
+
+  /// The bill's card. Legs on it are the payment the card received; every
+  /// other leg (a bank debit, or a manual entry) is what paid it.
+  final int? cardBankId;
   final String currency;
   final bool hidden;
 
@@ -270,21 +277,41 @@ class _PaymentLegs extends ConsumerWidget {
     return async.when(
       loading: () => const MessageLinesSkeleton(),
       error: (_, _) => const FinanceError('Could not load the payment.'),
-      data: (legs) => legs.isEmpty
-          ? const SizedBox.shrink()
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 16),
-                const _Label('Payment'),
-                for (var i = 0; i < legs.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 8),
-                  _leg(context, legs[i]),
-                ],
-              ],
-            ),
+      data: (legs) {
+        bool onCard(TransactionItem l) =>
+            l.bankId != null && l.bankId == cardBankId;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ..._group(context, 'Paid from', [
+              for (final l in legs)
+                if (!onCard(l)) l,
+            ]),
+            ..._group(context, 'Payment received', [
+              for (final l in legs)
+                if (onCard(l)) l,
+            ]),
+          ],
+        );
+      },
     );
   }
+
+  /// A labelled run of legs, or nothing when [legs] is empty.
+  List<Widget> _group(
+    BuildContext context,
+    String label,
+    List<TransactionItem> legs,
+  ) => [
+    if (legs.isNotEmpty) ...[
+      const SizedBox(height: 16),
+      _Label(label),
+      for (var i = 0; i < legs.length; i++) ...[
+        if (i > 0) const SizedBox(height: 8),
+        _leg(context, legs[i]),
+      ],
+    ],
+  ];
 
   Widget _leg(BuildContext context, TransactionItem leg) {
     if (leg.messageId != null) {
