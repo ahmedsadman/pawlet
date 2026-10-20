@@ -114,9 +114,9 @@ Three internal, debug-only reason columns explain terminal non-success outcomes 
   confident enough) and `local_unavailable` (the model produced no prediction at all, so
   nothing judged the message). See [Backup & Restore](backup-restore.md).
 - **`parse_source`** on processed rows — `local` (parsed on-device) or `llm` (fell back to
-  the LLM). History shows a small, muted **"LLM"** marker on rows parsed by the LLM (i.e.
-  where the on-device model was not confident); locally-parsed rows show nothing. Rows from
-  before this column existed read as null.
+  the LLM). History shows a small, muted **"LLM"** marker on every row the LLM decided
+  (i.e. where the on-device model was not confident), including `ignored` ones;
+  locally-decided rows show nothing. Rows from before this column existed read as null.
 - **`failure_reason`** on `failure` rows — `llm_error` (fatal), `retry_exhausted`, or
   `local_only` (no LLM exists and the on-device model could not build a record). The
   underlying error text is stored (truncated) in `last_error`; both are internal (read via
