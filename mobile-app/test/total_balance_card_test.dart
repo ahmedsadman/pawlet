@@ -5,6 +5,7 @@ import 'package:pawlet/data/finance_repository.dart';
 import 'package:pawlet/models/finance/bank.dart';
 import 'package:pawlet/state/finance_providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/widgets/expand_reveal.dart';
 import 'package:pawlet/ui/widgets/finance/total_balance_card.dart';
 
 import 'support/balance_test_overrides.dart';
@@ -108,5 +109,20 @@ void main() {
 
     expect(find.text('1,000.00 BDT'), findsNothing);
     expect(find.text('**** BDT'), findsOneWidget);
+  });
+
+  testWidgets('the per-bank breakdown reveals through ExpandReveal', (
+    tester,
+  ) async {
+    await _pump(tester, [_deposit('Checking', '1000.00'), _credit('Visa')]);
+    await tester.tap(find.text('Total Balance'));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(
+        of: find.text('Checking'),
+        matching: find.byType(ExpandReveal),
+      ),
+      findsOneWidget,
+    );
   });
 }
