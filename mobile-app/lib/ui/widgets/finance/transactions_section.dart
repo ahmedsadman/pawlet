@@ -218,9 +218,9 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
               // While hidden, keep rows collapsed and non-expandable so the raw
               // SMS (which contains the amount) can't be revealed.
               expanded: !hidden && _expandedId == tx.id,
-              // No tap target for manual rows (no backing SMS to reveal) or
-              // while balances are hidden.
-              onTap: (hidden || tx.messageId == null)
+              // No tap target for rows with no SMS text to reveal (manual rows,
+              // or an SMS row gone missing) or while balances are hidden.
+              onTap: (hidden || !tx.hasSmsText)
                   ? null
                   : () => setState(
                       () => _expandedId = _expandedId == tx.id ? null : tx.id,

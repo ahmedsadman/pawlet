@@ -62,10 +62,9 @@ Future<void> _pump(
   await tester.pumpAndSettle();
 }
 
-Future<void> _pumpManual(WidgetTester tester) async {
-  SharedPreferences.setMockInitialValues(const {'tx_type_hint_seen': true});
-  final prefs = await SharedPreferences.getInstance();
-  final manual = TransactionItem(
+Future<void> _pumpManual(WidgetTester tester) => _pumpOne(
+  tester,
+  TransactionItem(
     id: 1,
     messageId: null,
     sender: 'Manual Bank',
@@ -74,7 +73,13 @@ Future<void> _pumpManual(WidgetTester tester) async {
     normalizedCurrency: 'BDT',
     type: TxType.expense,
     date: DateTime(2026, 1, 1),
-  );
+  ),
+);
+
+/// Pumps the section with a single-row page holding [item].
+Future<void> _pumpOne(WidgetTester tester, TransactionItem item) async {
+  SharedPreferences.setMockInitialValues(const {'tx_type_hint_seen': true});
+  final prefs = await SharedPreferences.getInstance();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -85,7 +90,7 @@ Future<void> _pumpManual(WidgetTester tester) async {
         transactionsProvider.overrideWith(
           (ref, query) async => CachedResult(
             data: TransactionsPage(
-              transactions: [manual],
+              transactions: [item],
               total: 1,
               page: 1,
               pageSize: 10,
@@ -203,6 +208,28 @@ void main() {
     await tester.tap(find.text('Manual Bank'));
     await tester.pumpAndSettle();
     expect(find.textContaining('SMS body'), findsNothing);
+  });
+
+  testWidgets('a row whose SMS is missing does not expand to an empty panel', (
+    tester,
+  ) async {
+    // Linked to a message id with no SMS row behind it (e.g. a restore
+    // mismatch): nothing to reveal, so the row must not open.
+    await _pumpOne(
+      tester,
+      TransactionItem(
+        id: 1,
+        messageId: 999,
+        sender: 'Orphan Bank',
+        normalizedAmount: '30.00',
+        normalizedCurrency: 'BDT',
+        type: TxType.expense,
+        date: DateTime(2026, 1, 1),
+      ),
+    );
+    await tester.tap(find.text('Orphan Bank'));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(ExpandReveal)).height, 0);
   });
 
   testWidgets('shows the one-time long-press hint until dismissed', (

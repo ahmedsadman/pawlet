@@ -64,6 +64,10 @@ class TransactionItem {
 
   bool get isCreditCard => bankAccountType == 'credit';
 
+  /// Whether there is any SMS text to reveal for this row (its own message or
+  /// its paired counterpart's).
+  bool get hasSmsText => message != null || pairedMessage != null;
+
   /// Numeric magnitude for display math (sign is applied per [type]).
   double get amountValue => double.tryParse(normalizedAmount) ?? 0;
 

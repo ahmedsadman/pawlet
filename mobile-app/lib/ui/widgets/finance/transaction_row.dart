@@ -95,7 +95,7 @@ class TransactionRow extends StatelessWidget {
           ),
         ),
         ExpandReveal(
-          expanded: expanded && tx.messageId != null,
+          expanded: expanded && tx.hasSmsText,
           child: _MessagePanel(tx: tx),
         ),
         const Divider(height: 1),
