@@ -97,7 +97,7 @@ skipped** and left unpaired.
 - **Transfer pairing** — a credit-card `transfer` (the bill payment the issuer received) is
   paired with the bank `expense` debit that funded it. The closest-in-time candidate wins.
   The debit is retyped to `transfer` and both rows point at each other via `paired_with_id`.
-  Ties are never auto-paired.
+  Ties are never auto-paired. If one leg already carries a `bill_id` — the card payment was linked to its bill before the funding debit arrived — pairing copies it onto the other leg.
 - **Bill linking** — a credit-card `transfer` is linked to the matching `bill` on that same
   card (credit accounts only), preferring a bill *received before* the payment and then
   closest in time. It sets `bill_id` on the transfer and its paired debit, and stamps
@@ -108,8 +108,9 @@ skipped** and left unpaired.
   skipped by bill linking from both directions, including the pairing review's accept.
   Marking a bill unpaid also clears `bill_id` on its linked payment legs; those legs can
   then link to another bill on the card if one matches.
+- **Bill-link repair** — a last step gives any paired leg its partner's `bill_id` when it has none. It heals pairs written before pairing copied the link, and rows a backup restore brings back. It is not look-back bounded, and is a no-op once every pair agrees.
 
-The whole sweep is **look-back bounded to the bill window**: older rows can no longer
+The matching passes are **look-back bounded to the bill window**: older rows can no longer
 acquire a new counterpart, so they are skipped.
 
 Transactions left unpaired by this automatic matching — because they fell outside the
