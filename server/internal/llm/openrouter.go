@@ -132,10 +132,9 @@ func (c *Client) Classify(ctx context.Context, in Request) (Response, error) {
 		retryable := resp.StatusCode == 429 || resp.StatusCode == 408 || resp.StatusCode >= 500
 		return Response{}, &CallError{
 			Status: resp.StatusCode,
-			// Status only, never the body. OpenRouter can echo the request in
-			// an error, and this string reaches the logs — message content
-			// must not.
-			Message:        fmt.Sprintf("HTTP %d", resp.StatusCode),
+			// Never the raw body: OpenRouter can echo the request in an error,
+			// and this string reaches the logs — message content must not.
+			Message:        upstreamErrorMessage(resp.StatusCode, respBody, in),
 			Retryable:      retryable,
 			RetryAfter:     parseRetryAfter(resp.Header.Get("Retry-After")),
 			ResetAtEpochMs: parseResetAt(resp.Header.Get("X-RateLimit-Reset")),
@@ -219,6 +218,40 @@ func stripJSONFence(content string) string {
 		t = strings.TrimSuffix(t, "```")
 	}
 	return strings.TrimSpace(t)
+}
+
+// maxUpstreamMessageRunes caps how much of OpenRouter's error.message is kept.
+const maxUpstreamMessageRunes = 200
+
+// upstreamErrorMessage describes a non-2xx response as "HTTP <status>", plus
+// OpenRouter's own error.message when the body carries one (e.g. "No endpoints
+// found for ..."). Only that summary is read — provider text under
+// error.metadata is skipped — and any echo of the sender or SMS content is
+// redacted before the length cap.
+func upstreamErrorMessage(status int, body []byte, in Request) string {
+	prefix := fmt.Sprintf("HTTP %d", status)
+	var envelope struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &envelope) != nil {
+		return prefix
+	}
+	msg := envelope.Error.Message
+	for _, secret := range []string{in.Content, in.Sender} {
+		if secret != "" {
+			msg = strings.ReplaceAll(msg, secret, "[redacted]")
+		}
+	}
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return prefix
+	}
+	if r := []rune(msg); len(r) > maxUpstreamMessageRunes {
+		msg = string(r[:maxUpstreamMessageRunes]) + "…"
+	}
+	return prefix + ": " + msg
 }
 
 // parseRetryAfter parses a Retry-After header to a Duration. Only the
