@@ -8,6 +8,7 @@ import 'package:pawlet/state/messages_providers.dart';
 import 'package:pawlet/state/providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
 import 'package:pawlet/ui/messages_page.dart';
+import 'package:pawlet/ui/widgets/expand_reveal.dart';
 import 'package:pawlet/ui/widgets/sms_tile.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -345,5 +346,28 @@ void main() {
     );
     expect(prev.onPressed, isNull);
     expect(next.onPressed, isNotNull);
+  });
+
+  testWidgets('the Queue list reveals through ExpandReveal', (tester) async {
+    await _pump(
+      tester,
+      _overrides(
+        queue: QueuePage(
+          records: [_sms('BankA', SmsStatus.queued)],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        ),
+      ),
+    );
+    await tester.tap(find.text('Queue'));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(
+        of: find.text('BankA'),
+        matching: find.byType(ExpandReveal),
+      ),
+      findsOneWidget,
+    );
   });
 }
