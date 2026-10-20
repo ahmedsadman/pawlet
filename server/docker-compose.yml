@@ -1,3 +1,5 @@
+name: pawlet
+
 services:
   pawlet:
     # Deploys pull a prebuilt image; CI sets IMAGE_TAG to the commit SHA it
