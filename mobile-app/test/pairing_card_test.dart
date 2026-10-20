@@ -6,6 +6,7 @@ import 'package:pawlet/models/finance/pairing_suggestion.dart';
 import 'package:pawlet/models/finance/sms_message.dart';
 import 'package:pawlet/state/finance_providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/widgets/expand_reveal.dart';
 import 'package:pawlet/ui/widgets/finance/pairing_card.dart';
 
 import 'support/balance_test_overrides.dart';
@@ -108,5 +109,21 @@ void main() {
     expect(find.text('2h apart'), findsOneWidget);
     expect(find.textContaining('difference'), findsNothing);
     expect(find.text('Show messages'), findsNothing);
+  });
+
+  testWidgets('Show messages reveals through ExpandReveal', (tester) async {
+    await _pump(
+      tester,
+      transferSuggestion(1, 2, fromMessage: 11, toMessage: 12),
+    );
+    await tester.tap(find.text('Show messages'));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(
+        of: find.text('Body of message 11'),
+        matching: find.byType(ExpandReveal),
+      ),
+      findsOneWidget,
+    );
   });
 }
