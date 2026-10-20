@@ -7,6 +7,7 @@ import '../../../state/finance_providers.dart';
 import '../../../state/providers.dart';
 import '../../../theme/catppuccin_theme.dart';
 import '../../../utils/currency_format.dart';
+import '../expand_reveal.dart';
 import '../skeleton.dart';
 import 'finance_placeholders.dart';
 import 'trend_badge.dart';
@@ -204,21 +205,27 @@ class _AmountTile extends StatelessWidget {
             ),
           ],
         ),
-        if (expanded) ...[
-          const SizedBox(height: 8),
-          _Sparkline(
-            values: metric.spark.map(double.tryParse).toList(),
-            color: accent,
+        ExpandReveal(
+          expanded: expanded,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              _Sparkline(
+                values: metric.spark.map(double.tryParse).toList(),
+                color: accent,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Last 3 mo: ${formatAmount(metric.recentAvg, currency, hidden: hidden)}/mo · '
+                'Prior: ${formatAmount(metric.priorAvg, currency, hidden: hidden)}/mo',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppTheme.flavor.subtext0,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Last 3 mo: ${formatAmount(metric.recentAvg, currency, hidden: hidden)}/mo · '
-            'Prior: ${formatAmount(metric.priorAvg, currency, hidden: hidden)}/mo',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: AppTheme.flavor.subtext0,
-            ),
-          ),
-        ],
+        ),
       ],
     );
   }
@@ -285,29 +292,37 @@ class _SavingsRateTile extends StatelessWidget {
             ),
           ],
         ),
-        if (expanded) ...[
-          const SizedBox(height: 8),
-          _Sparkline(
-            values: rate.spark
-                .map((s) => s == null ? null : (double.tryParse(s) ?? 0) * 100)
-                .toList(),
-            color: AppTheme.flavor.lavender,
-            zeroLine: true,
+        ExpandReveal(
+          expanded: expanded,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              _Sparkline(
+                values: rate.spark
+                    .map(
+                      (s) => s == null ? null : (double.tryParse(s) ?? 0) * 100,
+                    )
+                    .toList(),
+                color: AppTheme.flavor.lavender,
+                zeroLine: true,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Last 3 mo: ${_formatRate(rate.recent)} · Prior: ${_formatRate(rate.prior)}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppTheme.flavor.subtext0,
+                ),
+              ),
+              Text(
+                '${formatMoney(net, currency, hidden: hidden)} net/mo',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppTheme.flavor.subtext0,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Last 3 mo: ${_formatRate(rate.recent)} · Prior: ${_formatRate(rate.prior)}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: AppTheme.flavor.subtext0,
-            ),
-          ),
-          Text(
-            '${formatMoney(net, currency, hidden: hidden)} net/mo',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: AppTheme.flavor.subtext0,
-            ),
-          ),
-        ],
+        ),
       ],
     );
   }

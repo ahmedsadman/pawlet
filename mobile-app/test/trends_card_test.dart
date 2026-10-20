@@ -8,6 +8,7 @@ import 'package:pawlet/data/finance_repository.dart';
 import 'package:pawlet/models/finance/trends.dart';
 import 'package:pawlet/state/finance_providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/widgets/expand_reveal.dart';
 import 'package:pawlet/ui/widgets/finance/finance_placeholders.dart';
 import 'package:pawlet/ui/widgets/finance/trends_card.dart';
 import 'package:pawlet/ui/widgets/skeleton.dart';
@@ -241,5 +242,20 @@ void main() {
 
     expect(find.byType(FinanceError), findsOneWidget);
     expect(find.text('Could not load trends.'), findsOneWidget);
+  });
+
+  testWidgets('each tile reveals its sparkline through ExpandReveal', (
+    tester,
+  ) async {
+    await _pump(tester, _trends());
+    await tester.tap(find.text('Trends'));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(
+        of: find.byType(LineChart),
+        matching: find.byType(ExpandReveal),
+      ),
+      findsNWidgets(3),
+    );
   });
 }
