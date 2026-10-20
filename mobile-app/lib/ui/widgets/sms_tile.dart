@@ -14,11 +14,12 @@ int _defaultNow() => DateTime.now().millisecondsSinceEpoch;
 /// status badge and retry progress — unchanged.
 ///
 /// History (showCategory == true): a compact card. Line 1 shows the sender, a
-/// muted `LLM` marker on any row the LLM decided, the category trailing (or a
-/// status badge for failed and ignored rows), a retry icon for failed rows, and
-/// a caret. Line 2
-/// shows the timestamp. Tapping anywhere toggles a collapsible body (the
-/// failure hint, if any, plus the message text).
+/// muted `LLM` marker on any row the LLM decided, the category trailing (a
+/// status badge for ignored rows; red icon + text for failed rows), a retry
+/// icon for failed rows, and a caret. Line 2 shows the timestamp. Tapping
+/// anywhere toggles a collapsible body (the failure hint, if any, plus the
+/// message text). A failed card also carries a red left edge and faint tint so
+/// it can't be mistaken for a red Expense row.
 class SmsTile extends StatefulWidget {
   const SmsTile(
     this.record, {
@@ -79,6 +80,8 @@ class _SmsTileState extends State<SmsTile> {
             category != null &&
             category != 'ignored'
         ? CategoryLabel(category, type: record.transactionType)
+        : showCategory && record.status == SmsStatus.failure
+        ? const _FailedLabel()
         : StatusBadge(record.status);
     // Every History row the LLM decided carries the marker, whether it became
     // a category or was ignored.
@@ -110,84 +113,102 @@ class _SmsTileState extends State<SmsTile> {
   Widget _buildHistory(BuildContext context) {
     final theme = Theme.of(context);
     final isFailure = record.status == SmsStatus.failure;
+    final error = theme.colorScheme.error;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      child: InkWell(
-        onTap: () => setState(() => _expanded = !_expanded),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Line 1: sender · (LLM) · category/status · retry · caret.
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _title,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
+      // Clips the failure accent to the card's rounded corners (a one-sided
+      // Border can't take a borderRadius itself).
+      clipBehavior: isFailure ? Clip.antiAlias : Clip.none,
+      child: Ink(
+        decoration: isFailure
+            ? BoxDecoration(
+                border: Border(left: BorderSide(color: error, width: 3)),
+                gradient: LinearGradient(
+                  colors: [
+                    error.withValues(alpha: 0.10),
+                    error.withValues(alpha: 0),
+                  ],
+                  stops: const [0, 0.45],
+                ),
+              )
+            : null,
+        child: InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Line 1: sender · (LLM) · category/status · retry · caret.
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _title,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  _trailing(),
-                  if (isFailure && onRetry != null)
-                    IconButton(
-                      icon: const Icon(Icons.refresh, size: 18),
-                      tooltip: 'Retry',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: onRetry,
+                    const SizedBox(width: 8),
+                    _trailing(),
+                    if (isFailure && onRetry != null)
+                      IconButton(
+                        icon: const Icon(Icons.refresh, size: 18),
+                        tooltip: 'Retry',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onRetry,
+                      ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                      color: theme.colorScheme.outline,
                     ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 20,
+                  ],
+                ),
+                const SizedBox(height: 4),
+                // Line 2: timestamp.
+                Text(
+                  _timeLabel,
+                  style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.outline,
                   ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              // Line 2: timestamp.
-              Text(
-                _timeLabel,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.outline,
                 ),
-              ),
-              // Collapsible body: failure hint (if any) + message text. Built
-              // only while expanded so it is truly absent (not just hidden)
-              // from the tree when collapsed; AnimatedSize animates the height.
-              AnimatedSize(
-                duration: const Duration(milliseconds: 180),
-                alignment: Alignment.topCenter,
-                child: _expanded
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (isFailure) ...[
-                              Text(
-                                _failureHint,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.error,
+                // Collapsible body: failure hint (if any) + message text. Built
+                // only while expanded so it is truly absent (not just hidden)
+                // from the tree when collapsed; AnimatedSize animates the height.
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 180),
+                  alignment: Alignment.topCenter,
+                  child: _expanded
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (isFailure) ...[
+                                Text(
+                                  _failureHint,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.error,
+                                  ),
                                 ),
+                                const SizedBox(height: 6),
+                              ],
+                              Text(
+                                record.content,
+                                style: theme.textTheme.bodyMedium,
                               ),
-                              const SizedBox(height: 6),
                             ],
-                            Text(
-                              record.content,
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ],
-                        ),
-                      )
-                    : const SizedBox(width: double.infinity),
-              ),
-            ],
+                          ),
+                        )
+                      : const SizedBox(width: double.infinity),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -258,6 +279,32 @@ class _SmsTileState extends State<SmsTile> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Trailing marker for a failed History row: red icon + label. Deliberately
+/// not a pill, so it can't be mistaken for the red Expense category pill.
+class _FailedLabel extends StatelessWidget {
+  const _FailedLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.error;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.error_outline, size: 14, color: color),
+        const SizedBox(width: 4),
+        Text(
+          'Failed',
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }

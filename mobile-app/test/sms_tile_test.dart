@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/models/finance/transaction.dart';
 import 'package:pawlet/models/sms_record.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
+import 'package:pawlet/ui/widgets/category_label.dart';
 import 'package:pawlet/ui/widgets/sms_tile.dart';
+import 'package:pawlet/ui/widgets/status_badge.dart';
 
 SmsRecord _rec({
   SmsStatus status = SmsStatus.queued,
@@ -35,6 +37,15 @@ Future<void> _pump(WidgetTester tester, Widget child) => tester.pumpWidget(
     home: Scaffold(body: child),
   ),
 );
+
+/// The red left accent a failed History row is drawn with.
+Finder _failureAccent() => find.byWidgetPredicate((w) {
+  if (w is! Ink) return false;
+  final d = w.decoration;
+  return d is BoxDecoration &&
+      d.border is Border &&
+      (d.border! as Border).left.width == 3;
+});
 
 void main() {
   testWidgets('queue tile shows the status badge', (tester) async {
@@ -455,5 +466,51 @@ void main() {
     );
     expect(find.text('Ignored'), findsOneWidget);
     expect(find.text('Transaction'), findsNothing);
+  });
+
+  testWidgets('failed history row shows Failed text with an icon, not a pill', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.failure, failureReason: FailureReason.llmError),
+        showCategory: true,
+        onRetry: () {},
+      ),
+    );
+    expect(find.text('Failed'), findsOneWidget);
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    expect(find.byType(StatusBadge), findsNothing);
+    expect(_failureAccent(), findsOneWidget);
+    expect(find.byIcon(Icons.refresh), findsOneWidget);
+  });
+
+  testWidgets('expense history row keeps its pill and has no failure accent', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(
+          status: SmsStatus.success,
+          category: 'transaction',
+          transactionType: TxType.expense,
+        ),
+        showCategory: true,
+      ),
+    );
+    expect(find.text('Expense'), findsOneWidget);
+    expect(find.byType(CategoryLabel), findsOneWidget);
+    expect(find.byIcon(Icons.error_outline), findsNothing);
+    expect(_failureAccent(), findsNothing);
+  });
+
+  testWidgets('a failed record in the queue layout keeps the status badge', (
+    tester,
+  ) async {
+    await _pump(tester, SmsTile(_rec(status: SmsStatus.failure)));
+    expect(find.byType(StatusBadge), findsOneWidget);
+    expect(_failureAccent(), findsNothing);
   });
 }
