@@ -13,9 +13,10 @@ int _defaultNow() => DateTime.now().millisecondsSinceEpoch;
 /// Queue (showCategory == false): full inline layout with the processing
 /// status badge and retry progress — unchanged.
 ///
-/// History (showCategory == true): a compact card. Line 1 shows the sender, an
-/// optional muted `LLM` marker, the category trailing (or a status badge for
-/// failed and ignored rows), a retry icon for failed rows, and a caret. Line 2
+/// History (showCategory == true): a compact card. Line 1 shows the sender, a
+/// muted `LLM` marker on any row the LLM decided, the category trailing (or a
+/// status badge for failed and ignored rows), a retry icon for failed rows, and
+/// a caret. Line 2
 /// shows the timestamp. Tapping anywhere toggles a collapsible body (the
 /// failure hint, if any, plus the message text).
 class SmsTile extends StatefulWidget {
@@ -72,23 +73,22 @@ class _SmsTileState extends State<SmsTile> {
 
   Widget _trailing() {
     final category = record.category;
-    if (showCategory &&
-        record.status != SmsStatus.ignored &&
-        category != null &&
-        category != 'ignored') {
-      if (record.parseSource == ParseSource.llm) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const _LlmBadge(),
-            const SizedBox(width: 6),
-            CategoryLabel(category, type: record.transactionType),
-          ],
-        );
-      }
-      return CategoryLabel(category, type: record.transactionType);
+    final Widget label =
+        showCategory &&
+            record.status != SmsStatus.ignored &&
+            category != null &&
+            category != 'ignored'
+        ? CategoryLabel(category, type: record.transactionType)
+        : StatusBadge(record.status);
+    // Every History row the LLM decided carries the marker, whether it became
+    // a category or was ignored.
+    if (showCategory && record.parseSource == ParseSource.llm) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [const _LlmBadge(), const SizedBox(width: 6), label],
+      );
     }
-    return StatusBadge(record.status);
+    return label;
   }
 
   /// Short, user-facing reason a History row failed. The internal `last_error`
