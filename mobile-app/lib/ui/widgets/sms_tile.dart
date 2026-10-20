@@ -85,8 +85,10 @@ class _SmsTileState extends State<SmsTile> {
         ? const _FailedLabel()
         : StatusBadge(record.status);
     // Every History row the LLM decided carries the marker, whether it became
-    // a category or was ignored.
-    if (showCategory && record.parseSource == ParseSource.llm) {
+    // a category or was ignored. Failed rows never do: nothing was decided.
+    if (showCategory &&
+        record.status != SmsStatus.failure &&
+        record.parseSource == ParseSource.llm) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [const _LlmBadge(), const SizedBox(width: 6), label],

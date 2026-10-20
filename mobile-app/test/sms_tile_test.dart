@@ -455,6 +455,20 @@ void main() {
     expect(find.text('LLM'), findsNothing);
   });
 
+  testWidgets('failed history row shows no LLM badge even if LLM-sourced', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.failure, parseSource: ParseSource.llm),
+        showCategory: true,
+      ),
+    );
+    expect(find.text('Failed'), findsOneWidget);
+    expect(find.text('LLM'), findsNothing);
+  });
+
   testWidgets('ignored history row never shows a category label', (
     tester,
   ) async {
