@@ -455,3 +455,49 @@ func TestClassify_ReportsServedModel(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifyErrorCarriesUpstreamErrorMessage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"code":404,"message":"No endpoints found for qwen/qwen3.8-27b:free.","metadata":{"raw":"provider detail"}}}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{HTTP: srv.Client(), Endpoint: srv.URL, APIKey: "sk-test", Models: []string{"a/one:free"}, Timeout: 30 * time.Second}
+
+	_, err := c.Classify(context.Background(), Request{Sender: "EBL", Content: "hello", Currency: "BDT"})
+
+	var callErr *CallError
+	if !errors.As(err, &callErr) {
+		t.Fatalf("expected *CallError, got %T", err)
+	}
+	if want := "HTTP 404: No endpoints found for qwen/qwen3.8-27b:free."; callErr.Message != want {
+		t.Errorf("Message = %q, want %q", callErr.Message, want)
+	}
+}
+
+func TestClassifyErrorMessageRedactsEchoedRequest(t *testing.T) {
+	const content = "Tk 5,000 debited from A/C 1234"
+	const sender = "BRAC-BANK"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"invalid input from ` + sender + `: ` + content + ` ` + strings.Repeat("x", 500) + `"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{HTTP: srv.Client(), Endpoint: srv.URL, APIKey: "sk-test", Models: []string{"a/one:free"}, Timeout: 30 * time.Second}
+
+	_, err := c.Classify(context.Background(), Request{Sender: sender, Content: content, Currency: "BDT"})
+
+	var callErr *CallError
+	if !errors.As(err, &callErr) {
+		t.Fatalf("expected *CallError, got %T", err)
+	}
+	if strings.Contains(callErr.Message, content) || strings.Contains(callErr.Message, sender) {
+		t.Fatalf("Message carries request text: %q", callErr.Message)
+	}
+	if !strings.Contains(callErr.Message, "[redacted]") {
+		t.Errorf("Message = %q, want a [redacted] marker", callErr.Message)
+	}
+	if n := len([]rune(callErr.Message)); n > len("HTTP 400: ")+maxUpstreamMessageRunes+len("…") {
+		t.Errorf("Message is %d runes, want it capped", n)
+	}
+}
