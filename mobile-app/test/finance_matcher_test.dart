@@ -505,6 +505,79 @@ void main() {
     await db.close();
   });
 
+  test('runPending copies a bill link across an already-paired gap', () async {
+    final db = await openTestDb();
+    final now = DateTime(2026, 7, 10, 12, 0);
+    final ebl = await insertBank(
+      db,
+      name: 'EBL',
+      accountType: 'credit',
+      cardDigits: '4238|3241',
+    );
+    final billMsg = await insertSms(
+      db,
+      sender: 'EBL',
+      ts: DateTime(2026, 7, 7).millisecondsSinceEpoch,
+    );
+    final bill = await insertBill(
+      db,
+      messageId: billMsg,
+      bankId: ebl,
+      totalDue: '8020',
+    );
+    final pay = now.subtract(const Duration(minutes: 10));
+    // A pair written before pairing copied the link: only the card leg has it.
+    final transfer = await tx(
+      db,
+      bankId: ebl,
+      billId: bill,
+      amount: '8020',
+      type: 'transfer',
+      date: pay,
+    );
+    final debit = await tx(
+      db,
+      pairedWithId: transfer,
+      amount: '8020',
+      type: 'transfer',
+      date: pay.add(const Duration(minutes: 5)),
+    );
+    await db.update(
+      'transactions',
+      {'paired_with_id': debit},
+      where: 'id = ?',
+      whereArgs: [transfer],
+    );
+    // A pair with no bill at all must stay unlinked.
+    final a = await tx(db, amount: '500', type: 'transfer', date: pay);
+    final b = await tx(
+      db,
+      pairedWithId: a,
+      amount: '500',
+      type: 'transfer',
+      date: pay,
+    );
+    await db.update(
+      'transactions',
+      {'paired_with_id': b},
+      where: 'id = ?',
+      whereArgs: [a],
+    );
+
+    final matcher = FinanceMatcher(db, nowMs: () => now.millisecondsSinceEpoch);
+    await matcher.runPending();
+
+    expect((await txRow(db, debit))['bill_id'], bill);
+    expect((await txRow(db, transfer))['bill_id'], bill);
+    expect((await txRow(db, a))['bill_id'], isNull);
+    expect((await txRow(db, b))['bill_id'], isNull);
+
+    await matcher.runPending(); // a second pass changes nothing
+    expect((await txRow(db, debit))['bill_id'], bill);
+    expect((await txRow(db, a))['bill_id'], isNull);
+    await db.close();
+  });
+
   test('runPending pairs and links in one sweep', () async {
     final db = await openTestDb();
     final now = DateTime(2026, 7, 10, 12, 0);

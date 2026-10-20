@@ -14,6 +14,8 @@ import '../../data/database.dart';
 /// - Bill-payment linking: a credit-card transfer is linked to the matching
 ///   Bill on that card (±1.00, ±45 days, bill-before-payment preferred),
 ///   populating bill_id on both paired transactions + paid_at on the bill.
+/// - Bill-link repair: a paired leg missing its partner's `bill_id` gets it
+///   (heals older pairs and restored backups).
 /// - Bills the user marked paid or unpaid (`status_overridden = 1`) are never
 ///   linked, from either direction.
 class FinanceMatcher {
@@ -59,6 +61,23 @@ class FinanceMatcher {
     for (final billId in await _billIds(cutoff)) {
       await _db.transaction((txn) => findAndLinkPaymentForBill(txn, billId));
     }
+    await _propagateBillLinks();
+  }
+
+  /// Gives every paired leg its partner's bill link when it has none. Pairing
+  /// already copies the link; this heals pairs written before it did, and rows
+  /// a backup restore brings back. Not look-back bounded, and a no-op once
+  /// every pair agrees. Unlinking clears both legs (mark unpaid) or breaks the
+  /// pair (review undo), so it never re-links what the user undid.
+  Future<void> _propagateBillLinks() async {
+    const t = AppDatabase.transactionsTable;
+    await _db.rawUpdate(
+      'UPDATE $t SET bill_id = '
+      '(SELECT p.bill_id FROM $t p WHERE p.id = $t.paired_with_id) '
+      'WHERE bill_id IS NULL AND paired_with_id IS NOT NULL '
+      'AND EXISTS (SELECT 1 FROM $t p '
+      'WHERE p.id = $t.paired_with_id AND p.bill_id IS NOT NULL)',
+    );
   }
 
   Future<List<int>> _ids(String where, List<Object?> args) async {
