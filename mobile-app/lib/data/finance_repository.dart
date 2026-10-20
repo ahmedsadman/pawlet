@@ -5,6 +5,7 @@ import '../models/finance/bank.dart';
 import '../models/finance/bill.dart';
 import '../models/finance/bills_page.dart';
 import '../models/finance/sms_message.dart';
+import '../models/finance/sms_text.dart';
 import '../models/finance/summary.dart';
 import '../models/finance/transaction.dart';
 import '../models/finance/transactions_page.dart';
@@ -48,15 +49,19 @@ class FinanceRepository {
       SELECT t.id, t.message_id, t.bank_id,
              b.name AS bank_name, b.account_type AS bank_account_type,
              COALESCE(s.sender, b.name) AS sender,
+             s.sender AS message_sender, s.content AS message_content,
              t.normalized_amount, t.normalized_currency,
              t.original_amount, t.original_currency,
              t.type, t.date, t.paired_with_id,
              p.message_id AS paired_with_message_id,
+             ps.sender AS paired_message_sender,
+             ps.content AS paired_message_content,
              t.bill_id
       FROM ${AppDatabase.transactionsTable} t
       LEFT JOIN ${AppDatabase.smsTable} s ON s.id = t.message_id
       LEFT JOIN ${AppDatabase.banksTable} b ON b.id = t.bank_id
       LEFT JOIN ${AppDatabase.transactionsTable} p ON p.id = t.paired_with_id
+      LEFT JOIN ${AppDatabase.smsTable} ps ON ps.id = p.message_id
   ''';
 
   // A bill's place in time: its statement period, else when it arrived. Drives
@@ -260,6 +265,7 @@ class FinanceRepository {
     final rows = await _db.rawQuery(
       '''
       SELECT bl.id, bl.message_id, s.sender AS sender, s.timestamp AS received_at,
+             s.content AS message_content,
              bl.bank_id, b.name AS bank_name,
              bl.normalized_total_due, bl.normalized_currency,
              bl.original_amount, bl.original_currency,
@@ -564,7 +570,17 @@ class FinanceRepository {
     pairedWithId: row['paired_with_id'] as int?,
     pairedWithMessageId: row['paired_with_message_id'] as int?,
     billId: row['bill_id'] as int?,
+    message: _smsText(row['message_sender'], row['message_content']),
+    pairedMessage: _smsText(
+      row['paired_message_sender'],
+      row['paired_message_content'],
+    ),
   );
+
+  /// The SMS text from a joined row, or null when the join found no SMS.
+  static SmsText? _smsText(Object? sender, Object? content) => content == null
+      ? null
+      : SmsText(sender: sender as String, content: content as String);
 
   Bill _billFromRow(
     Map<String, Object?> row,
@@ -588,5 +604,6 @@ class FinanceRepository {
         : DateTime.fromMillisecondsSinceEpoch(row['paid_at'] as int),
     linkedTransactionIds: linkedTransactionIds,
     createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),
+    message: _smsText(row['sender'], row['message_content']),
   );
 }

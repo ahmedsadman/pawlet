@@ -80,6 +80,39 @@ void main() {
       expect(s.otherMatches, 0);
     });
 
+    test('legs carry their SMS sender and text', () async {
+      final outMsg = await insertSms(
+        db,
+        sender: 'MTB',
+        content: 'debit 1500',
+        ts: 1,
+      );
+      final out = await insertTx(
+        db,
+        messageId: outMsg,
+        bankId: mtb,
+        amount: '1500',
+        type: 'expense',
+        date: ago(const Duration(hours: 5)),
+      );
+      final inc = await insertTx(
+        db,
+        messageId: 9999,
+        bankId: city,
+        amount: '1500',
+        type: 'income',
+        date: ago(const Duration(hours: 3)),
+      );
+
+      final s = (await suggest()).single;
+      expect(s.from.id, out);
+      expect(s.from.message?.sender, 'MTB');
+      expect(s.from.message?.content, 'debit 1500');
+      // No SMS row behind this leg's message id.
+      expect(s.to.id, inc);
+      expect(s.to.message, isNull);
+    });
+
     test('never pairs two rows on the same account', () async {
       await tx(mtb, 'expense', '1500', ago(const Duration(hours: 5)));
       await tx(mtb, 'income', '1500', ago(const Duration(hours: 4)));
