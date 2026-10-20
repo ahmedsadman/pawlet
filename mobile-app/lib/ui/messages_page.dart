@@ -7,6 +7,7 @@ import '../data/sms_repository.dart';
 import '../models/sms_record.dart';
 import '../state/messages_providers.dart';
 import '../state/providers.dart';
+import 'widgets/expand_reveal.dart';
 import 'widgets/section_header.dart';
 import 'widgets/skeleton.dart';
 import 'widgets/sms_tile.dart';
@@ -117,10 +118,16 @@ class _MessagesPageState extends ConsumerState<MessagesPage> {
                 : null,
           ),
         ),
-        if (_queueExpanded && count > 0) ...[
-          ...records.map((r) => SmsTile(r)),
-          if (page != null && page.totalPages > 1) _queuePagination(page),
-        ],
+        ExpandReveal(
+          expanded: _queueExpanded && count > 0,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ...records.map((r) => SmsTile(r)),
+              if (page != null && page.totalPages > 1) _queuePagination(page),
+            ],
+          ),
+        ),
       ],
     );
   }
