@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../../models/sms_record.dart';
 import '../../theme/catppuccin_theme.dart';
 
-/// Small colored pill showing an SMS processing status (Queue rows, and
-/// failed or ignored History rows).
+/// Small colored pill showing an SMS processing status (Queue rows, and ignored
+/// History rows).
 class StatusBadge extends StatelessWidget {
   const StatusBadge(this.status, {super.key});
 
