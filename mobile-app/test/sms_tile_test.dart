@@ -406,26 +406,41 @@ void main() {
     expect(find.text('Extraction error'), findsOneWidget);
   });
 
-  testWidgets('ignored history row shows the grey Ignored badge only', (
+  testWidgets(
+    'LLM-decided ignored history row shows Ignored with the LLM badge',
+    (tester) async {
+      await _pump(
+        tester,
+        SmsTile(
+          _rec(status: SmsStatus.ignored, parseSource: ParseSource.llm),
+          showCategory: true,
+          onRetry: () {},
+        ),
+      );
+      expect(find.text('Ignored'), findsOneWidget);
+      expect(find.text('LLM'), findsOneWidget);
+      expect(find.byIcon(Icons.refresh), findsNothing);
+
+      // Expands like any other row: the message, no failure hint.
+      await tester.tap(find.text('BRAC'));
+      await tester.pumpAndSettle();
+      expect(find.text('debit 50 BDT'), findsOneWidget);
+      expect(find.text('Extraction error'), findsNothing);
+    },
+  );
+
+  testWidgets('locally-decided ignored history row shows no LLM badge', (
     tester,
   ) async {
     await _pump(
       tester,
       SmsTile(
-        _rec(status: SmsStatus.ignored, parseSource: ParseSource.llm),
+        _rec(status: SmsStatus.ignored, parseSource: ParseSource.local),
         showCategory: true,
-        onRetry: () {},
       ),
     );
     expect(find.text('Ignored'), findsOneWidget);
     expect(find.text('LLM'), findsNothing);
-    expect(find.byIcon(Icons.refresh), findsNothing);
-
-    // Expands like any other row: the message, no failure hint.
-    await tester.tap(find.text('BRAC'));
-    await tester.pumpAndSettle();
-    expect(find.text('debit 50 BDT'), findsOneWidget);
-    expect(find.text('Extraction error'), findsNothing);
   });
 
   testWidgets('ignored history row never shows a category label', (
