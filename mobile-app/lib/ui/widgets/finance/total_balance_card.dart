@@ -8,6 +8,7 @@ import '../../../theme/catppuccin_theme.dart';
 import '../../../utils/currency_format.dart';
 import '../../../utils/time_format.dart';
 import '../../banks_page.dart';
+import '../expand_reveal.dart';
 import 'bank_breakdown_list.dart';
 
 /// Total deposit balance across accounts. Tapping toggles a per-bank breakdown
@@ -138,12 +139,14 @@ class _TotalBalanceCardState extends ConsumerState<TotalBalanceCard> {
                     ),
                 ],
               ),
-              if (_expanded && hasBanks)
-                BankBreakdownList(
-                  banks: banks,
+              ExpandReveal(
+                expanded: _expanded && hasBanks,
+                child: BankBreakdownList(
+                  banks: banks ?? const [],
                   currency: currency,
                   hidden: hidden,
                 ),
+              ),
             ],
           ),
         ),
