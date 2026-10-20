@@ -1,42 +1,29 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../state/finance_providers.dart';
-import '../skeleton.dart';
-import 'finance_placeholders.dart';
+import '../../../models/finance/sms_text.dart';
 
-/// A transaction's backing SMS: sender above, full text below.
-class BackingMessage extends ConsumerWidget {
-  const BackingMessage({required this.id, super.key});
+/// A transaction's or bill's backing SMS: sender above, full text below. The
+/// text arrives with the row that owns it, so it renders at full size at once.
+class BackingMessage extends StatelessWidget {
+  const BackingMessage(this.message, {super.key});
 
-  final int id;
+  final SmsText message;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final async = ref.watch(messageProvider(id));
-    return async.when(
-      loading: () => const MessageLinesSkeleton(),
-      error: (_, _) => FinanceError(
-        'Could not load the message.',
-        onRetry: () => ref.invalidate(messageProvider(id)),
-      ),
-      data: (result) {
-        final message = result.data;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              message.sender,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(message.content, style: theme.textTheme.bodySmall),
-          ],
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          message.sender,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.outline,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(message.content, style: theme.textTheme.bodySmall),
+      ],
     );
   }
 }

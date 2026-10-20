@@ -21,8 +21,8 @@ Future<void> _pump(WidgetTester tester, {required bool expanded}) =>
 double _height(WidgetTester tester) =>
     tester.getSize(find.byType(ExpandReveal)).height;
 
-/// Stands in for content that loads after it is first built (e.g.
-/// `BackingMessage`: a short skeleton, then the full text a moment later).
+/// Stands in for content that loads after it is first built (a short
+/// skeleton, then the full content a moment later).
 class _LoadsLate extends StatefulWidget {
   const _LoadsLate();
 

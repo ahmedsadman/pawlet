@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/data/finance_repository.dart';
 import 'package:pawlet/data/settings_repository.dart';
 import 'package:pawlet/models/finance/bill.dart';
-import 'package:pawlet/models/finance/sms_message.dart';
+import 'package:pawlet/models/finance/sms_text.dart';
 import 'package:pawlet/models/finance/transaction.dart';
 import 'package:pawlet/services/finance/bill_actions.dart';
 import 'package:pawlet/state/finance_providers.dart';
@@ -47,6 +47,7 @@ Bill _bill({DateTime? paidAt, List<int> links = const []}) => Bill(
   paidAt: paidAt,
   linkedTransactionIds: links,
   createdAt: DateTime(2026, 9, 5),
+  message: const SmsText(sender: 'SENDER-70', content: 'SMS body for 70'),
 );
 
 TransactionItem _leg(
@@ -64,6 +65,12 @@ TransactionItem _leg(
   normalizedCurrency: 'BDT',
   type: TxType.transfer,
   date: DateTime(2026, 9, 10),
+  message: messageId == null
+      ? null
+      : SmsText(
+          sender: 'SENDER-$messageId',
+          content: 'SMS body for $messageId',
+        ),
 );
 
 Future<(BillActions, SharedPreferences)> _pump(
@@ -86,16 +93,6 @@ Future<(BillActions, SharedPreferences)> _pump(
           (ref) async => const CachedResult(data: 'BDT'),
         ),
         billTransactionsProvider.overrideWith((ref, billId) async => legs),
-        messageProvider.overrideWith(
-          (ref, id) async => CachedResult(
-            data: ApiMessage(
-              id: id,
-              sender: 'SENDER-$id',
-              content: 'SMS body for $id',
-              receivedAt: DateTime(2026, 9, 5),
-            ),
-          ),
-        ),
       ],
       child: MaterialApp(
         theme: AppTheme.theme,

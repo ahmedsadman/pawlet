@@ -7,7 +7,7 @@ import 'package:pawlet/models/finance/bank.dart';
 import 'package:pawlet/models/finance/bill.dart';
 import 'package:pawlet/models/finance/bills_page.dart';
 import 'package:pawlet/models/finance/bills_query.dart';
-import 'package:pawlet/models/finance/sms_message.dart';
+import 'package:pawlet/models/finance/sms_text.dart';
 import 'package:pawlet/state/finance_providers.dart';
 import 'package:pawlet/state/providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
@@ -44,6 +44,7 @@ Bill _bill(int id, DateTime received, String total, {int bankId = 1}) => Bill(
   normalizedCurrency: 'BDT',
   statementPeriod: DateTime(received.year, received.month, 1),
   createdAt: received,
+  message: SmsText(sender: 'VISA-BANK', content: 'SMS body for $id'),
 );
 
 Future<SharedPreferences> _pump(
@@ -82,16 +83,6 @@ Future<SharedPreferences> _pump(
           );
         }),
         billTransactionsProvider.overrideWith((ref, billId) async => const []),
-        messageProvider.overrideWith(
-          (ref, id) async => CachedResult(
-            data: ApiMessage(
-              id: id,
-              sender: 'VISA-BANK',
-              content: 'SMS body for $id',
-              receivedAt: DateTime(2025, 1, 1),
-            ),
-          ),
-        ),
       ],
       child: MaterialApp(
         theme: AppTheme.theme,

@@ -12,8 +12,8 @@ import 'package:flutter/material.dart';
 ///
 /// Driven by its own controller rather than `AnimatedSize`, which snaps
 /// straight to the final size when its child resizes mid-animation — exactly
-/// what content that loads after it is built does (e.g. `BackingMessage`
-/// showing a skeleton, then the text).
+/// what content that loads after it is built does (a skeleton, then the real
+/// content).
 class ExpandReveal extends StatefulWidget {
   const ExpandReveal({required this.expanded, required this.child, super.key});
 
