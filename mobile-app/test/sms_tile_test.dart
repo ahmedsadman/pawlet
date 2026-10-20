@@ -4,6 +4,7 @@ import 'package:pawlet/models/finance/transaction.dart';
 import 'package:pawlet/models/sms_record.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
 import 'package:pawlet/ui/widgets/category_label.dart';
+import 'package:pawlet/ui/widgets/expand_reveal.dart';
 import 'package:pawlet/ui/widgets/sms_tile.dart';
 import 'package:pawlet/ui/widgets/status_badge.dart';
 
@@ -512,5 +513,24 @@ void main() {
     await _pump(tester, SmsTile(_rec(status: SmsStatus.failure)));
     expect(find.byType(StatusBadge), findsOneWidget);
     expect(_failureAccent(), findsNothing);
+  });
+
+  testWidgets('history body expands through ExpandReveal', (tester) async {
+    await _pump(
+      tester,
+      SmsTile(
+        _rec(status: SmsStatus.success, category: 'bill'),
+        showCategory: true,
+      ),
+    );
+    await tester.tap(find.text('BRAC'));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(
+        of: find.text('debit 50 BDT'),
+        matching: find.byType(ExpandReveal),
+      ),
+      findsOneWidget,
+    );
   });
 }
