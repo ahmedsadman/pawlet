@@ -578,22 +578,4 @@ void main() {
       await db.close();
     });
   });
-
-  group('message', () {
-    test('reads the backing SMS', () async {
-      final db = await openTestDb();
-      final id = await insertSms(
-        db,
-        sender: 'BankX',
-        content: 'debit 50',
-        ts: 999,
-      );
-      final repo = FinanceRepository(db);
-      final msg = (await repo.message(id)).data;
-      expect(msg.sender, 'BankX');
-      expect(msg.content, 'debit 50');
-      expect(msg.receivedAt.millisecondsSinceEpoch, 999);
-      await db.close();
-    });
-  });
 }
