@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../models/finance/pairing_suggestion.dart';
+import '../../../models/finance/sms_text.dart';
 import '../../../state/providers.dart';
 import '../../../theme/catppuccin_theme.dart';
 import '../../../utils/currency_format.dart';
@@ -42,7 +43,7 @@ class _PairingCardState extends ConsumerState<PairingCard> {
     final f = AppTheme.flavor;
     final hidden = ref.watch(balanceHiddenProvider);
     final isTransfer = s.kind == PairingKind.transfer;
-    final messageIds = [s.from.messageId, s.to.messageId].whereType<int>();
+    final messages = [s.from.message, s.to.message].whereType<SmsText>();
 
     return Card(
       margin: EdgeInsets.zero,
@@ -85,7 +86,7 @@ class _PairingCardState extends ConsumerState<PairingCard> {
                 style: theme.textTheme.bodySmall?.copyWith(color: f.subtext0),
               ),
             ],
-            if (messageIds.isNotEmpty && !hidden) ...[
+            if (messages.isNotEmpty && !hidden) ...[
               const SizedBox(height: 4),
               Align(
                 alignment: Alignment.centerLeft,
@@ -112,9 +113,9 @@ class _PairingCardState extends ConsumerState<PairingCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (final (i, id) in messageIds.indexed) ...[
+                      for (final (i, message) in messages.indexed) ...[
                         if (i > 0) const SizedBox(height: 12),
-                        BackingMessage(id: id),
+                        BackingMessage(message),
                       ],
                     ],
                   ),

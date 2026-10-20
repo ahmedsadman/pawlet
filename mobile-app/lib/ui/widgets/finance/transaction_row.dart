@@ -122,10 +122,10 @@ class _MessagePanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          BackingMessage(id: tx.messageId!),
-          if (tx.pairedWithMessageId != null) ...[
-            const SizedBox(height: 12),
-            BackingMessage(id: tx.pairedWithMessageId!),
+          if (tx.message case final message?) BackingMessage(message),
+          if (tx.pairedMessage case final paired?) ...[
+            if (tx.message != null) const SizedBox(height: 12),
+            BackingMessage(paired),
           ],
         ],
       ),

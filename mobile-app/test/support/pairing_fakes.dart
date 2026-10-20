@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:pawlet/models/finance/pairing_suggestion.dart';
+import 'package:pawlet/models/finance/sms_text.dart';
 import 'package:pawlet/models/finance/transaction.dart';
 import 'package:pawlet/services/finance/pairing_actions.dart';
 import 'package:pawlet/services/finance/pairing_suggester.dart';
@@ -27,6 +28,12 @@ PairingLeg pairingLeg(
   currency: 'BDT',
   type: type,
   date: _base.subtract(ago),
+  message: messageId == null
+      ? null
+      : SmsText(
+          sender: 'SENDER$messageId',
+          content: 'Body of message $messageId',
+        ),
 );
 
 /// A transfer suggestion: MTB out -> City in, two hours apart.

@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pawlet/data/finance_repository.dart';
 import 'package:pawlet/models/finance/pairing_suggestion.dart';
-import 'package:pawlet/models/finance/sms_message.dart';
-import 'package:pawlet/state/finance_providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
 import 'package:pawlet/ui/widgets/expand_reveal.dart';
 import 'package:pawlet/ui/widgets/finance/pairing_card.dart';
@@ -20,19 +17,7 @@ Future<List<bool>> _pump(
   final answers = <bool>[];
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [
-        overrideBalanceHidden(hidden),
-        messageProvider.overrideWith(
-          (ref, id) async => CachedResult(
-            data: ApiMessage(
-              id: id,
-              sender: 'SENDER$id',
-              content: 'Body of message $id',
-              receivedAt: DateTime(2026, 10, 14),
-            ),
-          ),
-        ),
-      ],
+      overrides: [overrideBalanceHidden(hidden)],
       child: MaterialApp(
         theme: AppTheme.theme,
         home: Scaffold(

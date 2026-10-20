@@ -103,12 +103,11 @@ class _BillSheetState extends ConsumerState<BillSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Header(bill: bill, currency: currency, hidden: hidden),
-              const SizedBox(height: 16),
-              const _Label('Bill SMS'),
-              _MessageBox(
-                hidden: hidden,
-                child: BackingMessage(id: bill.messageId),
-              ),
+              if (bill.message case final message?) ...[
+                const SizedBox(height: 16),
+                const _Label('Bill SMS'),
+                _MessageBox(hidden: hidden, child: BackingMessage(message)),
+              ],
               if (bill.linkedTransactionIds.isNotEmpty)
                 _PaymentLegs(
                   billId: bill.id,
@@ -314,13 +313,10 @@ class _PaymentLegs extends ConsumerWidget {
   ];
 
   Widget _leg(BuildContext context, TransactionItem leg) {
-    if (leg.messageId != null) {
-      return _MessageBox(
-        hidden: hidden,
-        child: BackingMessage(id: leg.messageId!),
-      );
+    if (leg.message case final message?) {
+      return _MessageBox(hidden: hidden, child: BackingMessage(message));
     }
-    // Manual leg: no SMS to show, so summarise the row instead.
+    // Manual leg (or its SMS is gone): nothing to show, so summarise the row.
     final theme = Theme.of(context);
     return Text(
       '${leg.bankName ?? leg.sender} · '

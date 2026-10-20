@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pawlet/data/finance_repository.dart';
 import 'package:pawlet/data/settings_repository.dart';
-import 'package:pawlet/models/finance/sms_message.dart';
+import 'package:pawlet/models/finance/sms_text.dart';
 import 'package:pawlet/models/finance/transaction.dart';
 import 'package:pawlet/models/finance/transactions_page.dart';
 import 'package:pawlet/state/finance_providers.dart';
@@ -12,6 +12,7 @@ import 'package:pawlet/state/providers.dart';
 import 'package:pawlet/theme/catppuccin_theme.dart';
 import 'package:pawlet/ui/widgets/expand_reveal.dart';
 import 'package:pawlet/ui/widgets/finance/transactions_section.dart';
+import 'package:pawlet/ui/widgets/skeleton.dart';
 
 TransactionItem _tx(int id, TxType type, String amount) => TransactionItem(
   id: id,
@@ -21,6 +22,7 @@ TransactionItem _tx(int id, TxType type, String amount) => TransactionItem(
   normalizedCurrency: 'BDT',
   type: type,
   date: DateTime(2025, 1, id + 1),
+  message: SmsText(sender: 'ACME', content: 'SMS body for ${100 + id}'),
 );
 
 TransactionsPage _page(int page) => TransactionsPage(
@@ -47,17 +49,6 @@ Future<void> _pump(
         transactionsProvider.overrideWith(
           (ref, query) async =>
               CachedResult(data: _page(query.page), stale: false),
-        ),
-        messageProvider.overrideWith(
-          (ref, id) async => CachedResult(
-            data: ApiMessage(
-              id: id,
-              sender: 'ACME',
-              content: 'SMS body for $id',
-              receivedAt: DateTime(2025, 1, 1),
-            ),
-            stale: false,
-          ),
         ),
       ],
       child: MaterialApp(
@@ -143,6 +134,18 @@ void main() {
     await tester.tap(find.text('ACME-1'));
     await tester.pumpAndSettle();
     expect(find.text('SMS body for 101'), findsOneWidget);
+  });
+
+  testWidgets('the message text shows on the first frame, no skeleton', (
+    tester,
+  ) async {
+    await _pump(tester);
+
+    await tester.tap(find.text('ACME-1'));
+    await tester.pump();
+    expect(find.text('SMS body for 101'), findsOneWidget);
+    expect(find.byType(MessageLinesSkeleton), findsNothing);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('masks amounts and blocks row expansion when hidden', (
