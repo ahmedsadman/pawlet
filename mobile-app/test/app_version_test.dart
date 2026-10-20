@@ -7,7 +7,7 @@ void main() {
       PackageInfo.setMockInitialValues(
         appName: 'Pawlet',
         packageName: 'com.pastabyte.pawlet',
-        version: '0.3.0',
+        version: '0.3.1',
         buildNumber: buildNumber,
         buildSignature: '',
         installTime: installTime,
