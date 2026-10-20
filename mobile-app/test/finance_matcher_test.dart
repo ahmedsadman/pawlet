@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pawlet/services/finance/bill_actions.dart';
 import 'package:pawlet/services/finance/finance_matcher.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -575,6 +576,114 @@ void main() {
     await matcher.runPending(); // a second pass changes nothing
     expect((await txRow(db, debit))['bill_id'], bill);
     expect((await txRow(db, a))['bill_id'], isNull);
+    await db.close();
+  });
+
+  test(
+    'runPending does not re-link a pair whose bill was marked unpaid',
+    () async {
+      final db = await openTestDb();
+      final now = DateTime(2026, 7, 10, 12, 0);
+      final ebl = await insertBank(
+        db,
+        name: 'EBL',
+        accountType: 'credit',
+        cardDigits: '4238|3241',
+      );
+      final billMsg = await insertSms(
+        db,
+        sender: 'EBL',
+        ts: DateTime(2026, 7, 7).millisecondsSinceEpoch,
+      );
+      final bill = await insertBill(
+        db,
+        messageId: billMsg,
+        bankId: ebl,
+        totalDue: '8020',
+      );
+      final pay = now.subtract(const Duration(minutes: 10));
+      // Both legs already linked and paired.
+      final transfer = await tx(
+        db,
+        bankId: ebl,
+        billId: bill,
+        amount: '8020',
+        type: 'transfer',
+        date: pay,
+      );
+      final debit = await tx(
+        db,
+        pairedWithId: transfer,
+        billId: bill,
+        amount: '8020',
+        type: 'transfer',
+        date: pay.add(const Duration(minutes: 5)),
+      );
+      await db.update(
+        'transactions',
+        {'paired_with_id': debit},
+        where: 'id = ?',
+        whereArgs: [transfer],
+      );
+
+      // User marks the bill unpaid.
+      await BillActions(db).setPaid(bill, paid: false);
+
+      await FinanceMatcher(
+        db,
+        nowMs: () => now.millisecondsSinceEpoch,
+      ).runPending();
+
+      expect((await txRow(db, transfer))['bill_id'], isNull);
+      expect((await txRow(db, debit))['bill_id'], isNull);
+      await db.close();
+    },
+  );
+
+  test("runPending leaves an unpaired leg's missing link alone", () async {
+    final db = await openTestDb();
+    final now = DateTime(2026, 7, 10, 12, 0);
+    final ebl = await insertBank(
+      db,
+      name: 'EBL',
+      accountType: 'credit',
+      cardDigits: '4238|3241',
+    );
+    final billMsg = await insertSms(
+      db,
+      sender: 'EBL',
+      ts: DateTime(2026, 7, 7).millisecondsSinceEpoch,
+    );
+    final bill = await insertBill(
+      db,
+      messageId: billMsg,
+      bankId: ebl,
+      totalDue: '8020',
+    );
+    final pay = now.subtract(const Duration(minutes: 10));
+    // An unpaired transfer with a bill link.
+    await tx(
+      db,
+      bankId: ebl,
+      billId: bill,
+      amount: '8020',
+      type: 'transfer',
+      date: pay,
+    );
+    // An unrelated unpaired expense with different amount (won't pair).
+    final expense = await tx(
+      db,
+      amount: '5000',
+      type: 'expense',
+      date: pay.add(const Duration(minutes: 5)),
+    );
+
+    await FinanceMatcher(
+      db,
+      nowMs: () => now.millisecondsSinceEpoch,
+    ).runPending();
+
+    expect((await txRow(db, expense))['bill_id'], isNull);
     await db.close();
   });
 
