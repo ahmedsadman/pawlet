@@ -4,7 +4,6 @@ import 'package:sqflite/sqflite.dart';
 import '../models/finance/bank.dart';
 import '../models/finance/bill.dart';
 import '../models/finance/bills_page.dart';
-import '../models/finance/sms_message.dart';
 import '../models/finance/sms_text.dart';
 import '../models/finance/summary.dart';
 import '../models/finance/transaction.dart';
@@ -81,28 +80,6 @@ class FinanceRepository {
       orderBy: 'created_at ASC, id ASC',
     );
     return _ok(rows.map(_bankFromRow).toList());
-  }
-
-  Future<CachedResult<ApiMessage>> message(int id) async {
-    final rows = await _db.query(
-      AppDatabase.smsTable,
-      columns: ['id', 'sender', 'content', 'timestamp'],
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (rows.isEmpty) {
-      throw ArgumentError('Message not found: $id');
-    }
-    final r = rows.first;
-    return _ok(
-      ApiMessage(
-        id: r['id'] as int,
-        sender: r['sender'] as String,
-        content: r['content'] as String,
-        receivedAt: DateTime.fromMillisecondsSinceEpoch(r['timestamp'] as int),
-      ),
-    );
   }
 
   // ---- transactions -------------------------------------------------------

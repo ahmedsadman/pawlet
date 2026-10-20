@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/models/finance/bank.dart';
 import 'package:pawlet/models/finance/bill.dart';
-import 'package:pawlet/models/finance/sms_message.dart';
 import 'package:pawlet/models/finance/summary.dart';
 import 'package:pawlet/models/finance/transaction.dart';
 import 'package:pawlet/models/finance/transactions_page.dart';
@@ -158,16 +157,5 @@ void main() {
     expect(trends.savingsRate.recent, '0.3000');
     expect(trends.savingsRate.prior, isNull);
     expect(trends.savingsRate.spark, ['0.2000', null]);
-  });
-
-  test('ApiMessage parses fields', () {
-    final message = ApiMessage.fromJson({
-      'id': 4,
-      'sender': 'ACME',
-      'content': 'Your bill is due',
-      'received_at': '2025-01-01T00:00:00Z',
-    });
-    expect(message.content, 'Your bill is due');
-    expect(message.sender, 'ACME');
   });
 }

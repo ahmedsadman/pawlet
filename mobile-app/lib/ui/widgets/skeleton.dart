@@ -117,7 +117,8 @@ class _TransactionRowSkeleton extends StatelessWidget {
   }
 }
 
-/// Two-line placeholder for the expanded message panel inside a transaction.
+/// Two-line placeholder for message-sized content (a bill's payment legs while
+/// they load).
 class MessageLinesSkeleton extends StatelessWidget {
   const MessageLinesSkeleton({super.key});
 

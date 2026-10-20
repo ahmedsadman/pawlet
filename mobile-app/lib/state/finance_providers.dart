@@ -4,7 +4,6 @@ import '../data/finance_repository.dart';
 import '../models/finance/bank.dart';
 import '../models/finance/bills_page.dart';
 import '../models/finance/bills_query.dart';
-import '../models/finance/sms_message.dart';
 import '../models/finance/summary.dart';
 import '../models/finance/transaction.dart';
 import '../models/finance/trends.dart';
@@ -64,14 +63,6 @@ final billActionsProvider = Provider<BillActions>(
   (ref) => BillActions(ref.watch(databaseProvider)),
 );
 
-// Deliberately does NOT watch dataRevisionProvider: a message's stored content
-// (sender/body/timestamp) is immutable after write, so re-reading it on a bump
-// would only flash the detail skeleton with no data change.
-final messageProvider = FutureProvider.autoDispose
-    .family<CachedResult<ApiMessage>, int>(
-      (ref, id) => ref.watch(financeRepositoryProvider).message(id),
-    );
-
 /// Invalidates every finance provider so a pull-to-refresh (or a bank edit)
 /// reloads all data app-wide. Calling `invalidate` on a family clears all its
 /// instances.
@@ -83,7 +74,6 @@ void refreshAllFinance(WidgetRef ref) {
   ref.invalidate(transactionsProvider);
   ref.invalidate(billsProvider);
   ref.invalidate(billTransactionsProvider);
-  ref.invalidate(messageProvider);
 }
 
 /// Whether the one-time "long-press a bill" hint is retired. Shared rather
