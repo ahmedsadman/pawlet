@@ -130,17 +130,36 @@ class AppServices {
         repository: repository,
         installId: SecureStore().installId,
       ),
-      llmGroup: () async => (await standaloneMode(prefs)).mode.heartbeatGroup,
+      llmGroup: () => heartbeatGroup(prefs),
     );
   }
 
-  static bool _sendsHeartbeat({required bool apiBaseConfigured}) =>
-      apiBaseConfigured;
-
-  /// Test-visible wrapper for [_sendsHeartbeat].
+  /// The install's LLM group for a heartbeat mark, from fresh prefs and the
+  /// keystore ([standaloneMode], or [resolve] in tests). If that fails, the
+  /// group comes from the prefs as they are, resolved as if no key is saved,
+  /// so the mark is kept: a BYOK install then reports `none` for the day.
+  /// ([SecureStore.readApiKey] already treats an unreadable keystore as no
+  /// key.)
   @visibleForTesting
-  static bool testSendsHeartbeat({required bool apiBaseConfigured}) =>
-      _sendsHeartbeat(apiBaseConfigured: apiBaseConfigured);
+  static Future<String> heartbeatGroup(
+    SharedPreferences prefs, {
+    Future<({LlmMode mode, String apiKey})> Function(SharedPreferences)
+        resolve =
+        standaloneMode,
+  }) async {
+    try {
+      return (await resolve(prefs)).mode.heartbeatGroup;
+    } catch (_) {
+      final settings = SettingsRepository(prefs);
+      return resolveLlmMode(
+        fromPlay: settings.installedFromPlay,
+        proxyConfigured: BuildConfig.proxyConfigured,
+        hasKey: false,
+        attestationIneligible: settings.attestationIneligible,
+        llmEnabled: settings.llmEnabled,
+      ).heartbeatGroup;
+    }
+  }
 
   /// For the daily WorkManager task: a heartbeat when this install may send
   /// one, else null.
@@ -148,7 +167,7 @@ class AppServices {
     required Database database,
     required SharedPreferences prefs,
   }) async {
-    return _sendsHeartbeat(apiBaseConfigured: BuildConfig.apiBaseConfigured)
+    return BuildConfig.apiBaseConfigured
         ? _heartbeat(database: database, prefs: prefs)
         : null;
   }
@@ -224,8 +243,7 @@ class AppServices {
             isProxy: stillOnProxySession,
           );
 
-    final heartbeat =
-        _sendsHeartbeat(apiBaseConfigured: BuildConfig.apiBaseConfigured)
+    final heartbeat = BuildConfig.apiBaseConfigured
         ? _heartbeat(database: database, prefs: prefs)
         : null;
 

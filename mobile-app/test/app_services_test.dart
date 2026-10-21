@@ -205,8 +205,10 @@ void main() {
     });
   });
 
-  group('heartbeat is built in every mode when the server is configured', () {
-    test('all modes build a heartbeat when configured', () async {
+  group('heartbeat', () {
+    // The same rule for every mode: present exactly when the build has a
+    // server. Tests run without one, so this pins the "absent" half.
+    test('every mode follows the build\'s server config alone', () async {
       SharedPreferences.setMockInitialValues({});
       for (final mode in LlmMode.values) {
         final s = AppServices.from(
@@ -215,22 +217,42 @@ void main() {
           apiKey: mode == LlmMode.byok ? 'sk-or-x' : '',
           mode: mode,
         );
-        // BuildConfig.apiBaseConfigured is const false in tests, so we expect
-        // null. Testing the real gate: when true, all modes build it.
         expect(
-          s.heartbeat,
-          isNull,
-          reason:
-              '$mode should build null heartbeat when API not configured (test env)',
+          s.heartbeat != null,
+          BuildConfig.apiBaseConfigured,
+          reason: '$mode',
         );
         await s.disposeStandalone();
       }
     });
 
-    test('_sendsHeartbeat depends only on apiBaseConfigured', () {
-      // The gate is a simple pure function: it should only check the config.
-      expect(AppServices.testSendsHeartbeat(apiBaseConfigured: true), isTrue);
-      expect(AppServices.testSendsHeartbeat(apiBaseConfigured: false), isFalse);
+    test('the group resolves from fresh prefs', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        await AppServices.heartbeatGroup(prefs),
+        (await AppServices.standaloneMode(prefs)).mode.heartbeatGroup,
+      );
+    });
+
+    // A failed resolution would otherwise drop the day's mark altogether.
+    test('a failed resolution falls back to prefs, as if no key', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final group = await AppServices.heartbeatGroup(
+        prefs,
+        resolve: (_) async => throw StateError('keystore locked'),
+      );
+      expect(
+        group,
+        resolveLlmMode(
+          fromPlay: false,
+          proxyConfigured: BuildConfig.proxyConfigured,
+          hasKey: false,
+          attestationIneligible: false,
+          llmEnabled: true,
+        ).heartbeatGroup,
+      );
     });
   });
 
