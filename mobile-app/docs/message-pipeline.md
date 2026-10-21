@@ -471,9 +471,9 @@ the broadcast never arrives. The SMS still lands in the phone's inbox, but Pawle
 stores it, and nothing re-reads the inbox afterwards (apart from the one-off import in
 [Backup & Restore](backup-restore.md)).
 
-**Detecting a miss.** On launch and resume, at most once per scan gap,
-`MissedSmsDetector` (`lib/services/missed_sms_detector.dart`) compares the inbox with
-`sms_records`:
+**Detecting a miss.** The scan runs when the battery check runs on launch or resume,
+at most once per scan gap. `MissedSmsDetector` (`lib/services/missed_sms_detector.dart`)
+compares the inbox with `sms_records`:
 
 - It reads only inbox messages received after a watermark (where the last scan stopped)
   and older than a short grace period, so a message the receiver is still saving isn't
@@ -492,9 +492,10 @@ stores it, and nothing re-reads the inbox afterwards (apart from the one-off imp
   `lib/data/delivery_health_store.dart` (SharedPreferences, outside Backup & Restore).
 
 A scan that fails records nothing and keeps the watermark, so the next one re-checks the
-same range. While SMS permission is off the watermark still moves forward, so messages
-received during that time don't count once it comes back. A restore from Backup &
-Restore restarts detection from that moment, since it replaces `sms_records`.
+same range. The watermark moves forward when the app opens or resumes without SMS
+permission, so messages received while permission is off don't count as misses once it
+comes back. A restore from Backup & Restore restarts detection from that moment, since
+it replaces `sms_records`.
 
 **When the prompt shows** (`lib/services/battery_prompt_policy.dart`):
 
@@ -513,9 +514,11 @@ snooze for as long as the evidence holds.
 **Fitting in with the other sheets** (`lib/app.dart`, `lib/ui/battery_prompt_flow.dart`):
 at most one sheet goes up per launch or resume, and the battery sheet is last. On launch
 it is skipped if the SMS disclosure, the inbox import offer, or an update offer (see
-[App updates](app-updates.md)) showed; on resume, if the update check showed anything.
-Like the update offer it waits until the app is unlocked, no inbox import is running,
-and nothing else is on top. A skipped turn doesn't count, so the next resume tries again.
+[App updates](app-updates.md)) showed; on resume, if the update check showed anything
+(including when another update check is already in flight). It waits until the app is
+unlocked, and skips if an inbox import is running or anything is open above the home
+screen; a skipped turn doesn't count, so the next resume tries again. The Restricted
+verdict requires SMS permission.
 
 ## Tuning constants
 
