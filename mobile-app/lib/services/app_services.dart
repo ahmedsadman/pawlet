@@ -86,9 +86,9 @@ class AppServices {
   /// counts.
   final ModelStatsReporter? modelStatsReporter;
 
-  /// Records days the app ran or was opened and uploads them. Present in
-  /// every mode but no-LLM, in a build pointed at a server; null in no-LLM,
-  /// which keeps its "nothing leaves the phone" promise.
+  /// Records days the app ran or was opened and uploads them, with the
+  /// install's LLM group. Present in every mode but no-LLM, in a build pointed
+  /// at a server; null in no-LLM.
   final Heartbeat? heartbeat;
 
   /// The mode a background isolate runs in, from fresh prefs and the
@@ -115,8 +115,9 @@ class AppServices {
   }
 
   /// A heartbeat for an install that may send one (any mode but no-LLM, in a
-  /// build pointed at a server), whose sends re-check that from fresh prefs:
-  /// the mode can move in another isolate while this object lives on.
+  /// build pointed at a server), whose marks carry the current LLM group read
+  /// from fresh prefs: the mode can move in another isolate while this object
+  /// lives on.
   static Heartbeat _heartbeat({
     required Database database,
     required SharedPreferences prefs,
@@ -128,9 +129,8 @@ class AppServices {
         apiBase: BuildConfig.apiBase,
         repository: repository,
         installId: SecureStore().installId,
-        isAllowed: () async =>
-            (await standaloneMode(prefs)).mode != LlmMode.none,
       ),
+      llmGroup: () async => (await standaloneMode(prefs)).mode.heartbeatGroup,
     );
   }
 

@@ -178,11 +178,9 @@ final appServicesProvider = Provider<AppServices>((ref) {
     apiKey: ref.watch(apiKeyProvider),
     mode: mode,
   );
-  // Rebuilt on every mode change, so the daily task and the unsent log
-  // follow the mode (see syncHeartbeatMode).
-  unawaited(
-    syncHeartbeatMode(mode: mode, repository: HeartbeatRepository(database)),
-  );
+  // Rebuilt on every mode change, so the daily task follows the build (see
+  // syncHeartbeat).
+  unawaited(syncHeartbeat(repository: HeartbeatRepository(database)));
   ref.onDispose(services.dispose);
   return services;
 });

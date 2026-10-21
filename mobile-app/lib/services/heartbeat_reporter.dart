@@ -14,12 +14,12 @@ import 'app_version.dart';
 import 'upload_backoff.dart';
 
 /// Sends the heartbeat log to Pawlet's server (`POST /v1/heartbeat`), so the
-/// admin dashboard knows which days each install was opened or ran, and the
-/// build it ran, without depending on proxy sessions.
+/// admin dashboard knows which days each install was opened or ran, the build
+/// it ran, and its LLM group, without depending on proxy sessions.
 ///
 /// Unauthenticated: the body carries the install ID, which the server hashes
-/// before storing, exactly as `/v1/session` does. Sent only while the install
-/// is in a mode other than no-LLM ([_isAllowed], re-read before every send).
+/// before storing, exactly as `/v1/session` does. Sent in every mode (proxy,
+/// opted-out, BYOK, and no-LLM) whenever the build has a server.
 ///
 /// Nothing is sent in the first [firstUploadDelay] after install: devices that
 /// run each new build for a few minutes and are then wiped (Play's review and
@@ -34,13 +34,11 @@ class HeartbeatReporter {
     required this.apiBase,
     required HeartbeatRepository repository,
     required Future<String> Function() installId,
-    required Future<bool> Function() isAllowed,
     Future<int?> Function() installedAt = readInstallTime,
     http.Client? client,
     int Function()? clock,
   }) : _repository = repository,
        _installId = installId,
-       _isAllowed = isAllowed,
        _installedAt = installedAt,
        _client = client ?? http.Client(),
        _ownsClient = client == null,
@@ -49,7 +47,6 @@ class HeartbeatReporter {
   final String apiBase;
   final HeartbeatRepository _repository;
   final Future<String> Function() _installId;
-  final Future<bool> Function() _isAllowed;
   final Future<int?> Function() _installedAt;
   final http.Client _client;
   final bool _ownsClient;
@@ -121,7 +118,6 @@ class HeartbeatReporter {
       return;
     }
 
-    if (!await _allowed()) return;
     final String id;
     try {
       id = await _installId();
@@ -182,15 +178,6 @@ class HeartbeatReporter {
     return installed != null &&
         installed <= now &&
         now - installed < firstUploadDelay.inMilliseconds;
-  }
-
-  /// [_isAllowed], with a failed check counted as "not allowed".
-  Future<bool> _allowed() async {
-    try {
-      return await _isAllowed();
-    } catch (_) {
-      return false;
-    }
   }
 
   /// The server's answer, or null on a network error or timeout.

@@ -80,7 +80,7 @@ void main() {
     // version pair it has no branch for, so a bump that forgets its branch
     // ships a database the app queries with the wrong schema and no failing
     // test. Update this only together with the branch and its parity test.
-    expect(AppDatabase.version, 10);
+    expect(AppDatabase.version, 11);
   });
 
   test('schema creates all tables', () async {
@@ -431,6 +431,24 @@ void main() {
         updated_at INTEGER NOT NULL,
         reported_at INTEGER
       )
+    ''');
+    return db;
+  }
+
+  // v9 is v8 plus pairing_rejections. Shared helper for v10/v11 upgrade tests.
+  Future<Database> openV9() async {
+    final db = await openV8();
+    await db.execute('''
+      CREATE TABLE pairing_rejections (
+        tx_low INTEGER NOT NULL,
+        tx_high INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY (tx_low, tx_high)
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX idx_pairing_rejections_expires
+      ON pairing_rejections (expires_at)
     ''');
     return db;
   }
@@ -862,25 +880,6 @@ void main() {
   });
 
   group('bill status override migration (v9 -> v10)', () {
-    // v9 is v8 plus pairing_rejections. Built by hand rather than through
-    // onUpgrade, which now runs the v10 step as well.
-    Future<Database> openV9() async {
-      final db = await openV8();
-      await db.execute('''
-        CREATE TABLE pairing_rejections (
-          tx_low INTEGER NOT NULL,
-          tx_high INTEGER NOT NULL,
-          expires_at INTEGER NOT NULL,
-          PRIMARY KEY (tx_low, tx_high)
-        )
-      ''');
-      await db.execute('''
-        CREATE INDEX idx_pairing_rejections_expires
-        ON pairing_rejections (expires_at)
-      ''');
-      return db;
-    }
-
     test('preserves bills, which start matcher-managed', () async {
       final db = await openV9();
       await db.insert('sms_records', {
@@ -951,6 +950,99 @@ void main() {
 
         expect((await db.query('banks')).single['name'], 'My Card');
         expect(await _columnNames(db, 'bills'), contains('status_overridden'));
+        await db.close();
+      },
+    );
+  });
+
+  group('heartbeat LLM group migration (v10 -> v11)', () {
+    // v10 is v9 plus bills.status_overridden. Built by hand rather than through
+    // onUpgrade, which now runs the v11 step as well.
+    Future<Database> openV10() async {
+      final db = await openV9();
+      await db.execute(
+        'ALTER TABLE bills '
+        'ADD COLUMN status_overridden INTEGER NOT NULL DEFAULT 0',
+      );
+      return db;
+    }
+
+    test('preserves heartbeat_days rows and adds llm_group', () async {
+      final db = await openV10();
+      await db.insert('heartbeat_days', {
+        'day': '2026-10-20',
+        'app_version_code': 30,
+        'opened': 1,
+        'alive': 1,
+        'updated_at': 1000,
+      });
+      await db.insert('heartbeat_days', {
+        'day': '2026-10-21',
+        'app_version_code': 30,
+        'opened': 0,
+        'alive': 1,
+        'updated_at': 2000,
+      });
+
+      await AppDatabase.onUpgrade(db, 10, 11);
+
+      final rows = await db.query('heartbeat_days', orderBy: 'day');
+      expect(rows, hasLength(2));
+      expect(rows[0]['day'], '2026-10-20');
+      expect(rows[0]['opened'], 1);
+      expect(rows[0]['llm_group'], isNull);
+      expect(rows[1]['day'], '2026-10-21');
+      expect(rows[1]['llm_group'], isNull);
+      await db.close();
+    });
+
+    test('lands on the same shape as a fresh v11 create', () async {
+      final migrated = await openV10();
+      await AppDatabase.onUpgrade(migrated, 10, 11);
+      final fresh = await openTestDb();
+
+      for (final table in const [
+        'sms_records',
+        'banks',
+        'transactions',
+        'bills',
+        'app_meta',
+        'model_stats',
+        'heartbeat_days',
+        'pairing_rejections',
+      ]) {
+        expect(
+          await _columnSpecs(migrated, table),
+          await _columnSpecs(fresh, table),
+          reason: 'columns of $table drifted from a fresh create',
+        );
+        expect(
+          await _indexDdl(migrated, table),
+          await _indexDdl(fresh, table),
+          reason: 'indexes of $table drifted from a fresh create',
+        );
+      }
+      await migrated.close();
+      await fresh.close();
+    });
+
+    test(
+      'a version-skipping upgrade from v5 to v11 still preserves data',
+      () async {
+        final db = await openV5();
+        await db.insert('banks', {
+          'name': 'My Card',
+          'account_type': 'credit',
+          'card_digits': '4238|3241',
+          'created_at': 1,
+        });
+
+        await AppDatabase.onUpgrade(db, 5, 11);
+
+        expect((await db.query('banks')).single['name'], 'My Card');
+        expect(await _tableNames(db), contains('heartbeat_days'));
+        // v8 added heartbeat_days, v11 adds llm_group to it
+        expect(await _columnNames(db, 'heartbeat_days'), contains('llm_group'));
         await db.close();
       },
     );

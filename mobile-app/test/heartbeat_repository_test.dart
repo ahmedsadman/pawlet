@@ -33,28 +33,58 @@ void main() {
   )).single;
 
   test('marks today alive, and opened only when asked', () async {
-    await repo.mark(opened: false, nowMs: now, appVersionCode: 28);
+    await repo.mark(
+      opened: false,
+      nowMs: now,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
     var r = await row('2026-10-13');
     expect([r['opened'], r['alive'], r['app_version_code']], [0, 1, 28]);
     expect(r['updated_at'], now);
 
-    await repo.mark(opened: true, nowMs: now + 1, appVersionCode: 28);
+    await repo.mark(
+      opened: true,
+      nowMs: now + 1,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
     r = await row('2026-10-13');
     expect([r['opened'], r['alive']], [1, 1]);
     expect(r['updated_at'], now + 1);
   });
 
   test('flags are sticky and an unchanged mark leaves updated_at', () async {
-    await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
-    await repo.mark(opened: false, nowMs: now + 5, appVersionCode: 28);
+    await repo.mark(
+      opened: true,
+      nowMs: now,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
+    await repo.mark(
+      opened: false,
+      nowMs: now + 5,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
     final r = await row('2026-10-13');
     expect(r['opened'], 1);
     expect(r['updated_at'], now);
   });
 
   test('the latest version wins within a day', () async {
-    await repo.mark(opened: true, nowMs: now, appVersionCode: 27);
-    await repo.mark(opened: false, nowMs: now + 5, appVersionCode: 28);
+    await repo.mark(
+      opened: true,
+      nowMs: now,
+      appVersionCode: 27,
+      llmGroup: 'on',
+    );
+    await repo.mark(
+      opened: false,
+      nowMs: now + 5,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
     final r = await row('2026-10-13');
     expect([r['opened'], r['app_version_code']], [1, 28]);
     expect(r['updated_at'], now + 5);
@@ -67,15 +97,35 @@ void main() {
       'alive': 1,
       'updated_at': 1,
     });
-    await repo.mark(opened: false, nowMs: now, appVersionCode: 28);
+    await repo.mark(
+      opened: false,
+      nowMs: now,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
     final days = (await db.query('heartbeat_days')).map((r) => r['day']);
     expect(days, ['2026-10-13']);
   });
 
   test('unreported returns new and changed rows oldest first', () async {
-    await repo.mark(opened: false, nowMs: now - 2 * day, appVersionCode: 27);
-    await repo.mark(opened: true, nowMs: now - day, appVersionCode: 28);
-    await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
+    await repo.mark(
+      opened: false,
+      nowMs: now - 2 * day,
+      appVersionCode: 27,
+      llmGroup: 'on',
+    );
+    await repo.mark(
+      opened: true,
+      nowMs: now - day,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
+    await repo.mark(
+      opened: true,
+      nowMs: now,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
 
     final first = await repo.unreported(
       minDay: '2026-09-14',
@@ -93,7 +143,12 @@ void main() {
       isEmpty,
     );
 
-    await repo.mark(opened: true, nowMs: now + 20, appVersionCode: 29);
+    await repo.mark(
+      opened: true,
+      nowMs: now + 20,
+      appVersionCode: 29,
+      llmGroup: 'on',
+    );
     final changed = await repo.unreported(
       minDay: '2026-09-14',
       maxDay: '9999-12-31',
@@ -103,13 +158,23 @@ void main() {
   });
 
   test('a row changed mid-upload stays unreported', () async {
-    await repo.mark(opened: false, nowMs: now, appVersionCode: 28);
+    await repo.mark(
+      opened: false,
+      nowMs: now,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
     final sent = await repo.unreported(
       minDay: '2026-09-14',
       maxDay: '9999-12-31',
       limit: 31,
     );
-    await repo.mark(opened: true, nowMs: now + 1, appVersionCode: 28);
+    await repo.mark(
+      opened: true,
+      nowMs: now + 1,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
     await repo.markReported(sent, now + 2);
     expect(
       (await repo.unreported(
@@ -123,7 +188,12 @@ void main() {
 
   test('unreported keeps the newest rows when over the limit', () async {
     for (var i = 0; i < 3; i++) {
-      await repo.mark(opened: false, nowMs: now - i * day, appVersionCode: 28);
+      await repo.mark(
+        opened: false,
+        nowMs: now - i * day,
+        appVersionCode: 28,
+        llmGroup: 'on',
+      );
     }
     final rows = await repo.unreported(
       minDay: '2026-09-14',
@@ -193,15 +263,99 @@ void main() {
     expect(days, ['2026-10-11', '2026-10-13']);
   });
 
-  test('deleteAll empties the log', () async {
-    await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
-    await repo.deleteAll();
-    expect(await db.query('heartbeat_days'), isEmpty);
-  });
-
   test('remembers the last acknowledged version', () async {
     expect(await repo.reportedVersion(), isNull);
     await repo.setReportedVersion(28);
     expect(await repo.reportedVersion(), 28);
   });
+
+  test('mark stores the llm group', () async {
+    await repo.mark(
+      opened: true,
+      nowMs: now,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
+    final r = await row('2026-10-13');
+    expect(r['llm_group'], 'on');
+
+    await repo.mark(
+      opened: false,
+      nowMs: now + 1,
+      appVersionCode: 28,
+      llmGroup: 'off',
+    );
+    final r2 = await row('2026-10-13');
+    expect(r2['llm_group'], 'off');
+    expect(r2['updated_at'], now + 1);
+  });
+
+  test('mark with a new group bumps updated_at', () async {
+    await repo.mark(
+      opened: false,
+      nowMs: now,
+      appVersionCode: 28,
+      llmGroup: 'on',
+    );
+    await repo.markReported([
+      HeartbeatRow(
+        day: '2026-10-13',
+        appVersionCode: 28,
+        opened: false,
+        alive: true,
+        llm: 'on',
+      ),
+    ], now + 5);
+
+    await repo.mark(
+      opened: false,
+      nowMs: now + 10,
+      appVersionCode: 28,
+      llmGroup: 'off',
+    );
+    final r = await row('2026-10-13');
+    expect(r['llm_group'], 'off');
+    expect(r['updated_at'], now + 10);
+
+    final unreported = await repo.unreported(
+      minDay: '2026-09-14',
+      maxDay: '9999-12-31',
+      limit: 31,
+    );
+    expect(unreported, hasLength(1));
+    expect(unreported.single.llm, 'off');
+  });
+
+  test(
+    'markReported does not stamp a row whose group changed in flight',
+    () async {
+      await repo.mark(
+        opened: false,
+        nowMs: now,
+        appVersionCode: 28,
+        llmGroup: 'on',
+      );
+      final sent = [
+        HeartbeatRow(
+          day: '2026-10-13',
+          appVersionCode: 28,
+          opened: false,
+          alive: true,
+          llm: 'on',
+        ),
+      ];
+
+      await repo.mark(
+        opened: false,
+        nowMs: now + 1,
+        appVersionCode: 28,
+        llmGroup: 'byok',
+      );
+      await repo.markReported(sent, now + 2);
+
+      final r = await row('2026-10-13');
+      expect(r['llm_group'], 'byok');
+      expect(r['reported_at'], isNull);
+    },
+  );
 }

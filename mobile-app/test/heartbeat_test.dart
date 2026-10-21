@@ -4,7 +4,6 @@ import 'package:http/testing.dart';
 import 'package:pawlet/data/heartbeat_repository.dart';
 import 'package:pawlet/services/heartbeat.dart';
 import 'package:pawlet/services/heartbeat_reporter.dart';
-import 'package:pawlet/services/llm/llm_mode.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/db_test_helpers.dart';
@@ -30,13 +29,12 @@ void main() {
     if (db.isOpen) await db.close();
   });
 
-  Heartbeat heartbeat({int? version = 28}) => Heartbeat(
+  Heartbeat heartbeat({int? version = 28, String? group = 'on'}) => Heartbeat(
     repository: repo,
     reporter: HeartbeatReporter(
       apiBase: 'https://api.test',
       repository: repo,
       installId: () async => 'ab' * 32,
-      isAllowed: () async => true,
       clock: () => now,
       client: MockClient((_) async {
         posts++;
@@ -44,6 +42,7 @@ void main() {
       }),
     ),
     appVersionCode: () async => version,
+    llmGroup: () async => group,
     clock: () => now,
   );
 
@@ -72,7 +71,19 @@ void main() {
     await h.markOpened();
   });
 
-  group('syncHeartbeatMode', () {
+  test('Heartbeat marks with the current group', () async {
+    await heartbeat(group: 'off').markOpened();
+    final row = (await db.query('heartbeat_days')).single;
+    expect(row['llm_group'], 'off');
+  });
+
+  test('null llmGroup skips the mark', () async {
+    await heartbeat(group: null).markOpened();
+    expect(await db.query('heartbeat_days'), isEmpty);
+    expect(posts, 0);
+  });
+
+  group('syncHeartbeat', () {
     late int scheduled;
     late int cancelled;
 
@@ -81,47 +92,36 @@ void main() {
       cancelled = 0;
     });
 
-    Future<void> sync(LlmMode mode, {bool apiBase = true}) => syncHeartbeatMode(
-      mode: mode,
+    Future<void> sync({bool apiBase = true}) => syncHeartbeat(
       repository: repo,
       apiBaseConfigured: apiBase,
       schedule: () async => scheduled++,
       cancel: () async => cancelled++,
     );
 
-    test('proxy and BYOK schedule the daily task', () async {
-      await sync(LlmMode.proxy);
-      await sync(LlmMode.byok);
-      expect([scheduled, cancelled], [2, 0]);
+    test('schedules whenever the server is configured', () async {
+      await sync();
+      expect([scheduled, cancelled], [1, 0]);
     });
 
-    test('no-LLM cancels the task and deletes the log', () async {
-      await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
-      await sync(LlmMode.none);
-      expect([scheduled, cancelled], [0, 1]);
-      expect(await db.query('heartbeat_days'), isEmpty);
-    });
-
-    test('a build without a server never schedules', () async {
-      await sync(LlmMode.byok, apiBase: false);
+    test('a build without a server cancels', () async {
+      await sync(apiBase: false);
       expect([scheduled, cancelled], [0, 1]);
     });
 
-    test('cancel throws but log still emptied', () async {
-      await repo.mark(opened: true, nowMs: now, appVersionCode: 28);
-      await syncHeartbeatMode(
-        mode: LlmMode.none,
-        repository: repo,
-        apiBaseConfigured: true,
-        schedule: () async {},
-        cancel: () async => throw Exception('cancel failed'),
+    test('never deletes the log', () async {
+      await repo.mark(
+        opened: true,
+        nowMs: now,
+        appVersionCode: 28,
+        llmGroup: 'on',
       );
-      expect(await db.query('heartbeat_days'), isEmpty);
+      await sync(apiBase: false);
+      expect(await db.query('heartbeat_days'), hasLength(1));
     });
 
     test('never throws', () async {
-      await syncHeartbeatMode(
-        mode: LlmMode.proxy,
+      await syncHeartbeat(
         repository: repo,
         apiBaseConfigured: true,
         schedule: () async => throw Exception('no plugin'),
