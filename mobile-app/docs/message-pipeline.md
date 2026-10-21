@@ -41,6 +41,8 @@ Three sources feed the same entry point (`AppServices.handleIncomingRaw`):
   `backgroundSmsHandler`. A new isolate can't share the UI isolate's objects, so it
   builds its own service bundle from scratch (`AppServices.bootstrap` — own database
   handle, own HTTP client, own plugin registration) and disposes it when done.
+  This only happens if Android delivers the broadcast; when the OS has stopped the app
+  it doesn't, and the message is missed (§10).
 - **Debug injector:** `adb` broadcasts a fake message that arrives over the
   `pawlet/debug` method channel (debug builds only). See the app README.
 
@@ -461,6 +463,60 @@ Keeping financial (`success`) rows forever also removes a class of bug: transact
 list while still counting in totals. Failures are kept so the user can always see *why* a
 message didn't process.
 
+## 10. Missed messages and the battery prompt
+
+Capture (§1) depends on Android delivering `SMS_RECEIVED` to Pawlet. A battery manager
+that stops the app — aggressive OEM battery savers do, and so does a force stop — means
+the broadcast never arrives. The SMS still lands in the phone's inbox, but Pawlet never
+stores it, and nothing re-reads the inbox afterwards (apart from the one-off import in
+[Backup & Restore](backup-restore.md)).
+
+**Detecting a miss.** On launch and resume, at most once per scan gap,
+`MissedSmsDetector` (`lib/services/missed_sms_detector.dart`) compares the inbox with
+`sms_records`:
+
+- It reads only inbox messages received after a watermark (where the last scan stopped)
+  and older than a short grace period, so a message the receiver is still saving isn't
+  counted. The watermark starts when the SMS listener first starts, so messages from
+  before install or before SMS permission never count. The look-back is capped below the
+  ignored-row retention (§9).
+- Only messages that pass the Layer-1 gate (§3) against the user's banks are checked —
+  the ones whose loss matters.
+- Each is matched against stored rows from the same sender within `kSmsDedupWindow` of
+  the inbox's `DATE_SENT` — the carrier's stamp, and so the same clock the live receiver
+  stores. `DATE` (device receipt time) can be hours later for a message the carrier held
+  while the phone was off. Rows with no `DATE_SENT` are skipped. Bodies are compared
+  ignoring whitespace: the receiver trims each multipart segment after the first, while
+  the inbox keeps them as sent.
+- A bank SMS with no stored match is a miss. Misses are kept for the miss window in
+  `lib/data/delivery_health_store.dart` (SharedPreferences, outside Backup & Restore).
+
+A scan that fails records nothing and keeps the watermark, so the next one re-checks the
+same range. While SMS permission is off the watermark still moves forward, so messages
+received during that time don't count once it comes back. A restore from Backup &
+Restore restarts detection from that moment, since it replaces `sms_records`.
+
+**When the prompt shows** (`lib/services/battery_prompt_policy.dart`):
+
+- Battery usage set to *Restricted* (read over the `pawlet/power` channel in
+  `MainActivity`): the sheet offers **Open settings**, because the exemption dialog
+  doesn't lift Restricted.
+- Otherwise, battery optimization still on and at least the threshold number of misses
+  inside the miss window: it offers **Turn off optimization**, the same system dialog as
+  Settings → Background delivery.
+- Otherwise nothing. The prompt stops by itself once the exemption is granted,
+  Restricted is lifted, or the misses age out.
+
+There is no "don't show again". Showing the sheet snoozes it; it comes back after the
+snooze for as long as the evidence holds.
+
+**Fitting in with the other sheets** (`lib/app.dart`, `lib/ui/battery_prompt_flow.dart`):
+at most one sheet goes up per launch or resume, and the battery sheet is last. On launch
+it is skipped if the SMS disclosure, the inbox import offer, or an update offer (see
+[App updates](app-updates.md)) showed; on resume, if the update check showed anything.
+Like the update offer it waits until the app is unlocked, no inbox import is running,
+and nothing else is on top. A skipped turn doesn't count, so the next resume tries again.
+
 ## Tuning constants
 
 Values are defined in code; this table is a snapshot — check the source if precision
@@ -480,6 +536,12 @@ matters, since numbers can drift. Card-digit and relationship-matcher constants 
 | LLM single-attempt HTTP timeout | 2 min | `openrouter_provider.dart` |
 | Ignored retention | 7 days | `sms_repository.dart` |
 | Prune throttle gap | 24h | `sms_repository.dart` |
+| Missed-message scan gap | 8h | `missed_sms_detector.dart` |
+| Grace before a message can count as missed | 2 min | `missed_sms_detector.dart` |
+| Missed-message look-back cap | 6 days | `missed_sms_detector.dart` |
+| Miss window | 7 days | `battery_prompt_policy.dart` |
+| Misses needed to prompt | 2 | `battery_prompt_policy.dart` |
+| Battery prompt snooze | 3 days | `battery_prompt_policy.dart` |
 
 The stale window (3 min) is deliberately kept **above** the HTTP timeout (2 min) so a
 genuinely slow in-flight call is never reclaimed as orphaned mid-flight — which would risk
