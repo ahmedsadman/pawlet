@@ -2001,6 +2001,7 @@ void main() {
       LlmProvider? llm,
       required LocalClassifier local,
       bool online = true,
+      Future<bool> Function()? isOnline,
       Future<bool> Function()? isProxy,
       Future<bool> Function()? llmAllowed,
     }) => ProcessingService(
@@ -2008,7 +2009,7 @@ void main() {
       banksRepository: banks,
       classifier: Classifier(llm, local: local),
       financeWriter: FinanceWriter(db, nowMs: () => now),
-      isOnline: () async => online,
+      isOnline: isOnline ?? () async => online,
       currency: () => 'BDT',
       clock: () => now,
       modelStats: stats,
@@ -2069,6 +2070,62 @@ void main() {
       expect(llm.calls, 0);
       await expectLocalOnlyFailure(id);
       expect(await db.query('transactions'), isEmpty);
+      await db.close();
+    });
+
+    test('a refusal frees the LLM slot for the next row', () async {
+      // The check runs once the row holds the single global slot, so the
+      // terminal write must take it back out of `sending`. The second row can
+      // only reach the check by acquiring the slot itself.
+      final llm = _FakeLlm(result: _expense());
+      var checks = 0;
+      final first = await queue('CHK', content: content);
+      final second = await queue('CHK', content: '$content again');
+      await optOutService(
+        llm: llm,
+        local: _FnLocal((_) => _localUnsure),
+        llmAllowed: () async {
+          checks++;
+          return false;
+        },
+      ).process();
+
+      expect(checks, 2);
+      expect(llm.calls, 0);
+      await expectLocalOnlyFailure(first);
+      await expectLocalOnlyFailure(second);
+      expect(
+        await db.query(
+          'sms_records',
+          where: 'status = ?',
+          whereArgs: [SmsStatus.sending.name],
+        ),
+        isEmpty,
+      );
+      await db.close();
+    });
+
+    test('a switch flipped during the layer-3 checks is honoured', () async {
+      // Turned off while the connectivity re-check is in flight, after the
+      // model declined: nothing is left to await between the check and the
+      // call, so the message must not go out.
+      final llm = _FakeLlm(result: _expense());
+      var enabled = true;
+      var onlineChecks = 0;
+      final id = await queue('CHK', content: content);
+      await optOutService(
+        llm: llm,
+        local: _FnLocal((_) => _localUnsure),
+        isOnline: () async {
+          // The first read is the pass-level one; the second is layer 3's.
+          if (++onlineChecks == 2) enabled = false;
+          return true;
+        },
+        llmAllowed: () async => enabled,
+      ).process();
+
+      expect(llm.calls, 0);
+      await expectLocalOnlyFailure(id);
       await db.close();
     });
 
