@@ -48,6 +48,7 @@ export interface OverviewResponse {
     activeInstalls: number;
     newInstalls: number;
   }[];
+  llmGroups: KeyCount[];
   server: ServerInfo;
   collectingSince: CollectingSince;
 }
