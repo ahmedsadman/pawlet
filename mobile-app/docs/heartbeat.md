@@ -6,7 +6,7 @@ proxy sessions, including bring-your-own-key installs that never attest.
 
 | Piece                                                        | Role                                                             |
 | ------------------------------------------------------------ | ---------------------------------------------------------------- |
-| `lib/services/heartbeat.dart`                                | `Heartbeat` facade, `syncHeartbeatMode`, the daily task's body   |
+| `lib/services/heartbeat.dart`                                | `Heartbeat` facade, `syncHeartbeat`, the daily task's body       |
 | `lib/data/heartbeat_repository.dart`                         | The `heartbeat_days` log and the upload's `app_meta` bookkeeping |
 | `lib/services/heartbeat_reporter.dart`                       | Uploads the log                                                  |
 | `lib/services/upload_backoff.dart`, `lib/data/app_meta.dart` | Retry pacing and schedule stamps shared with model stats         |
@@ -15,7 +15,7 @@ proxy sessions, including bring-your-own-key installs that never attest.
 ## What is recorded
 
 One `heartbeat_days` row per UTC day (schema version 11, `lib/data/database.dart`): the day, the build's version code,
-`opened` and `alive`, the LLM group (`llm`: `on`/`off`/`byok`/`none`, latest value of the day wins), plus the `updated_at` and `reported_at` timestamps the reporter uses. Nothing else: no message,
+`opened` and `alive`, the LLM group (column `llm_group`, sent on the wire as `llm`: `on`/`off`/`byok`/`none`, latest value of the day wins), plus the `updated_at` and `reported_at` timestamps the reporter uses. Nothing else: no message,
 category, amount or setting.
 
 - **Opened** is marked when the app comes to the screen: at launch and on every resume (`lib/app.dart`).
@@ -47,17 +47,15 @@ look uninstalled.
 
 ## Mode gating
 
-Heartbeats are sent in **proxy**, **opted-out** and **bring-your-own-key** modes, in builds that set `PAWLET_API_BASE`
+Heartbeats are sent in **every mode** (proxy, opted-out, bring-your-own-key, none), in builds that set `PAWLET_API_BASE`
 (`BuildConfig.apiBaseConfigured`); that includes debug builds run with `dart_define.json`, which point at the live
-server. They are never sent in **`none`** mode, which keeps its "message text never leaves the phone"
-promise ([LLM modes](llm-modes.md)).
+server. Builds without a server send nothing ([LLM modes](llm-modes.md)).
 
-- `AppServices` (`lib/services/app_services.dart`) builds the `Heartbeat` in proxy, opted-out and bring-your-own-key modes; in `none` mode there is no `Heartbeat`, and nothing is marked.
+- `AppServices` (`lib/services/app_services.dart`) builds the `Heartbeat` in every mode when the build has a server; otherwise there is no `Heartbeat`, and nothing is marked.
 - Before every send the reporter re-checks the mode from freshly reloaded settings, since it can change in another
   isolate while the services live on.
-- `syncHeartbeatMode` runs whenever the UI isolate resolves the mode (`appServicesProvider` in
-  `lib/state/providers.dart`). In proxy, opted-out or bring-your-own-key mode it schedules the daily task. In `none` mode it first
-  **deletes the whole local log**, then cancels the task, so moving to `none` drops anything not yet sent.
+- `syncHeartbeat` runs whenever the UI isolate resolves the mode (`appServicesProvider` in
+  `lib/state/providers.dart`). When the build has a server it schedules the daily task; otherwise it cancels the task.
 
 ## Uploading
 
@@ -74,7 +72,6 @@ Every mark asks the reporter to flush. A flush goes out only when all of these h
    install time, or one in the future (the clock moved back), holds nothing off.
 5. The last acknowledged flush, from any isolate, was at least the minimum gap ago, unless the newest row is from a
    build the server has not been told about yet.
-6. The install is still in proxy or bring-your-own-key mode.
 
 The request is unauthenticated: it carries the install ID, which the server hashes before storing, exactly as
 `/v1/session` does. So it works from background isolates and in bring-your-own-key mode, neither of which can mint a
