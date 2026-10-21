@@ -26,6 +26,15 @@ class DeliveryHealthStore {
     await setWatermark(nowMs);
   }
 
+  /// Moves the watermark forward to [nowMs] if one exists and is behind it.
+  /// Messages received while capture couldn't run (no SMS permission) must not
+  /// read as missed once it can.
+  Future<void> advanceWatermark(int nowMs) async {
+    final current = watermark;
+    if (current == null || current >= nowMs) return;
+    await setWatermark(nowMs);
+  }
+
   /// When the last inbox scan ran (epoch ms).
   int? get lastScanAt => _prefs.getInt(_kLastScanAt);
   Future<void> setLastScanAt(int ms) => _prefs.setInt(_kLastScanAt, ms);

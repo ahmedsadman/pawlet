@@ -134,8 +134,7 @@ class MissedSmsDetector {
       // When permission is revoked, move the watermark forward so messages
       // received during the gap don't later count as misses.
       if (!await _hasSms()) {
-        final gracedNow = now - receiverGrace.inMilliseconds;
-        if (gracedNow > watermark) await _store.setWatermark(gracedNow);
+        await _store.advanceWatermark(now - receiverGrace.inMilliseconds);
         return;
       }
 

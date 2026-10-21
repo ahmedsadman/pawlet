@@ -161,9 +161,15 @@ class _RootShellState extends ConsumerState<RootShell>
     var granted = await AppPermissions.hasSms();
     // Deferred until unlocked so the disclosure isn't buried under the PIN
     // screen. A user who never unlocks isn't asked this launch.
-    if (!granted && await _awaitUnlocked() && mounted) {
-      prompted = true;
-      granted = await ensureSmsAccess(context);
+    if (!granted) {
+      // Messages received while capture couldn't run must not count as misses.
+      await ref
+          .read(deliveryHealthStoreProvider)
+          .advanceWatermark(DateTime.now().millisecondsSinceEpoch);
+      if (await _awaitUnlocked() && mounted) {
+        prompted = true;
+        granted = await ensureSmsAccess(context);
+      }
     }
     // Gated deliberately: starting the listener invokes the plugin's
     // startBackgroundService, which raises the system SMS prompt by itself
