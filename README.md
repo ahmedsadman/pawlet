@@ -8,6 +8,10 @@ models) through Pawlet's server.
 
 > **Note:** Pawlet currently targets **Bangladeshi banks only**, with plans to expand to more regions in the future.
 
+## Download
+
+<a href="https://play.google.com/store/apps/details?id=com.pastabyte.pawlet"><img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="80"></a>
+
 ## Documentation
 
 - [`mobile-app/docs/`](mobile-app/docs/README.md) — technical write-ups on how the app
