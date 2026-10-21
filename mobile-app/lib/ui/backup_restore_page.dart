@@ -1,20 +1,26 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../services/backup_service.dart';
 import '../state/finance_providers.dart';
 import '../state/messages_providers.dart';
 import '../state/providers.dart';
 
-/// Export all local data to a JSON file (shared via the Android share sheet) or
-/// restore it from a picked file (replace-all, after a confirmation). PIN and
+/// Export all local data to a JSON file (saved wherever the user picks in the
+/// system save dialog) or restore it from a picked file (replace-all, after a confirmation). PIN and
 /// API key are never included.
+/// Default name offered in the save dialog, e.g.
+/// `pawlet-backup-2026-10-21-1430.json` (local time).
+@visibleForTesting
+String backupFileName(DateTime now) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  return 'pawlet-backup-${now.year}-${two(now.month)}-${two(now.day)}-'
+      '${two(now.hour)}${two(now.minute)}.json';
+}
+
 class BackupRestorePage extends ConsumerStatefulWidget {
   const BackupRestorePage({super.key});
 
@@ -36,22 +42,15 @@ class _BackupRestorePageState extends ConsumerState<BackupRestorePage> {
     setState(() => _busy = true);
     try {
       final json = await ref.read(backupServiceProvider).exportJson();
-      final dir = await getTemporaryDirectory();
-      final stamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File('${dir.path}/pawlet-backup-$stamp.json');
-      await file.writeAsString(json);
-      try {
-        await SharePlus.instance.share(
-          ShareParams(
-            subject: 'Pawlet backup',
-            files: [XFile(file.path, mimeType: 'application/json')],
-          ),
-        );
-      } finally {
-        // The share completes (or is dismissed) before this returns, so the
-        // temp file — which holds user data — is safe to remove afterward.
-        if (await file.exists()) await file.delete();
-      }
+      // The system save dialog writes the bytes itself, so no temp copy of the
+      // user's data is left behind.
+      final saved = await FilePicker.saveFile(
+        dialogTitle: 'Save Pawlet backup',
+        fileName: backupFileName(DateTime.now()),
+        bytes: utf8.encode(json),
+        mimeType: 'application/json',
+      );
+      if (saved != null) _toast('Backup saved');
     } catch (e) {
       _toast('Backup failed: $e');
     } finally {
@@ -146,8 +145,8 @@ class _BackupRestorePageState extends ConsumerState<BackupRestorePage> {
           const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: _busy ? null : _backup,
-            icon: const Icon(Icons.upload_file),
-            label: const Text('Back up to file'),
+            icon: const Icon(Icons.save_alt),
+            label: const Text('Save backup to device'),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
