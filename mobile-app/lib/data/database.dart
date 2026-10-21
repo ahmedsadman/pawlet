@@ -34,7 +34,7 @@ class AppDatabase {
 
   /// Schema version. Every bump needs a matching [onUpgrade] branch and a
   /// parity test — see the guard in `test/database_test.dart`.
-  static const int version = 10;
+  static const int version = 11;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), fileName);
@@ -197,7 +197,9 @@ class AppDatabase {
   /// The heartbeat log. Shared by [createSchema] and the v8 upgrade so the two
   /// cannot drift. `day` is the UTC `YYYY-MM-DD`; `updated_at` is bumped when
   /// a mark changes the row and `reported_at` holds the flush start time of
-  /// the last send the server acknowledged, as for [modelStatsTable].
+  /// the last send the server acknowledged, as for [modelStatsTable]. The v11
+  /// upgrade adds `llm_group` for installs upgrading from v8-v10; fresh
+  /// installs create the column directly.
   static Future<void> _createHeartbeatTable(Database db) async {
     await db.execute('''
       CREATE TABLE $heartbeatTable (
@@ -206,7 +208,8 @@ class AppDatabase {
         opened INTEGER NOT NULL DEFAULT 0,
         alive INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL,
-        reported_at INTEGER
+        reported_at INTEGER,
+        llm_group TEXT
       )
     ''');
   }
@@ -302,6 +305,13 @@ class AppDatabase {
         'ALTER TABLE $billsTable '
         'ADD COLUMN status_overridden INTEGER NOT NULL DEFAULT 0',
       );
+    }
+
+    if (oldVersion >= 8 && oldVersion < 11) {
+      // Additive; existing heartbeat_days rows get no group (null).
+      // Devices upgrading from < 8 create the table fresh in the v8 step
+      // (already with the llm_group column), so the ALTER must not run twice.
+      await db.execute('ALTER TABLE $heartbeatTable ADD COLUMN llm_group TEXT');
     }
   }
 }

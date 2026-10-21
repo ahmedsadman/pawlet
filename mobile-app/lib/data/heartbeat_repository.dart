@@ -21,31 +21,38 @@ class HeartbeatRow {
     required this.appVersionCode,
     required this.opened,
     required this.alive,
+    this.llm,
   });
 
   final String day;
   final int appVersionCode;
   final bool opened;
   final bool alive;
+  final String? llm;
 
   factory HeartbeatRow.fromDbMap(Map<String, Object?> m) => HeartbeatRow(
     day: m['day'] as String,
     appVersionCode: m['app_version_code'] as int,
     opened: m['opened'] == 1,
     alive: m['alive'] == 1,
+    llm: m['llm_group'] as String?,
   );
 
-  Map<String, Object> toJson() => {
-    'day': day,
-    'appVersionCode': appVersionCode,
-    'opened': opened,
-    'alive': alive,
-  };
+  Map<String, Object> toJson() {
+    final json = {
+      'day': day,
+      'appVersionCode': appVersionCode,
+      'opened': opened,
+      'alive': alive,
+    };
+    if (llm != null) json['llm'] = llm!;
+    return json;
+  }
 }
 
 /// The heartbeat log: per UTC day, whether the app ran and whether it was
-/// opened, under the build running, plus the reporter's bookkeeping. Kept for
-/// the same window as the local-model stats.
+/// opened, under the build running, and the install's LLM group, plus the
+/// reporter's bookkeeping. Kept for the same window as the local-model stats.
 class HeartbeatRepository {
   HeartbeatRepository(this._db)
     : schedule = UploadSchedule(
@@ -65,6 +72,7 @@ class HeartbeatRepository {
   /// on and the version is the running build's. `updated_at` moves only when
   /// the row actually changed, so a repeat mark (every resume) leaves nothing
   /// to report. Days outside the window are dropped in the same transaction.
+  /// The LLM group is stored and a change bumps `updated_at`.
   ///
   /// Plain insert/update rather than upsert: ON CONFLICT DO UPDATE needs
   /// SQLite 3.24 (Android 11 / API 30+), but minSdk is 24 (Android 7).
@@ -72,11 +80,12 @@ class HeartbeatRepository {
     required bool opened,
     required int nowMs,
     required int appVersionCode,
+    required String? llmGroup,
   }) => _db.transaction((txn) async {
     final day = utcDay(nowMs);
     final existing = await txn.query(
       _table,
-      columns: ['app_version_code', 'opened', 'alive'],
+      columns: ['app_version_code', 'opened', 'alive', 'llm_group'],
       where: 'day = ?',
       whereArgs: [day],
       limit: 1,
@@ -88,6 +97,7 @@ class HeartbeatRepository {
         'app_version_code': appVersionCode,
         'opened': opened ? 1 : 0,
         'alive': 1,
+        'llm_group': llmGroup,
         'updated_at': nowMs,
       });
     } else {
@@ -96,15 +106,20 @@ class HeartbeatRepository {
       final newOpened = oldOpened || opened;
       final oldAlive = old['alive'] == 1;
       final oldVersion = old['app_version_code'] as int;
+      final oldGroup = old['llm_group'] as String?;
 
       // Update only when changed.
-      if (oldVersion != appVersionCode || oldOpened != newOpened || !oldAlive) {
+      if (oldVersion != appVersionCode ||
+          oldOpened != newOpened ||
+          !oldAlive ||
+          oldGroup != llmGroup) {
         await txn.update(
           _table,
           {
             'app_version_code': appVersionCode,
             'opened': newOpened ? 1 : 0,
             'alive': 1,
+            'llm_group': llmGroup,
             'updated_at': nowMs,
           },
           where: 'day = ?',
@@ -143,11 +158,19 @@ class HeartbeatRepository {
   Future<void> markReported(List<HeartbeatRow> rows, int reportedAt) async {
     final batch = _db.batch();
     for (final r in rows) {
+      final where = r.llm == null
+          ? 'day = ? AND app_version_code = ? AND opened = ? AND alive = ? '
+                'AND llm_group IS NULL'
+          : 'day = ? AND app_version_code = ? AND opened = ? AND alive = ? '
+                'AND llm_group = ?';
+      final whereArgs = r.llm == null
+          ? [r.day, r.appVersionCode, r.opened ? 1 : 0, r.alive ? 1 : 0]
+          : [r.day, r.appVersionCode, r.opened ? 1 : 0, r.alive ? 1 : 0, r.llm];
       batch.update(
         _table,
         {'reported_at': reportedAt},
-        where: 'day = ? AND app_version_code = ? AND opened = ? AND alive = ?',
-        whereArgs: [r.day, r.appVersionCode, r.opened ? 1 : 0, r.alive ? 1 : 0],
+        where: where,
+        whereArgs: whereArgs,
       );
     }
     await batch.commit(noResult: true);
@@ -156,12 +179,6 @@ class HeartbeatRepository {
   /// Deletes rows for days before [minDay], reported or not.
   Future<void> pruneBefore(String minDay) async {
     await _db.rawDelete('DELETE FROM $_table WHERE day < ?', [minDay]);
-  }
-
-  /// Deletes the whole log: the install moved to no-LLM, where nothing may
-  /// leave the phone.
-  Future<void> deleteAll() async {
-    await _db.delete(_table);
   }
 
   /// The versionCode of the newest day last acknowledged, or null.

@@ -26,7 +26,6 @@ void main() {
   late List<http.Request> requests;
   late List<Object> script; // http.Response or an Exception to throw
   late int now;
-  late bool allowed;
   late bool idFails;
   late int? installedAt;
 
@@ -36,7 +35,6 @@ void main() {
     requests = [];
     script = [];
     now = start;
-    allowed = true;
     idFails = false;
     // Long enough ago that the first-upload delay is over.
     installedAt = start - 7 * Duration.millisecondsPerDay;
@@ -53,7 +51,6 @@ void main() {
       if (idFails) throw Exception('keystore');
       return installId;
     },
-    isAllowed: () async => allowed,
     installedAt: () async => installedAt,
     clock: () => now,
     client: MockClient((req) async {
@@ -64,8 +61,13 @@ void main() {
     }),
   );
 
-  Future<void> mark({bool opened = true, int version = 28}) =>
-      repo.mark(opened: opened, nowMs: now, appVersionCode: version);
+  Future<void> mark({bool opened = true, int version = 28, String? llmGroup}) =>
+      repo.mark(
+        opened: opened,
+        nowMs: now,
+        appVersionCode: version,
+        llmGroup: llmGroup ?? 'on',
+      );
 
   test('sends unreported days with the install ID and marks them', () async {
     await mark();
@@ -82,6 +84,7 @@ void main() {
           'appVersionCode': 28,
           'opened': true,
           'alive': true,
+          'llm': 'on',
         },
       ],
     });
@@ -116,6 +119,7 @@ void main() {
           'appVersionCode': 28,
           'opened': true,
           'alive': true,
+          'llm': 'on',
         },
       ]);
     });
@@ -142,7 +146,6 @@ void main() {
         apiBase: 'https://api.test',
         repository: repo,
         installId: () async => installId,
-        isAllowed: () async => true,
         installedAt: () async => throw Exception('plugin'),
         clock: () => now,
         client: MockClient((req) async {
@@ -182,21 +185,6 @@ void main() {
     await reporter().maybeFlush();
     expect(requests, hasLength(2));
     expect(await repo.reportedVersion(), 28);
-  });
-
-  test('not allowed (no-LLM) sends nothing and keeps rows', () async {
-    allowed = false;
-    await mark();
-    await reporter().maybeFlush();
-    expect(requests, isEmpty);
-    expect(
-      await repo.unreported(
-        minDay: '2026-09-14',
-        maxDay: '9999-12-31',
-        limit: 31,
-      ),
-      hasLength(1),
-    );
   });
 
   test('an unreadable install ID skips without backing off', () async {
@@ -292,7 +280,12 @@ void main() {
     const day = Duration.millisecondsPerDay;
     await mark();
     // A row 3 days ahead: invalid.
-    await repo.mark(opened: true, nowMs: now + 3 * day, appVersionCode: 29);
+    await repo.mark(
+      opened: true,
+      nowMs: now + 3 * day,
+      appVersionCode: 29,
+      llmGroup: 'on',
+    );
     await reporter().maybeFlush();
     expect(requests, hasLength(1));
     expect(jsonDecode(requests.single.body)['days'], [
@@ -301,6 +294,7 @@ void main() {
         'appVersionCode': 28,
         'opened': true,
         'alive': true,
+        'llm': 'on',
       },
     ]);
   });
@@ -324,5 +318,28 @@ void main() {
   test('never throws', () async {
     await db.close();
     await reporter().maybeFlush();
+  });
+
+  test('sends llm per day', () async {
+    await mark(llmGroup: 'off');
+    await reporter().maybeFlush();
+
+    expect(requests, hasLength(1));
+    final body = jsonDecode(requests.single.body) as Map;
+    expect(body['days'][0]['llm'], 'off');
+  });
+
+  test('omits llm when null', () async {
+    await repo.mark(
+      opened: true,
+      nowMs: now,
+      appVersionCode: 28,
+      llmGroup: null,
+    );
+    await reporter().maybeFlush();
+
+    expect(requests, hasLength(1));
+    final body = jsonDecode(requests.single.body) as Map;
+    expect(body['days'][0].containsKey('llm'), isFalse);
   });
 }

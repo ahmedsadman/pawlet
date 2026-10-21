@@ -12,10 +12,10 @@ import 'app_services.dart';
 import 'app_version.dart';
 import 'background_worker.dart';
 import 'heartbeat_reporter.dart';
-import 'llm/llm_mode.dart';
 
-/// Records that the app ran today, and whether it was opened, then lets the
-/// reporter upload. Built in every mode but no-LLM (see `AppServices`).
+/// Records that the app ran today, and whether it was opened, with the
+/// install's LLM group, then lets the reporter upload. Built in every mode
+/// but no-LLM (see `AppServices`).
 ///
 /// Marks happen on launch and resume (opened), at the end of every
 /// processing pass in any isolate, and from the daily WorkManager task
@@ -24,15 +24,18 @@ class Heartbeat {
   Heartbeat({
     required HeartbeatRepository repository,
     required HeartbeatReporter reporter,
+    required Future<String?> Function() llmGroup,
     Future<int?> Function() appVersionCode = readAppVersionCode,
     int Function()? clock,
   }) : _repository = repository,
        _reporter = reporter,
+       _llmGroup = llmGroup,
        _appVersionCode = appVersionCode,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final HeartbeatRepository _repository;
   final HeartbeatReporter _reporter;
+  final Future<String?> Function() _llmGroup;
   final Future<int?> Function() _appVersionCode;
   final int Function() _clock;
 
@@ -47,10 +50,14 @@ class Heartbeat {
       final version = await _appVersionCode();
       // Filing a day under a wrong version would be worse than missing it.
       if (version == null) return;
+      final group = await _llmGroup();
+      // No group means the mode is unresolved (null); skip the mark.
+      if (group == null) return;
       await _repository.mark(
         opened: opened,
         nowMs: _clock(),
         appVersionCode: version,
+        llmGroup: group,
       );
     } catch (e) {
       if (kDebugMode) debugPrint('heartbeat: mark failed: $e');
@@ -63,15 +70,14 @@ class Heartbeat {
   void close() => _reporter.close();
 }
 
-/// Keeps the daily heartbeat task and the local log in step with [mode]:
-/// scheduled in every mode but no-LLM; otherwise (no-LLM, or a build with no
-/// server) cancelled and the unsent log deleted, so nothing leaves the phone.
+/// Keeps the daily heartbeat task in step with the build: scheduled whenever
+/// the build has a server, cancelled otherwise. Never deletes the log (every
+/// mode, including no-LLM, marks days once a server is configured again).
 /// Run by the UI isolate whenever the mode resolves. Never throws.
 ///
 /// [apiBaseConfigured] defaults to [BuildConfig.apiBaseConfigured]; tests
 /// pass it explicitly.
-Future<void> syncHeartbeatMode({
-  required LlmMode mode,
+Future<void> syncHeartbeat({
   required HeartbeatRepository repository,
   bool? apiBaseConfigured,
   Future<void> Function() schedule = BackgroundWorker.scheduleHeartbeat,
@@ -79,24 +85,13 @@ Future<void> syncHeartbeatMode({
 }) async {
   final configured = apiBaseConfigured ?? BuildConfig.apiBaseConfigured;
   try {
-    if (mode != LlmMode.none && configured) {
+    if (configured) {
       await schedule();
     } else {
-      // Delete the log first (privacy-relevant), then cancel. Each in its own
-      // try so one failing doesn't skip the other.
-      try {
-        await repository.deleteAll();
-      } catch (e) {
-        if (kDebugMode) debugPrint('heartbeat: delete failed: $e');
-      }
-      try {
-        await cancel();
-      } catch (e) {
-        if (kDebugMode) debugPrint('heartbeat: cancel failed: $e');
-      }
+      await cancel();
     }
   } catch (e) {
-    if (kDebugMode) debugPrint('heartbeat: mode sync failed: $e');
+    if (kDebugMode) debugPrint('heartbeat: sync failed: $e');
   }
 }
 
