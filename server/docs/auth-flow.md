@@ -158,8 +158,8 @@ After 24 hours, or whenever the server answers 401, the app starts again from st
 ## Outside this flow: heartbeats
 
 `POST /v1/heartbeat` (`internal/httpapi/heartbeat.go`) needs no session. The app reports which
-days it was opened or ran, from proxy and bring-your-own-key installs alike, so install analytics
-do not depend on attestation. It carries the install ID, which the server hashes exactly as
+days it was opened or ran, from installs in every LLM mode (proxy, opted out, bring-your-own-key
+and no-LLM) alike, so install analytics do not depend on attestation. It carries the install ID, which the server hashes exactly as
 `/v1/session` does; an install first seen there is stored unattested. Because it needs no login,
 it is rate-limited per client IP per clock hour (`HEARTBEAT_PER_IP_HOUR`), with IPv6 addresses
 sharing one bucket per /64. It never grants access to anything. What it stores and how it
