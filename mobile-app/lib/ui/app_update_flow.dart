@@ -30,7 +30,10 @@ class _FlowGuard {
 /// ask), and again right before anything goes up, since the app can re-lock
 /// while Play answers. An automatic check blocked at that point gives its
 /// hourly slot back, so the next resume asks again.
-Future<void> runAppUpdateCheck(
+///
+/// Resolves true when it put something on screen (the offer sheet or the
+/// restart bar), so the caller can keep other prompts out of the way.
+Future<bool> runAppUpdateCheck(
   BuildContext context,
   WidgetRef ref, {
   bool manual = false,
@@ -43,22 +46,23 @@ Future<void> runAppUpdateCheck(
 
   bool blocked() => canPrompt != null && !canPrompt();
 
-  if (guard.busy) return;
+  if (guard.busy) return false;
 
   // For automatic checks: nothing to do if nothing could be shown; if a
   // download is known, show the restart bar without asking Play; if the last
   // check was recent, skip.
   if (!manual) {
-    if (blocked()) return;
+    if (blocked()) return false;
     if (service.isDownloaded) {
       _showRestartSnackBar(guard, messenger, service);
-      return;
+      return true;
     }
-    if (!service.takeAutomaticCheck()) return;
+    if (!service.takeAutomaticCheck()) return false;
   }
 
   guard.busy = true;
   bool? updateAccepted;
+  var shown = false;
 
   // Skips showing a result the app can't show right now. An automatic check
   // then gives its slot back; a known download is shown on the next check.
@@ -70,11 +74,12 @@ Future<void> runAppUpdateCheck(
 
   try {
     final status = await service.check();
-    if (!context.mounted) return;
+    if (!context.mounted) return false;
     switch (status) {
       case UpdateStatus.downloaded:
-        if (blockedAfterCheck()) return;
+        if (blockedAfterCheck()) return false;
         _showRestartSnackBar(guard, messenger, service);
+        shown = true;
       case UpdateStatus.inProgress:
         if (manual) _toast(messenger, 'The update is downloading');
       case UpdateStatus.upToDate:
@@ -82,8 +87,9 @@ Future<void> runAppUpdateCheck(
       case UpdateStatus.unsupported:
         if (manual) _toast(messenger, "Couldn't check for updates right now");
       case UpdateStatus.available:
-        if (!manual && service.isSnoozed) return;
-        if (blockedAfterCheck()) return;
+        if (!manual && service.isSnoozed) return false;
+        if (blockedAfterCheck()) return false;
+        shown = true;
         updateAccepted = await confirmAppUpdate(context);
     }
   } finally {
@@ -110,6 +116,7 @@ Future<void> runAppUpdateCheck(
   } else if (updateAccepted == false) {
     await service.snooze();
   }
+  return shown;
 }
 
 /// The update offer. Resolves true when the user taps Update; dismissing the
