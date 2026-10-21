@@ -142,3 +142,120 @@ func TestAttemptsTodayCountsRetries(t *testing.T) {
 		t.Fatalf("calls, attempts today = %d, %d; want 4, 7", k.CallsToday, k.AttemptsToday)
 	}
 }
+
+func TestBuildOverviewLLMGroupsLatestDayWins(t *testing.T) {
+	rng := Range{From: "2026-10-03", To: "2026-10-09"}
+	days := []store.DayRow{
+		{IDHash: "a", Day: "2026-10-04", LLM: "on"},
+		{IDHash: "a", Day: "2026-10-06", LLM: "off"},
+	}
+	usage := []store.UsageRow{{IDHash: "a", Day: "2026-10-04", Attempts: 1}}
+
+	ov := BuildOverview(OverviewInput{
+		Range: rng, Today: "2026-10-09", Days: days, Usage: usage,
+		Activity: BuildActivity(usage, days, ModeAny),
+	})
+	groups := ov.LLMGroups
+	if len(groups) != 5 {
+		t.Fatalf("len(LLMGroups) = %d, want 5", len(groups))
+	}
+	byKey := map[string]int64{}
+	for _, g := range groups {
+		byKey[g.Key] = g.Count
+	}
+	if byKey["off"] != 1 || byKey["on"] != 0 {
+		t.Fatalf("LLMGroups = %v, want off=1, on=0", byKey)
+	}
+}
+
+func TestBuildOverviewLLMGroupsClassifyMeansOn(t *testing.T) {
+	rng := Range{From: "2026-10-03", To: "2026-10-09"}
+	usage := []store.UsageRow{{IDHash: "a", Day: "2026-10-05", Attempts: 2}}
+	days := []store.DayRow{{IDHash: "a", Day: "2026-10-05", LLM: ""}}
+
+	ov := BuildOverview(OverviewInput{
+		Range: rng, Today: "2026-10-09", Days: days, Usage: usage,
+		Activity: BuildActivity(usage, days, ModeAny),
+	})
+	byKey := map[string]int64{}
+	for _, g := range ov.LLMGroups {
+		byKey[g.Key] = g.Count
+	}
+	if byKey["on"] != 1 || byKey["unknown"] != 0 {
+		t.Fatalf("LLMGroups = %v, want on=1, unknown=0", byKey)
+	}
+}
+
+func TestBuildOverviewLLMGroupsUnknown(t *testing.T) {
+	rng := Range{From: "2026-10-03", To: "2026-10-09"}
+	days := []store.DayRow{{IDHash: "a", Day: "2026-10-05", LLM: ""}}
+	usage := []store.UsageRow{{IDHash: "a", Day: "2026-10-05", Calls: 0, Attempts: 0}}
+
+	ov := BuildOverview(OverviewInput{
+		Range: rng, Today: "2026-10-09", Days: days, Usage: usage,
+		Activity: BuildActivity(usage, days, ModeAny),
+	})
+	byKey := map[string]int64{}
+	for _, g := range ov.LLMGroups {
+		byKey[g.Key] = g.Count
+	}
+	if byKey["unknown"] != 1 || byKey["on"] != 0 {
+		t.Fatalf("LLMGroups = %v, want unknown=1, on=0", byKey)
+	}
+}
+
+func TestBuildOverviewLLMGroupsIgnoresDaysOutsideRange(t *testing.T) {
+	rng := Range{From: "2026-10-03", To: "2026-10-09"}
+	// Day before range start (but within 29-day activity lead-in).
+	days := []store.DayRow{{IDHash: "a", Day: "2026-10-02", LLM: "byok"}}
+	usage := []store.UsageRow{{IDHash: "a", Day: "2026-10-02", Attempts: 1}}
+
+	ov := BuildOverview(OverviewInput{
+		Range: rng, Today: "2026-10-09", Days: days, Usage: usage,
+		Activity: BuildActivity(usage, days, ModeAny),
+	})
+	var total int64
+	for _, g := range ov.LLMGroups {
+		total += g.Count
+	}
+	if total != 0 {
+		t.Fatalf("sum of LLMGroups = %d, want 0 (activity before range)", total)
+	}
+}
+
+func TestBuildOverviewLLMGroupsSumToActiveInRange(t *testing.T) {
+	rng := Range{From: "2026-10-03", To: "2026-10-09"}
+	days := []store.DayRow{
+		{IDHash: "a", Day: "2026-10-04", LLM: "on"},
+		{IDHash: "b", Day: "2026-10-05", LLM: "off"},
+		{IDHash: "c", Day: "2026-10-06", LLM: ""},
+		{IDHash: "d", Day: "2026-10-07", LLM: ""},
+	}
+	usage := []store.UsageRow{
+		{IDHash: "a", Day: "2026-10-04", Attempts: 1},
+		{IDHash: "b", Day: "2026-10-05", Calls: 1},
+		{IDHash: "c", Day: "2026-10-06", Attempts: 2}, // classify → on
+		{IDHash: "d", Day: "2026-10-07", Calls: 0},    // no classify → unknown
+	}
+
+	activity := BuildActivity(usage, days, ModeAny)
+	ov := BuildOverview(OverviewInput{
+		Range: rng, Today: "2026-10-09", Days: days, Usage: usage,
+		Activity: activity,
+	})
+	var total int64
+	for _, g := range ov.LLMGroups {
+		total += g.Count
+	}
+	// Count distinct installs active in range.
+	seen := make(map[string]struct{})
+	for d := rng.From; d <= rng.To; d = AddDays(d, 1) {
+		for h := range activity[d] {
+			seen[h] = struct{}{}
+		}
+	}
+	activeCount := len(seen)
+	if total != int64(activeCount) || activeCount != 4 {
+		t.Fatalf("sum of LLMGroups = %d, active installs = %d; want both = 4", total, activeCount)
+	}
+}

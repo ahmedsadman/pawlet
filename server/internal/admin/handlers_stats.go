@@ -147,6 +147,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 
 	ov := stats.BuildOverview(stats.OverviewInput{
 		Range: rng, Today: today, Installs: installs, Usage: usage,
+		Days:          days,
 		Activity:      stats.BuildActivity(usage, days, stats.ModeAny),
 		CountersToday: classifyCounts(counters, today),
 		Model:         model,
