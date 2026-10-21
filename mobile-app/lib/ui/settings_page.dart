@@ -14,6 +14,7 @@ import 'bulk_import_flow.dart';
 import 'privacy/sms_access_flow.dart';
 import 'security/change_pin_screen.dart';
 import 'settings/byok_section.dart';
+import 'settings/llm_opt_out_tile.dart';
 
 /// Settings tab: bank management, background-delivery help, security, and
 /// privacy. The privacy copy and the key input both follow the resolved
@@ -93,19 +94,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     // be wrong for two of them.
     return switch (mode) {
       LlmMode.proxy =>
-        'All data stays on your device. Messages the on-device model can\'t '
-            "categorize may be sent to Pawlet's service, which never stores or "
-            'logs them, and are marked "LLM". By design, Pawlet cannot identify '
-            'users.',
+        "Messages the on-device model can't categorize may be sent to "
+            "Pawlet's service, which never stores or logs them, and are marked "
+            '"LLM". By design, Pawlet cannot identify users.',
       LlmMode.byok =>
         'Messages the on-device model cannot categorize are sent to OpenRouter '
             "with your own API key; Pawlet's service never sees them. The app "
             "tells Pawlet's server only which days it was opened or ran and its "
-            'app version.',
+            'app version. By design, Pawlet cannot identify users.',
       LlmMode.optedOut || LlmMode.none =>
         'Your messages never leave your phone. The on-device model is the only '
-            'classifier, and a message it cannot read is marked failed in Messages, '
-            'where you can retry it later.',
+            'classifier, and a message it cannot classify is marked failed in '
+            'Messages, where you can retry it later. By design, Pawlet cannot '
+            'identify users.',
     };
   }
 
@@ -200,6 +201,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const Divider(height: 32),
           Text('Privacy', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
+          if (mode.usesProxySession) ...[
+            const LlmOptOutTile(),
+            const SizedBox(height: 8),
+          ],
           Text(
             _privacyCopy(mode),
             style: theme.textTheme.bodyMedium?.copyWith(
