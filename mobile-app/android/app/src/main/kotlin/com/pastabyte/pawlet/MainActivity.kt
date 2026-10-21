@@ -1,5 +1,6 @@
 package com.pastabyte.pawlet
 
+import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -21,6 +22,7 @@ class MainActivity : FlutterFragmentActivity() {
     private val channelName = "pawlet/security"
     private val installChannelName = "pawlet/install"
     private val integrityChannelName = "pawlet/integrity"
+    private val powerChannelName = "pawlet/power"
 
     // Debug-only: lets `adb` inject a fake SMS into the Dart pipeline.
     private val debugChannelName = "pawlet/debug"
@@ -83,6 +85,14 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, powerChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isBackgroundRestricted" -> result.success(isBackgroundRestricted())
+                    else -> result.notImplemented()
+                }
+            }
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, integrityChannelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -128,6 +138,12 @@ class MainActivity : FlutterFragmentActivity() {
     } catch (_: PackageManager.NameNotFoundException) {
         null
     }
+
+    // The "Restricted" battery setting. API 28 added the query; below it the
+    // setting doesn't exist, so nothing is restricted.
+    private fun isBackgroundRestricted(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+            getSystemService(ActivityManager::class.java).isBackgroundRestricted
 
     private fun requestIntegrityToken(project: Long, hash: String, result: MethodChannel.Result) {
         withIntegrityProvider(project, onError = { reportIntegrityError(it, result) }) { provider ->
