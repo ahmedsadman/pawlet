@@ -4,6 +4,12 @@ import 'package:crypto/crypto.dart';
 
 import 'finance/transaction.dart';
 
+/// The canonical SMS body: CRLF/CR become LF and edge whitespace is trimmed.
+/// Every path that stores or looks up a message uses it, so one SMS yields the
+/// same dedup key however it arrived.
+String normalizeSmsContent(String content) =>
+    content.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
+
 /// Lifecycle status of a captured SMS as it moves through the processing queue.
 enum SmsStatus {
   /// Waiting to be processed (also used while backing off between retries).

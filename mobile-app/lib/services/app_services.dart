@@ -355,10 +355,7 @@ class AppServices {
     // Normalize newlines (CRLF/CR -> LF) and strip edge whitespace so dedup is
     // exact and the stored/displayed text is clean. Transport (JSON/DB) already
     // handles these chars safely; this is about content consistency.
-    final normalizedContent = content
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .trim();
+    final normalizedContent = normalizeSmsContent(content);
     if (trimmedSender.isEmpty || normalizedContent.isEmpty) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
