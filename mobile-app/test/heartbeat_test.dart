@@ -93,7 +93,6 @@ void main() {
     });
 
     Future<void> sync({bool apiBase = true}) => syncHeartbeat(
-      repository: repo,
       apiBaseConfigured: apiBase,
       schedule: () async => scheduled++,
       cancel: () async => cancelled++,
@@ -122,7 +121,6 @@ void main() {
 
     test('never throws', () async {
       await syncHeartbeat(
-        repository: repo,
         apiBaseConfigured: true,
         schedule: () async => throw Exception('no plugin'),
         cancel: () async {},

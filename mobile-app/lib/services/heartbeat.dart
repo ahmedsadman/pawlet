@@ -15,7 +15,7 @@ import 'heartbeat_reporter.dart';
 
 /// Records that the app ran today, and whether it was opened, with the
 /// install's LLM group, then lets the reporter upload. Built in every mode
-/// but no-LLM (see `AppServices`).
+/// (including no-LLM) whenever the build has a server (see `AppServices`).
 ///
 /// Marks happen on launch and resume (opened), at the end of every
 /// processing pass in any isolate, and from the daily WorkManager task
@@ -78,7 +78,6 @@ class Heartbeat {
 /// [apiBaseConfigured] defaults to [BuildConfig.apiBaseConfigured]; tests
 /// pass it explicitly.
 Future<void> syncHeartbeat({
-  required HeartbeatRepository repository,
   bool? apiBaseConfigured,
   Future<void> Function() schedule = BackgroundWorker.scheduleHeartbeat,
   Future<void> Function() cancel = BackgroundWorker.cancelHeartbeat,
