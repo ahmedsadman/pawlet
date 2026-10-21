@@ -10,13 +10,15 @@ Two kinds of install reach the server:
 - **Proxy-mode installs** (Play installs that passed Play Integrity attestation) mint sessions,
   make classify calls and report model stats. Everything about the verdict, calls, tokens and the
   on-device model describes these **attested installs** and the **proxy path** only.
-- **Proxy and bring-your-own-key installs** both send heartbeats (see
-  [Heartbeats](#heartbeats)), so activity days, last seen and app version also cover
-  bring-your-own-key installs, including sideloaded ones. An install first seen through a
-  heartbeat is stored **unattested**.
+- **Installs in every LLM mode** send heartbeats: proxy, opted out (LLM switch off),
+  bring-your-own-key and no-LLM (see [Heartbeats](#heartbeats)). So activity days, last seen and
+  app version also cover installs that never attest, including sideloaded ones. An install first
+  seen through a heartbeat is stored **unattested**.
 
-Installs in no-LLM mode never contact the server, messages the on-device model handles never
-reach it, and a reinstall gets a new install ID — Play Console holds the real install count.
+No-LLM installs on app versions that predate the `llm` heartbeat field never contact the server
+(those versions send heartbeats only in proxy and bring-your-own-key modes). Messages the
+on-device model handles never reach the server, and a reinstall gets a new install ID — Play
+Console holds the real install count.
 
 ## Where it lives
 
@@ -115,8 +117,9 @@ heartbeat day leaves that day's `session` flag at 0 (harmless: the app marks the
 
 `POST /v1/heartbeat` (`internal/httpapi/heartbeat.go`) is how the app reports which days it was
 opened or ran, independently of proxy sessions. It is **unauthenticated** by design: install
-analytics must not depend on sessions, and bring-your-own-key installs never attest. The app only
-sends it in proxy and bring-your-own-key modes, never in no-LLM mode.
+analytics must not depend on sessions, and bring-your-own-key and no-LLM installs never attest.
+The app sends it in every LLM mode; app versions that predate the `llm` field sent it only in
+proxy and bring-your-own-key modes.
 
 The body is the install ID and up to 31 days, each with `day` (UTC `YYYY-MM-DD`),
 `appVersionCode`, the booleans `opened` and `alive`, and the optional string `llm` (which LLM
@@ -322,8 +325,9 @@ Local-model numbers (`internal/stats/localmodel.go`, `internal/stats/installs.go
   message; rollup rows contribute their `install_count`. Shown next to calls per active
   install-day (calls ÷ install-days with at least one classify request).
 
-Caveats that apply to every number: no-LLM installs are invisible, and verdict, call and model
-numbers cover attested proxy-mode installs only (see Scope). Heartbeats are unauthenticated, so an
+Caveats that apply to every number: no-LLM installs on app versions that predate the `llm`
+heartbeat field are invisible, and verdict, call and model numbers cover attested proxy-mode
+installs only (see Scope). Heartbeats are unauthenticated, so an
 unattested install could be faked; filter to attested installs to exclude them. The app uploads a
 heartbeat only when a day's record changes, at most about once an hour, so `last_seen` usually
 moves once or twice a day and "today" can lag up to a day; days spent offline arrive late. A fresh
