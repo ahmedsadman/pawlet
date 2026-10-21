@@ -100,6 +100,9 @@ class _BackupRestorePageState extends ConsumerState<BackupRestorePage> {
       refreshAllFinance(ref);
       ref.invalidate(queuedProvider);
       ref.invalidate(historyProvider);
+      // The LLM switch is in the backup; re-read it so Settings and the mode
+      // follow the restored value.
+      ref.invalidate(llmEnabledProvider);
       if (!mounted) return;
       await showDialog<void>(
         context: context,
