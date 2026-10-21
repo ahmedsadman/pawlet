@@ -4,8 +4,9 @@ Pawlet keeps everything on-device. **Backup & Restore** (Settings → Data) lets
 move that data off the phone as a single JSON file and load it back later — onto the
 same device or a fresh install.
 
-- **Backup** writes a JSON file and hands it to the Android share sheet (save to
-  Drive, send to yourself, etc.).
+- **Backup** opens the Android "save to" dialog, so you pick the folder and file
+  name (Downloads, an SD card, or a cloud provider such as Drive). Nothing is
+  written until you confirm; cancelling saves nothing.
 - **Restore** reads a JSON file you pick, **replaces everything** currently on the
   device with the file's contents, then asks you to restart.
 
