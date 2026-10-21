@@ -39,8 +39,12 @@ class _FakePower implements PowerStatus {
 
 class _FakeDetector implements MissedSmsDetector {
   int scans = 0;
+  void Function()? onScan;
   @override
-  Future<void> scanIfDue() async => scans++;
+  Future<void> scanIfDue() async {
+    scans++;
+    onScan?.call();
+  }
 }
 
 class _Harness {
@@ -235,5 +239,47 @@ void main() {
     await tester.tap(find.text('Not now'));
     await tester.pumpAndSettle();
     expect(await first, isTrue);
+  });
+
+  testWidgets('canPrompt flips to false during scan: no sheet', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = DeliveryHealthStore(await SharedPreferences.getInstance());
+    await store.setMissedAt(twoMisses);
+    var allowed = true;
+    final detector = _FakeDetector()..onScan = () => allowed = false;
+    final harness = _Harness(store, _FakePower(), detector);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          deliveryHealthStoreProvider.overrideWithValue(store),
+          powerStatusProvider.overrideWithValue(harness.power),
+          missedSmsDetectorProvider.overrideWithValue(detector),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.theme,
+          home: Consumer(
+            builder: (context, ref, _) {
+              harness
+                ..context = context
+                ..ref = ref;
+              return const Scaffold(body: SizedBox.expand());
+            },
+          ),
+        ),
+      ),
+    );
+
+    final shown = runBatteryPromptCheck(
+      harness.context,
+      harness.ref,
+      canPrompt: () => allowed,
+      clock: () => _now,
+      hasSms: () async => true,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(title), findsNothing);
+    expect(detector.scans, 1);
+    expect(await shown, isFalse);
   });
 }
