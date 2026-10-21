@@ -82,9 +82,8 @@ class AppServices {
   /// Sends the on-device model's daily counts to Pawlet's server. Present only
   /// on the proxy session ([LlmMode.proxy] and [LlmMode.optedOut]), the only
   /// modes that count: BYOK and no-LLM installs neither count nor send, which
-  /// keeps BYOK usage off Pawlet's server and no-LLM's "nothing leaves the
-  /// phone" promise. Opting out stops message text going to an LLM, not the
-  /// counts.
+  /// keeps BYOK usage and no-LLM installs' model results off Pawlet's server.
+  /// Opting out stops message text going to an LLM, not the counts.
   final ModelStatsReporter? modelStatsReporter;
 
   /// Records days the app ran or was opened and uploads them, with the

@@ -90,8 +90,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   static String _privacyCopy(LlmMode mode) {
-    // The three modes differ in where a message can go, so one paragraph would
-    // be wrong for two of them.
+    // The modes differ in where a message can go, so one paragraph would be
+    // wrong for the others. Opted-out and no-LLM installs share one: in both,
+    // no message leaves the phone.
     return switch (mode) {
       LlmMode.proxy =>
         "Messages the on-device model can't categorize may be sent to "

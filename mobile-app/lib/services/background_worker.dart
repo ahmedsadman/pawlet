@@ -85,7 +85,7 @@ class BackgroundWorker {
     existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
   );
 
-  /// Cancels the daily heartbeat (no-LLM mode).
+  /// Cancels the daily heartbeat (a build without a server).
   static Future<void> cancelHeartbeat() =>
       Workmanager().cancelByUniqueName(_heartbeatName);
 }
