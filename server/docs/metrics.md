@@ -88,7 +88,7 @@ days up to 30 days old, so new-install counts follow arrival, not the oldest rep
 ## Activity days
 
 `install_days` holds one row per install per UTC day on which any signal arrived, with three
-flags and the app version (`internal/store/store.go`, `internal/store/heartbeat.go`):
+flags, the app version, and the LLM group (`internal/store/store.go`, `internal/store/heartbeat.go`):
 
 | Column | Set by | Meaning |
 |---|---|---|
@@ -96,6 +96,7 @@ flags and the app version (`internal/store/store.go`, `internal/store/heartbeat.
 | `alive` | heartbeat | The app ran that day, in the foreground or the background. Always set when `opened` is. |
 | `session` | `/v1/session` | The install minted a proxy session that day. Sessions are only minted in the foreground. |
 | `app_version_code` | both | The version reported for that day. A heartbeat only moves it up (Play never downgrades an install); a session overwrites it unless its verdict carries no version. |
+| `llm` | heartbeat | Which LLM group the install is in: `on` (Pawlet's server LLM), `off` (turned off), `byok` (own OpenRouter key), `none` (no LLM). Empty when not reported. Latest non-empty value wins; an empty value never clears the column. |
 
 Flags only ever go from 0 to 1, so a resent or out-of-order heartbeat never clears one, and a
 session leaves the heartbeat flags as they are. Version adoption over time is built from these
@@ -118,7 +119,8 @@ analytics must not depend on sessions, and bring-your-own-key installs never att
 sends it in proxy and bring-your-own-key modes, never in no-LLM mode.
 
 The body is the install ID and up to 31 days, each with `day` (UTC `YYYY-MM-DD`),
-`appVersionCode`, and the booleans `opened` and `alive`. The endpoint:
+`appVersionCode`, the booleans `opened` and `alive`, and the optional string `llm` (which LLM
+group the install is in). The endpoint:
 
 1. **checks the per-IP limit** — a fixed number per client IP per clock hour, with IPv6 addresses
    sharing one bucket per /64 network (`HEARTBEAT_PER_IP_HOUR`). Carrier NAT puts many phones
@@ -126,7 +128,7 @@ The body is the install ID and up to 31 days, each with `day` (UTC `YYYY-MM-DD`)
 2. **decodes strictly** — bounded size, no unknown fields, nothing after the JSON value;
 3. **validates** — the install ID is 64 lowercase hex characters (what the app generates); each
    day is a real date inside the accepted window, has a version in range, sets at least one flag,
-   and appears once;
+   and appears once; `llm` when present must be `on`, `off`, `byok` or `none`;
 4. **stores** the days under the install ID's SHA-256 hash (the same hash `/v1/session` uses),
    in one transaction: the install is created unattested if it is new, otherwise only its
    `last_seen` moves (plus the version, see above). Banned installs are still recorded: a ban
