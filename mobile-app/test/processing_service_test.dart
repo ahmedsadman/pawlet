@@ -2204,6 +2204,25 @@ void main() {
       await db.close();
     });
 
+    test('whenIdle waits for the hook, not just the pass', () async {
+      final release = Completer<void>();
+      final svc = hooked(() => release.future);
+      final pass = svc.process();
+      await pumpEventQueue();
+      expect(svc.isRunning, isFalse, reason: 'the pass body is over');
+
+      var idle = false;
+      unawaited(svc.whenIdle().then((_) => idle = true));
+      await pumpEventQueue();
+      expect(idle, isFalse);
+
+      release.complete();
+      await pass;
+      await pumpEventQueue();
+      expect(idle, isTrue);
+      await db.close();
+    });
+
     test('a paused service skips the hook along with the pass', () async {
       var calls = 0;
       final svc = hooked(() async => calls++)..pause();

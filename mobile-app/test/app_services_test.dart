@@ -1,6 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pawlet/config/build_config.dart';
+import 'package:pawlet/data/banks_repository.dart';
+import 'package:pawlet/data/settings_repository.dart';
+import 'package:pawlet/data/sms_repository.dart';
 import 'package:pawlet/services/app_services.dart';
+import 'package:pawlet/services/auth/attestation_service.dart';
+import 'package:pawlet/services/classification/classifier.dart';
+import 'package:pawlet/services/classification/tflite_local_classifier.dart';
+import 'package:pawlet/services/connectivity_service.dart';
+import 'package:pawlet/services/exchange_rate_service.dart';
+import 'package:pawlet/services/finance/finance_writer.dart';
+import 'package:pawlet/services/llm/prompt_bundle.dart';
+import 'package:pawlet/services/notification_service.dart';
+import 'package:pawlet/services/processing_service.dart';
 import 'package:pawlet/services/llm/llm_mode.dart';
 import 'package:pawlet/services/llm/openrouter_provider.dart';
 import 'package:pawlet/services/llm/pawlet_proxy_provider.dart';
@@ -9,6 +23,72 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
 class _MockDb extends Mock implements Database {}
+
+class _MockSms extends Mock implements SmsRepository {}
+
+class _MockLocal extends Mock implements TfliteLocalClassifier {}
+
+class _MockAttestation extends Mock implements AttestationService {}
+
+class _MockExchangeRate extends Mock implements ExchangeRateService {}
+
+class _MockPromptBundles extends Mock implements PromptBundleStore {}
+
+/// A bundle whose processing pass blocks inside its first step until
+/// [releasePass] completes, with mocks standing in for everything [dispose]
+/// closes.
+({
+  AppServices services,
+  Completer<void> releasePass,
+  _MockLocal local,
+  _MockAttestation attestation,
+})
+_blockingBundle() {
+  final db = _MockDb();
+  final sms = _MockSms();
+  final releasePass = Completer<void>();
+  when(() => sms.reclaimStale(any())).thenAnswer((_) => releasePass.future);
+  final local = _MockLocal();
+  final attestation = _MockAttestation();
+  final exchangeRate = _MockExchangeRate();
+  final promptBundles = _MockPromptBundles();
+  final processing = ProcessingService(
+    smsRepository: sms,
+    // Unstubbed, so the pass ends on its first call after the release; the
+    // pass swallows that error.
+    banksRepository: BanksRepository(db),
+    classifier: Classifier(null, local: local),
+    financeWriter: FinanceWriter(db),
+    isOnline: () async => true,
+    currency: () => 'BDT',
+  );
+  final services = AppServices(
+    database: db,
+    smsRepository: sms,
+    banksRepository: BanksRepository(db),
+    settings: _MockSettings(),
+    connectivity: ConnectivityService(),
+    notifications: _MockNotifications(),
+    llmProvider: null,
+    attestation: attestation,
+    promptBundles: promptBundles,
+    localClassifier: local,
+    processingService: processing,
+    exchangeRate: exchangeRate,
+    modelStatsReporter: null,
+    heartbeat: null,
+  );
+  return (
+    services: services,
+    releasePass: releasePass,
+    local: local,
+    attestation: attestation,
+  );
+}
+
+class _MockSettings extends Mock implements SettingsRepository {}
+
+class _MockNotifications extends Mock implements NotificationService {}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +114,37 @@ void main() {
     await services.disposeStandalone();
 
     verifyNever(() => db.close());
+  });
+
+  // Flipping the LLM switch or saving a key rebuilds the UI isolate's bundle,
+  // possibly while a pass is still running on the old one. Freeing the
+  // interpreter or the network mid-pass could crash native inference or cut
+  // a call off, so the close waits for the pass.
+  group('disposeWhenIdle', () {
+    test('waits for a running pass before closing', () async {
+      final b = _blockingBundle();
+      final pass = b.services.processingService.process();
+      await pumpEventQueue();
+      expect(b.services.processingService.isRunning, isTrue);
+
+      final disposed = b.services.disposeWhenIdle();
+      await pumpEventQueue();
+      verifyNever(() => b.local.close());
+      verifyNever(() => b.attestation.close());
+
+      b.releasePass.complete();
+      await pass;
+      await disposed;
+      verify(() => b.local.close()).called(1);
+      verify(() => b.attestation.close()).called(1);
+    });
+
+    test('closes at once when no pass is running', () async {
+      final b = _blockingBundle();
+      await b.services.disposeWhenIdle();
+      verify(() => b.local.close()).called(1);
+      verify(() => b.attestation.close()).called(1);
+    });
   });
 
   group('the provider follows the mode', () {
