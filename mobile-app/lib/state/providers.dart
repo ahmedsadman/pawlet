@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../config/build_config.dart';
 import '../data/banks_repository.dart';
+import '../data/delivery_health_store.dart';
 import '../data/finance_repository.dart';
 import '../data/heartbeat_repository.dart';
 import '../data/secure_store.dart';
@@ -17,6 +18,8 @@ import '../services/backup_service.dart';
 import '../services/heartbeat.dart';
 import '../services/llm/key_validator.dart';
 import '../services/llm/llm_mode.dart';
+import '../services/missed_sms_detector.dart';
+import '../services/power_status.dart';
 import '../services/processing_service.dart';
 import '../services/sms_listener.dart';
 import '../utils/currency_format.dart';
@@ -175,6 +178,23 @@ final processingServiceProvider = Provider<ProcessingService>(
 
 final smsListenerProvider = Provider<SmsListener>(
   (ref) => SmsListener(ref.watch(appServicesProvider)),
+);
+
+/// Missed-SMS bookkeeping and the battery prompt's snooze.
+final deliveryHealthStoreProvider = Provider<DeliveryHealthStore>(
+  (ref) => DeliveryHealthStore(ref.watch(sharedPreferencesProvider)),
+);
+
+final powerStatusProvider = Provider<PowerStatus>((ref) => PowerStatus());
+
+/// Compares the phone inbox with captured SMS. UI isolate only.
+final missedSmsDetectorProvider = Provider<MissedSmsDetector>(
+  (ref) => MissedSmsDetector(
+    inbox: TelephonyRecentInboxReader(),
+    smsRepository: ref.watch(smsRepositoryProvider),
+    banksRepository: ref.watch(banksRepositoryProvider),
+    store: ref.watch(deliveryHealthStoreProvider),
+  ),
 );
 
 /// Bottom-navigation tab indices (Finance, Messages, Settings).
