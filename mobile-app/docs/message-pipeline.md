@@ -434,8 +434,8 @@ fails again it lands back in `failure`. Queued messages that have already failed
 once show their retry progress (Retry n/10) and, while a next attempt is still upcoming,
 the scheduled next-attempt time.
 
-This is the recovery path for a `local_only` failure: a message rejected in no-LLM mode
-can be retried after the user adds a key, at which point the pipeline has an LLM and the
+This is the recovery path for a `local_only` failure: a message rejected in opted-out or `none` mode
+can be retried after the user turns on the LLM switch (in opted-out mode) or adds a key (in `none` mode), at which point the pipeline has an LLM and the
 row is re-processed normally.
 
 ## 8. Notifications

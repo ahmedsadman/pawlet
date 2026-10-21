@@ -14,8 +14,8 @@ proxy sessions, including bring-your-own-key installs that never attest.
 
 ## What is recorded
 
-One `heartbeat_days` row per UTC day (schema version 8, `lib/data/database.dart`): the day, the build's version code,
-`opened` and `alive`, plus the `updated_at` and `reported_at` timestamps the reporter uses. Nothing else: no message,
+One `heartbeat_days` row per UTC day (schema version 11, `lib/data/database.dart`): the day, the build's version code,
+`opened` and `alive`, the LLM group (`llm`: `on`/`off`/`byok`/`none`, latest value of the day wins), plus the `updated_at` and `reported_at` timestamps the reporter uses. Nothing else: no message,
 category, amount or setting.
 
 - **Opened** is marked when the app comes to the screen: at launch and on every resume (`lib/app.dart`).
@@ -43,22 +43,21 @@ look uninstalled.
 - It has **no network constraint**: marking is local, and an upload that cannot go out is retried on a later mark.
 - It is registered with `ExistingPeriodicWorkPolicy.update`, so re-registering on every launch keeps its schedule.
 - It always reports success, so WorkManager never retries it.
-- It resolves the mode itself from freshly reloaded settings and does nothing in no-LLM mode.
+- It resolves the mode itself from freshly reloaded settings.
 
 ## Mode gating
 
-Heartbeats are sent in **proxy** and **bring-your-own-key** modes, in builds that set `PAWLET_API_BASE`
+Heartbeats are sent in **proxy**, **opted-out** and **bring-your-own-key** modes, in builds that set `PAWLET_API_BASE`
 (`BuildConfig.apiBaseConfigured`); that includes debug builds run with `dart_define.json`, which point at the live
-server. They are never sent in **no-LLM** mode, which keeps its "nothing leaves the phone"
+server. They are never sent in **`none`** mode, which keeps its "message text never leaves the phone"
 promise ([LLM modes](llm-modes.md)).
 
-- `AppServices` (`lib/services/app_services.dart`) builds the `Heartbeat` only in those modes; otherwise there is none,
-  and nothing is marked.
+- `AppServices` (`lib/services/app_services.dart`) builds the `Heartbeat` in proxy, opted-out and bring-your-own-key modes; in `none` mode there is no `Heartbeat`, and nothing is marked.
 - Before every send the reporter re-checks the mode from freshly reloaded settings, since it can change in another
   isolate while the services live on.
 - `syncHeartbeatMode` runs whenever the UI isolate resolves the mode (`appServicesProvider` in
-  `lib/state/providers.dart`). In proxy or bring-your-own-key mode it schedules the daily task. Otherwise it first
-  **deletes the whole local log**, then cancels the task, so moving to no-LLM drops anything not yet sent.
+  `lib/state/providers.dart`). In proxy, opted-out or bring-your-own-key mode it schedules the daily task. In `none` mode it first
+  **deletes the whole local log**, then cancels the task, so moving to `none` drops anything not yet sent.
 
 ## Uploading
 
