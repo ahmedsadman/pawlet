@@ -963,4 +963,54 @@ void main() {
       await db.close();
     });
   });
+
+  group('contentsNear', () {
+    test('returns bodies within the dedup window', () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final ts = 1000;
+      await insertSms(db, sender: 'EBL', content: 'msg A', ts: ts - 5000);
+      await insertSms(db, sender: 'EBL', content: 'msg B', ts: ts);
+      await insertSms(db, sender: 'EBL', content: 'msg C', ts: ts + 10000);
+
+      final contents = await repo.contentsNear(sender: 'EBL', timestamp: ts);
+      expect(contents.toSet(), {'msg A', 'msg B', 'msg C'});
+      await db.close();
+    });
+
+    test('excludes bodies outside the dedup window', () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final ts = 1000;
+      await insertSms(db, sender: 'EBL', content: 'too early', ts: ts - 20000);
+      await insertSms(db, sender: 'EBL', content: 'in range', ts: ts);
+      await insertSms(db, sender: 'EBL', content: 'too late', ts: ts + 20000);
+
+      final contents = await repo.contentsNear(sender: 'EBL', timestamp: ts);
+      expect(contents, ['in range']);
+      await db.close();
+    });
+
+    test('excludes rows with a different sender', () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      final ts = 1000;
+      await insertSms(db, sender: 'EBL', content: 'EBL msg', ts: ts);
+      await insertSms(db, sender: 'BRAC', content: 'BRAC msg', ts: ts);
+
+      final contents = await repo.contentsNear(sender: 'EBL', timestamp: ts);
+      expect(contents, ['EBL msg']);
+      await db.close();
+    });
+
+    test('returns empty list when nothing matches', () async {
+      final db = await openTestDb();
+      final repo = SmsRepository(db);
+      await insertSms(db, sender: 'EBL', content: 'msg', ts: 1000);
+
+      final contents = await repo.contentsNear(sender: 'EBL', timestamp: 50000);
+      expect(contents, isEmpty);
+      await db.close();
+    });
+  });
 }

@@ -42,4 +42,12 @@ class DeliveryHealthStore {
   int? get promptSnoozedUntil => _prefs.getInt(_kPromptSnoozedUntil);
   Future<void> setPromptSnoozedUntil(int ms) =>
       _prefs.setInt(_kPromptSnoozedUntil, ms);
+
+  /// Starts detection over from [nowMs]: the watermark moves to it and recorded
+  /// misses are dropped. Used after a restore replaces `sms_records`, which would
+  /// otherwise make messages captured before the restore read as missed.
+  Future<void> restartFrom(int nowMs) async {
+    await setWatermark(nowMs);
+    await setMissedAt(const []);
+  }
 }

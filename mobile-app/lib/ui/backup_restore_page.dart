@@ -92,6 +92,11 @@ class _BackupRestorePageState extends ConsumerState<BackupRestorePage> {
     try {
       final bytes = await picked.single.readAsBytes();
       await ref.read(backupServiceProvider).importJson(utf8.decode(bytes));
+      // Restart missed-SMS detection: the watermark is install-scoped (outside
+      // backups), so without this, already-captured rows would read as misses.
+      await ref
+          .read(deliveryHealthStoreProvider)
+          .restartFrom(DateTime.now().millisecondsSinceEpoch);
       // Refresh visible data now; advise a restart for settings-derived caches.
       refreshAllFinance(ref);
       ref.invalidate(queuedProvider);

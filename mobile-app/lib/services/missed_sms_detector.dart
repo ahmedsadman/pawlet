@@ -115,14 +115,28 @@ class MissedSmsDetector {
   /// rows (`kIgnoredRetention`), so a pruned capture can't read as a miss.
   static const Duration lookbackCap = Duration(days: 6);
 
+  /// Strips all whitespace from a string. Used when comparing inbox bodies to
+  /// stored bodies, because the live receiver trims each multipart segment after
+  /// the first while the inbox keeps them as sent.
+  static final _whitespace = RegExp(r'\s+');
+
   Future<void> scanIfDue() async {
     try {
       final watermark = _store.watermark;
       if (watermark == null) return;
       final now = _clock();
       final last = _store.lastScanAt;
-      if (last != null && now - last < scanGap.inMilliseconds) return;
-      if (!await _hasSms()) return;
+      // Fix 5: backwards clock means scan is due.
+      if (last != null && last <= now && now - last < scanGap.inMilliseconds) {
+        return;
+      }
+      // Fix 3: when permission is revoked, move the watermark forward so
+      // messages received during the gap don't later count as misses.
+      if (!await _hasSms()) {
+        final gracedNow = now - receiverGrace.inMilliseconds;
+        if (gracedNow > watermark) await _store.setWatermark(gracedNow);
+        return;
+      }
 
       final after = math.max(watermark, now - lookbackCap.inMilliseconds);
       final until = now - receiverGrace.inMilliseconds;
@@ -130,6 +144,8 @@ class MissedSmsDetector {
       if (until > after) {
         final messages = await _inbox.readReceivedBetween(after, until);
         final banks = await _banks.list();
+        // Fix 4: dedupe by (sender, sentAt, whitespace-stripped content).
+        final seen = <String>{};
         for (final m in messages) {
           final sender = m.sender.trim();
           final content = normalizeSmsContent(m.content);
@@ -137,21 +153,38 @@ class MissedSmsDetector {
           // rather than guessed at.
           if (sender.isEmpty || content.isEmpty || m.sentAt <= 0) continue;
           if (!hasGateBank(sender, content, banks)) continue;
-          final stored = await _sms.findNearDuplicate(
+
+          // Fix 4: dedupe within the scan (OEM SMS apps sometimes write duplicates).
+          final strippedContent = content.replaceAll(_whitespace, '');
+          final key = '$sender|${m.sentAt}|$strippedContent';
+          if (!seen.add(key)) continue;
+
+          // Fix 1: use whitespace-insensitive matching. The live receiver trims
+          // each multipart segment after the first, while the inbox keeps them
+          // as sent, so exact-content lookup fails when a later segment
+          // starts/ends with whitespace.
+          final storedContents = await _sms.contentsNear(
             sender: sender,
             timestamp: m.sentAt,
-            content: content,
           );
-          if (stored == null) misses.add(m.receivedAt);
+          final captured = storedContents.any((stored) {
+            final strippedStored = normalizeSmsContent(
+              stored,
+            ).replaceAll(_whitespace, '');
+            return strippedStored == strippedContent;
+          });
+          if (!captured) misses.add(m.receivedAt);
         }
       }
 
+      // Fix 4: write order is watermark → misses → lastScanAt (under-count
+      // is the safe direction if the process dies mid-write).
       final cutoff = now - BatteryPromptPolicy.missWindow.inMilliseconds;
+      if (until > watermark) await _store.setWatermark(until);
       await _store.setMissedAt([
         for (final t in [..._store.missedAt, ...misses])
           if (t >= cutoff) t,
       ]);
-      if (until > watermark) await _store.setWatermark(until);
       await _store.setLastScanAt(now);
     } catch (e) {
       if (kDebugMode) debugPrint('missed sms: scan failed: $e');

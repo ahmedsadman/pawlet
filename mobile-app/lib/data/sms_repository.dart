@@ -101,6 +101,24 @@ class SmsRepository {
     return records.first;
   }
 
+  /// Bodies stored for [sender] at or near [timestamp] (within
+  /// [kSmsDedupWindow]). Lets a caller compare bodies its own way: the missed-SMS
+  /// check ignores whitespace, because the live receiver trims each multipart
+  /// segment after the first while the inbox keeps them as sent.
+  Future<List<String>> contentsNear({
+    required String sender,
+    required int timestamp,
+  }) async {
+    final window = kSmsDedupWindow.inMilliseconds;
+    final rows = await _db.query(
+      _table,
+      columns: const ['content'],
+      where: 'sender = ? AND timestamp BETWEEN ? AND ?',
+      whereArgs: [sender, timestamp - window, timestamp + window],
+    );
+    return rows.map((r) => r['content'] as String).toList();
+  }
+
   /// Transactions carrying no bank, with the sender and body of the SMS they
   /// came from so a caller can re-resolve the account. Manual entries (no
   /// backing message) are excluded — they have no sender to match on.
