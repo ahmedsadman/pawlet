@@ -180,4 +180,92 @@ void main() {
     await detector(_FakeInbox([msg(receivedAt: at)])).scanIfDue();
     expect(store.missedAt, [now - 2 * day, at]);
   });
+
+  // Fix 1: multipart SMS false misses
+  test('ignores whitespace when matching (multipart trim)', () async {
+    final at = now - 3 * hour;
+    // Stored body has no space between "from" and "A/C" (multipart trim).
+    await insertSms(
+      db,
+      sender: 'EBL',
+      content: 'Tk 500 debited fromA/C **1234',
+      ts: at - 2000,
+    );
+    // Inbox has the space (original SMS).
+    await detector(
+      _FakeInbox([
+        msg(content: 'Tk 500 debited from A/C **1234', receivedAt: at),
+      ]),
+    ).scanIfDue();
+    expect(store.missedAt, isEmpty);
+  });
+
+  test('whitespace match: different sender means miss', () async {
+    final at = now - 3 * hour;
+    await insertSms(db, sender: 'BRAC', content: body, ts: at - 2000);
+    await detector(_FakeInbox([msg(receivedAt: at)])).scanIfDue();
+    expect(store.missedAt, [at]);
+  });
+
+  test('whitespace match: outside dedup window means miss', () async {
+    final at = now - 3 * hour;
+    // Stored message is 20s off DATE_SENT (beyond kSmsDedupWindow of 15s).
+    await insertSms(db, sender: 'EBL', content: body, ts: at - 2000 + 20000);
+    await detector(_FakeInbox([msg(receivedAt: at)])).scanIfDue();
+    expect(store.missedAt, [at]);
+  });
+
+  // Fix 3: SMS-permission gap
+  test('no SMS permission moves watermark forward', () async {
+    final inbox = _FakeInbox();
+    final oldWatermark = now - day;
+    await store.setWatermark(oldWatermark);
+    await detector(inbox, hasSms: false).scanIfDue();
+    expect(inbox.calls, isEmpty);
+    expect(store.lastScanAt, isNull);
+    // Watermark moves to now - receiverGrace.
+    expect(store.watermark, now - 2 * minute);
+  });
+
+  // Fix 4: in-scan duplicates
+  test('deduplicates identical inbox rows within one scan', () async {
+    final at = now - 3 * hour;
+    // Two identical inbox rows (OEM SMS app bug).
+    await detector(
+      _FakeInbox([msg(receivedAt: at), msg(receivedAt: at)]),
+    ).scanIfDue();
+    expect(store.missedAt, [at]); // Only one miss recorded.
+  });
+
+  // Fix 5: backwards clock
+  test('backwards clock (lastScanAt > now) means scan is due', () async {
+    await store.setLastScanAt(now + hour); // Clock jumped backward.
+    final inbox = _FakeInbox();
+    await detector(inbox).scanIfDue();
+    expect(inbox.calls, hasLength(1)); // Scan ran.
+  });
+
+  // Fix 6: more tests
+  test('records several distinct misses in one scan', () async {
+    final at1 = now - 5 * hour;
+    final at2 = now - 4 * hour;
+    final at3 = now - 3 * hour;
+    await detector(
+      _FakeInbox([
+        msg(receivedAt: at1),
+        msg(content: 'Tk 100', receivedAt: at2),
+        msg(content: 'Tk 200', receivedAt: at3),
+      ]),
+    ).scanIfDue();
+    expect(store.missedAt, [at1, at2, at3]);
+  });
+
+  test('watermark ahead of until (recent) means no inbox read', () async {
+    // Watermark is at now - 1 min, which is ahead of until (now - 2 min).
+    await store.setWatermark(now - minute);
+    final inbox = _FakeInbox();
+    await detector(inbox).scanIfDue();
+    expect(inbox.calls, isEmpty); // No inbox read.
+    expect(store.lastScanAt, now); // But lastScanAt is still updated.
+  });
 }

@@ -37,4 +37,17 @@ void main() {
     expect(store.missedAt, [1, 2, 3]);
     expect(store.promptSnoozedUntil, 9);
   });
+
+  test('restartFrom resets watermark and clears misses', () async {
+    await store.setWatermark(100);
+    await store.setMissedAt([50, 60, 70]);
+    await store.setLastScanAt(90);
+
+    await store.restartFrom(200);
+
+    expect(store.watermark, 200);
+    expect(store.missedAt, isEmpty);
+    // lastScanAt is untouched by restartFrom.
+    expect(store.lastScanAt, 90);
+  });
 }
