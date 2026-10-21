@@ -12,6 +12,7 @@ import 'state/auth_providers.dart';
 import 'state/providers.dart';
 import 'theme/catppuccin_theme.dart';
 import 'ui/app_update_flow.dart';
+import 'ui/battery_prompt_flow.dart';
 import 'ui/bulk_import_flow.dart';
 import 'ui/finance_page.dart';
 import 'ui/messages_page.dart';
@@ -153,26 +154,39 @@ class _RootShellState extends ConsumerState<RootShell>
     // Notifications need no disclosure; asking here keeps them available even
     // if the user declines SMS.
     await AppPermissions.requestNotifications();
+    // Whether this launch already put a sheet up. The battery offer, last in
+    // line, stays out of the way if so.
+    var prompted = false;
     // Already-granted installs skip straight past the unlock wait.
     var granted = await AppPermissions.hasSms();
     // Deferred until unlocked so the disclosure isn't buried under the PIN
     // screen. A user who never unlocks isn't asked this launch.
     if (!granted && await _awaitUnlocked() && mounted) {
+      prompted = true;
       granted = await ensureSmsAccess(context);
     }
     // Gated deliberately: starting the listener invokes the plugin's
     // startBackgroundService, which raises the system SMS prompt by itself
     // when the permission is missing. Calling it ungated would hand the
     // dialog to users who just declined the disclosure.
-    if (granted) ref.read(smsListenerProvider).start();
+    if (granted) {
+      // The first start marks where missed-message detection begins: nothing
+      // received before the listener existed can count as missed.
+      await ref
+          .read(deliveryHealthStoreProvider)
+          .ensureWatermark(DateTime.now().millisecondsSinceEpoch);
+      ref.read(smsListenerProvider).start();
+    }
     await ref.read(processingServiceProvider).process();
     // Again after the pass: the early call skips the ineligible sync if it
     // found the pass running.
     if (mounted) await _refreshLlmNetwork();
-    await _offerInboxImport();
+    if (await _offerInboxImport()) prompted = true;
     _bootstrapped = true;
     // Last, so it never competes with the disclosure or the import offer.
-    await _checkForAppUpdate();
+    if (await _checkForAppUpdate()) prompted = true;
+    // Lowest priority: at most one sheet per launch.
+    if (!prompted) await _offerBatteryExemption();
   }
 
   /// Session warm-up (proxy) or prompt-bundle refresh (byok), plus picking up
@@ -205,33 +219,38 @@ class _RootShellState extends ConsumerState<RootShell>
   /// Deferred until the app is actually unlocked so the sheet isn't buried
   /// under the PIN screen, and skipped without consuming the one shot when SMS
   /// permission was denied (there'd be nothing to read).
-  Future<void> _offerInboxImport() async {
+  ///
+  /// Resolves true when the offer sheet went up.
+  Future<bool> _offerInboxImport() async {
     final settings = ref.read(settingsRepositoryProvider);
-    if (settings.bulkImportOffered) return;
-    if (!await AppPermissions.hasSms()) return;
-    if (!await _awaitUnlocked()) return;
+    if (settings.bulkImportOffered) return false;
+    if (!await AppPermissions.hasSms()) return false;
+    if (!await _awaitUnlocked()) return false;
 
     // Marked before showing: a user who dismisses the sheet by swiping must not
     // be asked again on every launch. Settings → Data keeps it reachable.
     await settings.setBulkImportOffered(true);
-    if (!mounted) return;
+    if (!mounted) return false;
 
     final accepted = await confirmBulkImport(context);
-    if (!accepted || !mounted) return;
+    if (!accepted || !mounted) return true;
     await runBulkImport(context, ref);
+    return true;
   }
 
   /// Offers a Play update once the app is unlocked. The lock screen is an
   /// overlay inside the home route, and a modal sheet is pushed above it, so a
   /// sheet shown while locked would cover the lock screen.
-  Future<void> _checkForAppUpdate() async {
+  ///
+  /// Resolves true when it put something on screen.
+  Future<bool> _checkForAppUpdate() async {
     // On a resume after the screen went off, the status still reads unlocked
     // until the platform answers whether to re-lock. Without waiting, a known
     // download's restart bar would show at once and end up over the lock
     // screen.
     await ref.read(authControllerProvider.notifier).resumeSettled;
-    if (!mounted || !await _awaitUnlocked() || !mounted) return;
-    await runAppUpdateCheck(
+    if (!mounted || !await _awaitUnlocked() || !mounted) return false;
+    return runAppUpdateCheck(
       context,
       ref,
       // Read again later, possibly after this state is gone (the download can
@@ -242,6 +261,25 @@ class _RootShellState extends ConsumerState<RootShell>
           mounted &&
           ref.read(authControllerProvider).status == AuthStatus.unlocked &&
           !ref.read(processingServiceProvider).isPaused,
+    );
+  }
+
+  /// Offers to lift battery optimization when the OS is shown to be stopping
+  /// Pawlet (see [runBatteryPromptCheck]). Same gating as the update offer: a
+  /// sheet shown while locked would cover the lock screen, and the import's
+  /// progress dialog must stay the top route. Also waits for the home route
+  /// to be on top, so it never lands over a page the user opened.
+  Future<void> _offerBatteryExemption() async {
+    await ref.read(authControllerProvider.notifier).resumeSettled;
+    if (!mounted || !await _awaitUnlocked() || !mounted) return;
+    await runBatteryPromptCheck(
+      context,
+      ref,
+      canPrompt: () =>
+          mounted &&
+          ref.read(authControllerProvider).status == AuthStatus.unlocked &&
+          !ref.read(processingServiceProvider).isPaused &&
+          (ModalRoute.isCurrentOf(context) ?? true),
     );
   }
 
@@ -309,7 +347,14 @@ class _RootShellState extends ConsumerState<RootShell>
         // Play is asked at most once an hour, and not at all while a finished
         // download is known. The snooze and the busy guard keep it from
         // nagging.
-        if (_bootstrapped) unawaited(_checkForAppUpdate());
+        //
+        // The battery offer goes after it, and only when it showed nothing:
+        // at most one sheet per resume.
+        if (_bootstrapped) {
+          unawaited(() async {
+            if (!await _checkForAppUpdate()) await _offerBatteryExemption();
+          }());
+        }
       case AppLifecycleState.paused:
         // Stop polling while backgrounded — no wake while the user is away.
         ref.read(dataRevisionSyncProvider).pause();
