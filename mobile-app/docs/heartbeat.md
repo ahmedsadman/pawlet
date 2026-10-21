@@ -16,11 +16,13 @@ proxy sessions, including bring-your-own-key installs that never attest.
 
 One `heartbeat_days` row per UTC day (schema version 11, `lib/data/database.dart`): the day, the build's version code,
 `opened` and `alive`, the LLM group (column `llm_group`, sent on the wire as `llm`: `on`/`off`/`byok`/`none`, latest value of the day wins), plus the `updated_at` and `reported_at` timestamps the reporter uses. Nothing else: no message,
-category, amount or setting.
+category, amount or any other setting.
 
 - **Opened** is marked when the app comes to the screen: at launch and on every resume (`lib/app.dart`).
 - **Alive** is marked at the end of every processing pass, in whichever isolate ran it (UI, background SMS or
-  WorkManager), and by the daily task. Opening the app marks it alive too.
+  WorkManager), and by the daily task. Opening the app marks it alive too, and so does every rebuild of the UI
+  isolate's services (`appServicesProvider` in `lib/state/providers.dart`, which rebuilds on a mode change), so today's
+  row takes the new LLM group without waiting for the next pass.
 
 Flags only ever turn on, and the row takes the version of the build running, read from `package_info_plus`
 (`lib/services/app_version.dart`); if the version cannot be read, nothing is marked, since filing a day under the wrong
@@ -52,8 +54,11 @@ Heartbeats are sent in **every mode** (proxy, opted-out, bring-your-own-key, non
 server. Builds without a server send nothing ([LLM modes](llm-modes.md)).
 
 - `AppServices` (`lib/services/app_services.dart`) builds the `Heartbeat` in every mode when the build has a server; otherwise there is no `Heartbeat`, and nothing is marked.
-- Before every send the reporter re-checks the mode from freshly reloaded settings, since it can change in another
-  isolate while the services live on.
+- Every mark resolves the LLM group from freshly reloaded settings and the keystore (`AppServices.heartbeatGroup`),
+  since the mode can change in another isolate while the services live on. If that resolution fails, the group is
+  resolved from the settings already loaded, as if no key were saved, so the mark is kept; a bring-your-own-key
+  install then files that day as `none` until a later mark resolves normally. An unreadable keystore already reads as
+  no key (`SecureStore.readApiKey`). The reporter itself does not check the mode.
 - `syncHeartbeat` runs whenever the UI isolate resolves the mode (`appServicesProvider` in
   `lib/state/providers.dart`). When the build has a server it schedules the daily task; otherwise it cancels the task.
 
