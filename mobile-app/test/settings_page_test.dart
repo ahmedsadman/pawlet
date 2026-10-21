@@ -150,7 +150,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(AppBar, 'Backup & Restore'), findsOneWidget);
-    expect(find.text('Back up to file'), findsOneWidget);
+    expect(find.text('Save backup to device'), findsOneWidget);
     expect(find.text('Restore from file'), findsOneWidget);
   });
 
