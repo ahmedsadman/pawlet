@@ -72,18 +72,21 @@ type OverviewDay struct {
 
 // Overview is the overview page minus server info.
 type Overview struct {
-	KPIs  OverviewKPIs  `json:"kpis"`
-	Daily []OverviewDay `json:"daily"`
+	KPIs      OverviewKPIs  `json:"kpis"`
+	Daily     []OverviewDay `json:"daily"`
+	LLMGroups []KeyCount    `json:"llmGroups"`
 }
 
 // OverviewInput is what BuildOverview needs. Activity must be ModeAny and
 // reach 29 days before Range.From. CountersToday holds today's classify_outcome
-// counts only. Model and ModelRollup cover Range.
+// counts only. Model and ModelRollup cover Range. Days are install_days rows
+// loaded with the same window as Usage (29 days before Range.From).
 type OverviewInput struct {
 	Range         Range
 	Today         string
 	Installs      []store.Install
 	Usage         []store.UsageRow
+	Days          []store.DayRow
 	Activity      Activity
 	CountersToday map[string]int64
 	Model         []store.ModelRow
@@ -154,7 +157,50 @@ func BuildOverview(in OverviewInput) Overview {
 			ActiveInstalls: series[i].DAU, NewInstalls: newByDay[d],
 		}
 	}
-	return Overview{KPIs: k, Daily: daily}
+
+	// LLM groups: count each active install under its latest in-range group.
+	activeInstalls := map[string]struct{}{}
+	for _, d := range days {
+		for h := range in.Activity[d] {
+			activeInstalls[h] = struct{}{}
+		}
+	}
+	latestLLM := map[string]string{} // install → latest non-empty LLM
+	latestDay := map[string]string{} // install → day of that LLM
+	for _, row := range in.Days {
+		if row.Day < in.Range.From || row.Day > in.Range.To || row.LLM == "" {
+			continue
+		}
+		if latestDay[row.IDHash] == "" || row.Day > latestDay[row.IDHash] {
+			latestLLM[row.IDHash] = row.LLM
+			latestDay[row.IDHash] = row.Day
+		}
+	}
+	classifiedInstalls := map[string]struct{}{}
+	for _, u := range in.Usage {
+		if u.Day >= in.Range.From && u.Day <= in.Range.To && classified(u) {
+			classifiedInstalls[u.IDHash] = struct{}{}
+		}
+	}
+	groupCounts := map[string]int64{"on": 0, "off": 0, "byok": 0, "none": 0, "unknown": 0}
+	for h := range activeInstalls {
+		if grp := latestLLM[h]; grp != "" {
+			groupCounts[grp]++
+		} else if _, ok := classifiedInstalls[h]; ok {
+			groupCounts["on"]++
+		} else {
+			groupCounts["unknown"]++
+		}
+	}
+	llmGroups := []KeyCount{
+		{Key: "on", Count: groupCounts["on"]},
+		{Key: "off", Count: groupCounts["off"]},
+		{Key: "byok", Count: groupCounts["byok"]},
+		{Key: "none", Count: groupCounts["none"]},
+		{Key: "unknown", Count: groupCounts["unknown"]},
+	}
+
+	return Overview{KPIs: k, Daily: daily, LLMGroups: llmGroups}
 }
 
 // rangeMessages sums messages per day over in.Range and averages them over
