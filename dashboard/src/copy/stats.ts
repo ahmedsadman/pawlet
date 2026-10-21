@@ -154,7 +154,7 @@ export const statCopy = {
     computation:
       "Dormant: not banned and no heartbeat, session or classify call in more than 14 days.",
     caveat:
-      "The server cannot see uninstalls. On app versions that send heartbeats, dormant mostly means uninstalled, force-stopped, or switched to no AI service.",
+      "The server cannot see uninstalls. On app versions that send heartbeats, dormant mostly means uninstalled or force-stopped; on older versions that don't report the LLM setting, it can also mean switched to no AI service.",
   },
   "detail.licensing": {
     title: "Licensing",
@@ -251,7 +251,7 @@ export const statCopy = {
     computation:
       "Not banned, and the later of last seen and the last classify-call day is over 14 days ago.",
     caveat:
-      "On app versions that send heartbeats, mostly uninstalls, force-stopped apps, and installs switched to no AI service. Reinstalls get new IDs.",
+      "On app versions that send heartbeats, mostly uninstalls and force-stopped apps; on older versions that don't report the LLM setting, also installs switched to no AI service. Reinstalls get new IDs.",
   },
   "chart.successRate": {
     title: "LLM success rate",
@@ -353,7 +353,7 @@ export const statCopy = {
     title: "LLM setting",
     meaning: "Active installs grouped by their LLM configuration.",
     computation:
-      "Each install active in the range counts once under its most recent reported LLM group. LLM on = Play install using Pawlet's server; Turned off = Play install that disabled the LLM in Settings; Own key = user's OpenRouter key; No LLM = no AI service at all (sideloaded or failed Play Integrity, with no key of their own); Unknown = app versions that don't report the setting. Installs with no reported group count as LLM on if they made an LLM call in the range, otherwise Unknown. The groups add up to active installs.",
+      "Each install active in the range counts once under its most recent reported LLM group. LLM on = Play install using Pawlet's server; Turned off = Play install that disabled the LLM in Settings; Own key = user's OpenRouter key; No LLM = no AI service at all (sideloaded or failed Play Integrity, with no key of their own); Unknown = app versions that don't report the setting. Installs with no reported group count as LLM on if they made an LLM call in the range, otherwise Unknown. The groups add up to installs active in the selected range.",
     caveat:
       "Recorded since the first app release that reports the setting; earlier versions appear as Unknown unless they made an LLM call.",
   },
