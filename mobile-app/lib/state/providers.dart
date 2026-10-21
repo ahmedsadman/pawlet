@@ -180,6 +180,10 @@ final appServicesProvider = Provider<AppServices>((ref) {
   // Rebuilt on every mode change, so the daily task follows the build (see
   // syncHeartbeat).
   unawaited(syncHeartbeat());
+  // Today's heartbeat row may still carry the old mode's LLM group, and the
+  // next pass could be hours away; a repeat mark is a no-op otherwise.
+  final heartbeat = services.heartbeat;
+  if (heartbeat != null) unawaited(heartbeat.markAlive());
   // A pass may still be running on this bundle when the mode moves, so the
   // close waits for it.
   ref.onDispose(() => unawaited(services.disposeWhenIdle()));
