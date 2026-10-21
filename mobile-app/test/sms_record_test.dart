@@ -228,4 +228,10 @@ void main() {
       expect(rec(id: null).llmMessageKey, isNull);
     });
   });
+
+  test('normalizeSmsContent folds CRLF/CR to LF and trims the edges', () {
+    expect(normalizeSmsContent('  a\r\nb\rc \n'), 'a\nb\nc');
+    expect(normalizeSmsContent('plain'), 'plain');
+    expect(normalizeSmsContent(' \r\n '), '');
+  });
 }

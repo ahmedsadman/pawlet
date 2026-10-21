@@ -166,10 +166,7 @@ class BulkImportService {
     final sender = message.sender.trim();
     // Identical normalization to the live capture path, so a message the
     // listener already stored produces the same dedup key and is recognized.
-    final content = message.content
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .trim();
+    final content = normalizeSmsContent(message.content);
     if (sender.isEmpty || content.isEmpty) return false;
 
     final gate = bulkGate(sender, content, banks);
