@@ -10,7 +10,7 @@ export interface StatCopy {
 }
 
 const WHO_REPORTS =
-  "Installs with a server (Play or own key) report heartbeats, whatever their LLM setting. Message counts come only from Play installs using Pawlet's server. Installs that never passed Play Integrity are included and marked unattested.";
+  "Every install of a build that points at Pawlet's server sends heartbeats, whatever its LLM setting. Message counts come only from Play installs using Pawlet's server. Installs that never passed Play Integrity are included and marked unattested.";
 /**
  * The app release that first sends heartbeats. The release owner replaces
  * this with "app version <versionCode>" when that release is cut.
@@ -351,11 +351,11 @@ export const statCopy = {
   },
   "chart.llmGroups": {
     title: "LLM setting",
-    meaning: "Which LLM service active installs use: Pawlet's server, their own key, or none.",
+    meaning: "Active installs grouped by their LLM configuration.",
     computation:
-      "Each install active in the range counts once under its most recent reported LLM group. LLM on = Play install using Pawlet's server; Turned off = Play install that disabled the LLM in Settings; Own key = user's OpenRouter key; No LLM = no AI service (sideloaded, failed Play Integrity, or no key); Unknown = app versions that don't report the setting. Installs with no reported group count as LLM on if they made a call in the range, otherwise Unknown. The groups add up to active installs.",
+      "Each install active in the range counts once under its most recent reported LLM group. LLM on = Play install using Pawlet's server; Turned off = Play install that disabled the LLM in Settings; Own key = user's OpenRouter key; No LLM = no AI service at all (sideloaded or failed Play Integrity, with no key of their own); Unknown = app versions that don't report the setting. Installs with no reported group count as LLM on if they made an LLM call in the range, otherwise Unknown. The groups add up to active installs.",
     caveat:
-      "Recorded since the first app release that reports the setting; earlier versions appear as Unknown unless they made a call.",
+      "Recorded since the first app release that reports the setting; earlier versions appear as Unknown unless they made an LLM call.",
   },
   "col.messagesToday": {
     title: "Today",
