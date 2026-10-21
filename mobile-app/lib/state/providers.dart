@@ -8,7 +8,6 @@ import '../config/build_config.dart';
 import '../data/banks_repository.dart';
 import '../data/delivery_health_store.dart';
 import '../data/finance_repository.dart';
-import '../data/heartbeat_repository.dart';
 import '../data/secure_store.dart';
 import '../data/settings_repository.dart';
 import '../data/sms_repository.dart';
@@ -180,7 +179,7 @@ final appServicesProvider = Provider<AppServices>((ref) {
   );
   // Rebuilt on every mode change, so the daily task follows the build (see
   // syncHeartbeat).
-  unawaited(syncHeartbeat(repository: HeartbeatRepository(database)));
+  unawaited(syncHeartbeat());
   ref.onDispose(services.dispose);
   return services;
 });

@@ -1,4 +1,5 @@
 import 'package:another_telephony/telephony.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -87,8 +88,8 @@ class AppServices {
   final ModelStatsReporter? modelStatsReporter;
 
   /// Records days the app ran or was opened and uploads them, with the
-  /// install's LLM group. Present in every mode but no-LLM, in a build pointed
-  /// at a server; null in no-LLM.
+  /// install's LLM group. Present in every mode (including no-LLM) whenever
+  /// the build has a server; null otherwise.
   final Heartbeat? heartbeat;
 
   /// The mode a background isolate runs in, from fresh prefs and the
@@ -114,10 +115,9 @@ class AppServices {
     return (mode: mode, apiKey: apiKey);
   }
 
-  /// A heartbeat for an install that may send one (any mode but no-LLM, in a
-  /// build pointed at a server), whose marks carry the current LLM group read
-  /// from fresh prefs: the mode can move in another isolate while this object
-  /// lives on.
+  /// A heartbeat for an install in a build with a server, whose marks carry the
+  /// current LLM group read from fresh prefs: the mode can move in another
+  /// isolate while this object lives on.
   static Heartbeat _heartbeat({
     required Database database,
     required SharedPreferences prefs,
@@ -134,8 +134,13 @@ class AppServices {
     );
   }
 
-  static bool _sendsHeartbeat(LlmMode mode) =>
-      mode != LlmMode.none && BuildConfig.apiBaseConfigured;
+  static bool _sendsHeartbeat({required bool apiBaseConfigured}) =>
+      apiBaseConfigured;
+
+  /// Test-visible wrapper for [_sendsHeartbeat].
+  @visibleForTesting
+  static bool testSendsHeartbeat({required bool apiBaseConfigured}) =>
+      _sendsHeartbeat(apiBaseConfigured: apiBaseConfigured);
 
   /// For the daily WorkManager task: a heartbeat when this install may send
   /// one, else null.
@@ -143,8 +148,7 @@ class AppServices {
     required Database database,
     required SharedPreferences prefs,
   }) async {
-    final (:mode, apiKey: _) = await standaloneMode(prefs);
-    return _sendsHeartbeat(mode)
+    return _sendsHeartbeat(apiBaseConfigured: BuildConfig.apiBaseConfigured)
         ? _heartbeat(database: database, prefs: prefs)
         : null;
   }
@@ -220,7 +224,8 @@ class AppServices {
             isProxy: stillOnProxySession,
           );
 
-    final heartbeat = _sendsHeartbeat(mode)
+    final heartbeat =
+        _sendsHeartbeat(apiBaseConfigured: BuildConfig.apiBaseConfigured)
         ? _heartbeat(database: database, prefs: prefs)
         : null;
 
