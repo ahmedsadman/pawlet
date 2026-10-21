@@ -50,4 +50,22 @@ void main() {
     // lastScanAt is untouched by restartFrom.
     expect(store.lastScanAt, 90);
   });
+
+  test('advanceWatermark does nothing when watermark is null', () async {
+    expect(store.watermark, isNull);
+    await store.advanceWatermark(100);
+    expect(store.watermark, isNull);
+  });
+
+  test('advanceWatermark does nothing when watermark is ahead', () async {
+    await store.setWatermark(200);
+    await store.advanceWatermark(100);
+    expect(store.watermark, 200);
+  });
+
+  test('advanceWatermark moves when behind', () async {
+    await store.setWatermark(100);
+    await store.advanceWatermark(200);
+    expect(store.watermark, 200);
+  });
 }
