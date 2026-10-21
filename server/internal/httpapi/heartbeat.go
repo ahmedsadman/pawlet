@@ -51,6 +51,7 @@ type heartbeatEntry struct {
 	AppVersionCode int64  `json:"appVersionCode"`
 	Opened         bool   `json:"opened"`
 	Alive          bool   `json:"alive"`
+	LLM            string `json:"llm,omitempty"`
 }
 
 // validInstallID matches what the app generates: 256 random bits as 64
@@ -97,12 +98,15 @@ func validateHeartbeat(req heartbeatRequest, today time.Time) ([]store.Heartbeat
 		if !e.Opened && !e.Alive {
 			return nil, fmt.Errorf("entry %d: neither opened nor alive", i)
 		}
+		if e.LLM != "" && e.LLM != "on" && e.LLM != "off" && e.LLM != "byok" && e.LLM != "none" {
+			return nil, fmt.Errorf("entry %d: llm %q unknown", i, e.LLM)
+		}
 		if seen[e.Day] {
 			return nil, fmt.Errorf("entry %d: duplicate day", i)
 		}
 		seen[e.Day] = true
 		out = append(out, store.HeartbeatDay{
-			Day: e.Day, AppVersionCode: e.AppVersionCode, Opened: e.Opened, Alive: e.Alive,
+			Day: e.Day, AppVersionCode: e.AppVersionCode, Opened: e.Opened, Alive: e.Alive, LLM: e.LLM,
 		})
 	}
 	return out, nil

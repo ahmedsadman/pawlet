@@ -461,3 +461,12 @@ func TestMigration005SplitsAttemptsFromCallsInVersion4Database(t *testing.T) {
 		t.Errorf("old-shape INSERT failed: %v", err)
 	}
 }
+
+func TestMigration006AddsLLMColumn(t *testing.T) {
+	s := newTestStore(t)
+	var llm sql.NullString
+	err := s.read.QueryRowContext(context.Background(), "SELECT llm FROM install_days LIMIT 1").Scan(&llm)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("llm column missing or query failed: %v", err)
+	}
+}

@@ -33,6 +33,8 @@ type DayRow struct {
 	Alive bool
 	// Session: the install minted a proxy session that day.
 	Session bool
+	// LLM: which LLM group the install is in (empty when not reported).
+	LLM string
 }
 
 // CounterRow is one daily aggregate counter.
@@ -142,7 +144,7 @@ func (s *Store) InstallDays(ctx context.Context, idHash string) ([]DayRow, error
 }
 
 // dayColumns is the column list queryDays expects, in order.
-const dayColumns = `id_hash, day, COALESCE(app_version_code, 0), opened, alive, session`
+const dayColumns = `id_hash, day, COALESCE(app_version_code, 0), opened, alive, session, COALESCE(llm, '')`
 
 func (s *Store) queryDays(ctx context.Context, q string, args ...any) ([]DayRow, error) {
 	rows, err := s.read.QueryContext(ctx, q, args...)
@@ -157,7 +159,7 @@ func (s *Store) queryDays(ctx context.Context, q string, args ...any) ([]DayRow,
 			d                      DayRow
 			opened, alive, session int
 		)
-		if err := rows.Scan(&d.IDHash, &d.Day, &d.AppVersionCode, &opened, &alive, &session); err != nil {
+		if err := rows.Scan(&d.IDHash, &d.Day, &d.AppVersionCode, &opened, &alive, &session, &d.LLM); err != nil {
 			return nil, fmt.Errorf("scan install day: %w", err)
 		}
 		d.Opened, d.Alive, d.Session = opened != 0, alive != 0, session != 0
