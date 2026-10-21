@@ -546,4 +546,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(await shown, isFalse);
   });
+
+  testWidgets('reports true when guard is busy', (tester) async {
+    final api = FakePlayUpdateApi(info: availableUpdate())
+      ..checkCompleter = Completer<AppUpdateInfo>();
+    final harness = await _pumpHarness(tester, api);
+
+    // Start first check (will hold the guard).
+    final first = runAppUpdateCheck(harness.context, harness.ref);
+    await tester.pump();
+
+    // Start second check while first is in flight.
+    final second = await runAppUpdateCheck(harness.context, harness.ref);
+
+    // Second resolves true immediately.
+    expect(second, isTrue);
+
+    // Complete first check; its offer waits for an answer.
+    api.checkCompleter!.complete(availableUpdate());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Not now'));
+    await tester.pumpAndSettle();
+    expect(await first, isTrue);
+  });
 }

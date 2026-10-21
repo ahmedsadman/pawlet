@@ -32,7 +32,8 @@ class _FlowGuard {
 /// hourly slot back, so the next resume asks again.
 ///
 /// Resolves true when it put something on screen (the offer sheet or the
-/// restart bar), so the caller can keep other prompts out of the way.
+/// restart bar) or another check is already in flight (which may), so the
+/// caller can keep other prompts out of the way.
 Future<bool> runAppUpdateCheck(
   BuildContext context,
   WidgetRef ref, {
@@ -46,7 +47,7 @@ Future<bool> runAppUpdateCheck(
 
   bool blocked() => canPrompt != null && !canPrompt();
 
-  if (guard.busy) return false;
+  if (guard.busy) return true;
 
   // For automatic checks: nothing to do if nothing could be shown; if a
   // download is known, show the restart bar without asking Play; if the last
