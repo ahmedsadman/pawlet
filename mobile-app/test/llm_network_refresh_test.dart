@@ -65,6 +65,14 @@ void main() {
     expect(bundleFetches, 0);
   });
 
+  test('optedOut keeps the proxy session warm', () async {
+    // The LLM is off but attestation still carries the model stats.
+    await run(LlmMode.optedOut);
+    expect(attestation.warmUps, 1);
+    expect(syncs, 1);
+    expect(bundleFetches, 0);
+  });
+
   test('byok refreshes the prompt bundle and never attests', () async {
     await run(LlmMode.byok);
     expect(bundleFetches, 1);

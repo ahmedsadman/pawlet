@@ -21,8 +21,9 @@ Future<Decimal?> _noRate() async => null;
 /// 1. the Layer-1 sender/card gate — a miss is terminal `ignored`;
 /// 2. the on-device model — a confident verdict is terminal;
 /// 3. the cloud LLM, for anything the first two could not settle — when one is
-///    configured. With no LLM, anything the on-device model declines becomes
-///    a terminal `failure`.
+///    configured and still allowed ([llmAllowed]). With no LLM, or one the
+///    user has since turned off, anything the on-device model declines
+///    becomes a terminal `failure`.
 ///
 /// The first two touch no network, so the pass runs offline and still drains
 /// everything they can decide. A record that reaches the third layer while
@@ -35,8 +36,9 @@ Future<Decimal?> _noRate() async => null;
 /// `next_attempt_at`; the existing triggers (foreground resume, incoming-SMS
 /// isolate, WorkManager tick) drive later retries.
 ///
-/// In proxy mode, every message the on-device model runs on has its verdict
-/// counted once for the local-model stats ([modelStats], [isProxy]).
+/// On the proxy session (LLM on or opted out), every message the on-device
+/// model runs on has its verdict counted once for the local-model stats
+/// ([modelStats], [isProxy]).
 class ProcessingService {
   ProcessingService({
     required this.smsRepository,
@@ -53,6 +55,7 @@ class ProcessingService {
     this.modelStats,
     this.appVersionCode = readAppVersionCode,
     this.isProxy,
+    this.llmAllowed,
     this.onPassEnd,
   }) : _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
@@ -84,16 +87,24 @@ class ProcessingService {
   final Future<void> Function(Duration? delay)? reschedule;
 
   /// Where each message's on-device verdict is counted, once (see
-  /// [ModelStatsRepository.recordVerdict]). Null skips counting. Used only
-  /// when the classifier has an LLM: the counts measure how often the model
-  /// spares an LLM call, which a no-LLM install never makes.
+  /// [ModelStatsRepository.recordVerdict]). Null skips counting. Whether a
+  /// verdict is counted is up to [isProxy] alone, so an opted-out install,
+  /// whose classifier has no LLM, still counts.
   final ModelStatsRepository? modelStats;
 
-  /// Whether the install is in proxy mode right now, asked before each
-  /// verdict is counted. Only proxy installs count: the counts are sent to
-  /// Pawlet's server, and a BYOK-era count kept locally would be sent if the
-  /// install later became proxy. Null, false or a failed check skips counting.
+  /// Whether the install is on the proxy session right now (LLM on or opted
+  /// out), asked before each verdict is counted. Only those installs count:
+  /// the counts are sent to Pawlet's server, and a BYOK-era count kept
+  /// locally would be sent if the install later became proxy. Null, false or
+  /// a failed check skips counting.
   final Future<bool> Function()? isProxy;
+
+  /// Whether the LLM may still be called, asked right before layer 3 for each
+  /// message. The user can turn the LLM off while this service lives on, in
+  /// this isolate (mid-pass) or another; once it says no, nothing new is sent.
+  /// False or a failed check fails the message as local-only, exactly as if
+  /// there were no LLM. Null skips the check.
+  final Future<bool> Function()? llmAllowed;
 
   /// This build's versionCode, which the counts are filed under. A null
   /// answer skips counting that message rather than filing it wrongly.
@@ -329,18 +340,14 @@ class ProcessingService {
           usdRate: usdRate,
         );
         final localOutcome = local.outcome;
-        // Counted only when an LLM exists: with none, a decline spares no
-        // LLM call, so it says nothing about the rate the stats measure.
-        if (hasLlm) {
-          await _recordVerdict(
-            id,
-            localOutcome != null
-                ? LocalVerdict.accepted
-                : local.declined
-                ? LocalVerdict.declined
-                : LocalVerdict.unavailable,
-          );
-        }
+        await _recordVerdict(
+          id,
+          localOutcome != null
+              ? LocalVerdict.accepted
+              : local.declined
+              ? LocalVerdict.declined
+              : LocalVerdict.unavailable,
+        );
         if (localOutcome != null) {
           return await _finish(record, localOutcome, banks, cur, heldSince);
         }
@@ -351,22 +358,17 @@ class ProcessingService {
       // terminal rather than a deferral — there is nothing left to defer to.
       // Surfaced as a failure so it appears in Messages with the Retry action
       // already offered there, which is what makes it recoverable once a key
-      // is added.
+      // is added or the LLM is turned back on.
       //
       // `needs_llm` is deliberately left alone. It is never cleared, and the
       // two readers above would then drop this row while offline and skip its
       // inference for good.
-      if (!hasLlm) {
-        return await smsRepository.updateStatus(
-          id,
-          SmsStatus.failure,
-          attempts: record.attempts + 1,
-          failureReason: FailureReason.localOnly,
-          lastError: 'on-device model produced no usable record',
-          updatedAt: _clock(),
-          nextAttemptAt: null,
-          heldSince: heldSince,
-        );
+      if (!hasLlm) return await _failLocalOnly(record, heldSince);
+
+      // The user turned the LLM off after this service was built: the same
+      // dead end as having none.
+      if (!await _llmStillAllowed()) {
+        return await _failLocalOnly(record, heldSince);
       }
 
       // Layer 3.
@@ -416,6 +418,35 @@ class ProcessingService {
     } catch (e) {
       // Unexpected (e.g. a DB error): treat as transient and back off.
       return _reschedule(record, e.toString(), heldSince: heldSince);
+    }
+  }
+
+  /// Terminal failure for a row only the on-device model could try, used when
+  /// there is no LLM to hand it to, or the user has turned it off (see the
+  /// comments at the call sites).
+  Future<bool> _failLocalOnly(SmsRecord record, int heldSince) =>
+      smsRepository.updateStatus(
+        record.id!,
+        SmsStatus.failure,
+        attempts: record.attempts + 1,
+        failureReason: FailureReason.localOnly,
+        lastError: 'on-device model produced no usable record',
+        updatedAt: _clock(),
+        nextAttemptAt: null,
+        heldSince: heldSince,
+      );
+
+  /// Asks [llmAllowed]. Fails closed: a check that throws counts as no, since
+  /// sending a message the user may have just withheld is the one outcome
+  /// that cannot be undone.
+  Future<bool> _llmStillAllowed() async {
+    final check = llmAllowed;
+    if (check == null) return true;
+    try {
+      return await check();
+    } catch (e) {
+      if (kDebugMode) debugPrint('LLM switch unreadable, not calling: $e');
+      return false;
     }
   }
 

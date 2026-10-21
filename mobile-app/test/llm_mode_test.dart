@@ -10,6 +10,7 @@ void main() {
           proxyConfigured: true,
           hasKey: false,
           attestationIneligible: false,
+          llmEnabled: true,
         ),
         LlmMode.proxy,
       );
@@ -24,6 +25,7 @@ void main() {
           proxyConfigured: true,
           hasKey: true,
           attestationIneligible: false,
+          llmEnabled: true,
         ),
         LlmMode.proxy,
       );
@@ -36,6 +38,7 @@ void main() {
           proxyConfigured: false,
           hasKey: false,
           attestationIneligible: false,
+          llmEnabled: true,
         ),
         LlmMode.none,
       );
@@ -48,6 +51,7 @@ void main() {
           proxyConfigured: true,
           hasKey: true,
           attestationIneligible: true,
+          llmEnabled: true,
         ),
         LlmMode.byok,
       );
@@ -60,6 +64,7 @@ void main() {
           proxyConfigured: true,
           hasKey: false,
           attestationIneligible: true,
+          llmEnabled: true,
         ),
         LlmMode.none,
       );
@@ -72,6 +77,7 @@ void main() {
           proxyConfigured: true,
           hasKey: true,
           attestationIneligible: false,
+          llmEnabled: true,
         ),
         LlmMode.byok,
       );
@@ -84,17 +90,69 @@ void main() {
           proxyConfigured: true,
           hasKey: false,
           attestationIneligible: false,
+          llmEnabled: true,
         ),
         LlmMode.none,
       );
     });
+
+    test('resolves optedOut when proxy-eligible and llmEnabled is false', () {
+      expect(
+        resolveLlmMode(
+          fromPlay: true,
+          proxyConfigured: true,
+          hasKey: true,
+          attestationIneligible: false,
+          llmEnabled: false,
+        ),
+        LlmMode.optedOut,
+      );
+    });
+
+    test('llmEnabled is ignored outside proxy eligibility', () {
+      // The switch belongs to the proxy session; a BYOK user turns the LLM
+      // off by removing the key.
+      for (final (fromPlay, ineligible, hasKey, expected) in const [
+        (false, false, true, LlmMode.byok),
+        (false, false, false, LlmMode.none),
+        (true, true, true, LlmMode.byok),
+        (true, true, false, LlmMode.none),
+      ]) {
+        expect(
+          resolveLlmMode(
+            fromPlay: fromPlay,
+            proxyConfigured: true,
+            hasKey: hasKey,
+            attestationIneligible: ineligible,
+            llmEnabled: false,
+          ),
+          expected,
+        );
+      }
+    });
   });
 
   group('showsByokSection', () {
-    test('hidden only in proxy mode', () {
+    test('hidden in proxy mode', () {
       expect(LlmMode.proxy.showsByokSection, isFalse);
       expect(LlmMode.byok.showsByokSection, isTrue);
       expect(LlmMode.none.showsByokSection, isTrue);
     });
+
+    test('optedOut hides the BYOK section', () {
+      expect(LlmMode.optedOut.showsByokSection, isFalse);
+    });
+  });
+
+  test('heartbeatGroup maps every mode', () {
+    expect(
+      {for (final m in LlmMode.values) m: m.heartbeatGroup},
+      {
+        LlmMode.proxy: 'on',
+        LlmMode.optedOut: 'off',
+        LlmMode.byok: 'byok',
+        LlmMode.none: 'none',
+      },
+    );
   });
 }

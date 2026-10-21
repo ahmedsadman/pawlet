@@ -19,7 +19,7 @@ import 'upload_backoff.dart';
 ///
 /// Unauthenticated: the body carries the install ID, which the server hashes
 /// before storing, exactly as `/v1/session` does. Sent only while the install
-/// is in proxy or BYOK mode ([_isAllowed], re-read before every send).
+/// is in a mode other than no-LLM ([_isAllowed], re-read before every send).
 ///
 /// Nothing is sent in the first [firstUploadDelay] after install: devices that
 /// run each new build for a few minutes and are then wiped (Play's review and

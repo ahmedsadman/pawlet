@@ -129,8 +129,26 @@ class AttestationIneligible extends Notifier<bool> {
 final attestationIneligibleProvider =
     NotifierProvider<AttestationIneligible, bool>(AttestationIneligible.new);
 
+/// The user's LLM switch (see [SettingsRepository.llmEnabled]). A notifier so
+/// flipping it moves [llmModeProvider] at once.
+class LlmEnabled extends Notifier<bool> {
+  @override
+  bool build() => ref.watch(settingsRepositoryProvider).llmEnabled;
+
+  /// Writes prefs before moving the state. The state change rebuilds
+  /// AppServices, possibly under a pass still running on the old
+  /// ProcessingService; that pass re-reads prefs before each LLM call, so it
+  /// must already see the new value.
+  Future<void> set(bool value) async {
+    await ref.read(settingsRepositoryProvider).setLlmEnabled(value);
+    state = value;
+  }
+}
+
+final llmEnabledProvider = NotifierProvider<LlmEnabled, bool>(LlmEnabled.new);
+
 /// How this install reaches an LLM. Watched by the pipeline and by Settings,
-/// so both always agree about which of the three worlds the user is in.
+/// so both always agree about which world the user is in.
 final llmModeProvider = Provider<LlmMode>(
   (ref) => resolveLlmMode(
     // Read directly, not through a notifier: this is written once in `main()`
@@ -139,6 +157,7 @@ final llmModeProvider = Provider<LlmMode>(
     proxyConfigured: BuildConfig.proxyConfigured,
     hasKey: ref.watch(apiKeyProvider).isNotEmpty,
     attestationIneligible: ref.watch(attestationIneligibleProvider),
+    llmEnabled: ref.watch(llmEnabledProvider),
   ),
 );
 

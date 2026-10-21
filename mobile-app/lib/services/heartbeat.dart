@@ -15,7 +15,7 @@ import 'heartbeat_reporter.dart';
 import 'llm/llm_mode.dart';
 
 /// Records that the app ran today, and whether it was opened, then lets the
-/// reporter upload. Built only in proxy and BYOK modes (see `AppServices`).
+/// reporter upload. Built in every mode but no-LLM (see `AppServices`).
 ///
 /// Marks happen on launch and resume (opened), at the end of every
 /// processing pass in any isolate, and from the daily WorkManager task
@@ -64,9 +64,9 @@ class Heartbeat {
 }
 
 /// Keeps the daily heartbeat task and the local log in step with [mode]:
-/// scheduled in proxy and BYOK; otherwise (no-LLM, or a build with no server)
-/// cancelled and the unsent log deleted, so nothing leaves the phone. Run by
-/// the UI isolate whenever the mode resolves. Never throws.
+/// scheduled in every mode but no-LLM; otherwise (no-LLM, or a build with no
+/// server) cancelled and the unsent log deleted, so nothing leaves the phone.
+/// Run by the UI isolate whenever the mode resolves. Never throws.
 ///
 /// [apiBaseConfigured] defaults to [BuildConfig.apiBaseConfigured]; tests
 /// pass it explicitly.

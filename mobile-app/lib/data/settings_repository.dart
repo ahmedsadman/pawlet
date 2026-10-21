@@ -1,8 +1,9 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Local user settings backed by SharedPreferences: the finance-view
-/// preferences the UI persists, plus two install-scoped flags the LLM mode is
-/// resolved from. Secrets live in [SecureStore], never here.
+/// preferences the UI persists, plus the flags the LLM mode is resolved from:
+/// two install-scoped ones and the user's LLM switch. Secrets live in
+/// [SecureStore], never here.
 class SettingsRepository {
   SettingsRepository(this._prefs);
 
@@ -20,6 +21,7 @@ class SettingsRepository {
   static const _kHistoryHintSeen = 'history_hint_seen_v2';
   static const _kBillActionsHintSeen = 'bill_actions_hint_seen';
   static const _kBulkImportOffered = 'bulk_import_offered';
+  static const _kLlmEnabled = 'llm_enabled';
   static const _kInstalledFromPlay = 'installed_from_play';
   static const _kAttestationIneligible = 'attestation_ineligible';
   static const _kAttestationIneligibleSince = 'attestation_ineligible_since';
@@ -84,6 +86,15 @@ class SettingsRepository {
   bool get bulkImportOffered => _prefs.getBool(_kBulkImportOffered) ?? false;
   Future<void> setBulkImportOffered(bool value) =>
       _prefs.setBool(_kBulkImportOffered, value);
+
+  /// The user's LLM switch. Off moves a proxy-eligible install to
+  /// `LlmMode.optedOut`; other modes ignore it (see `resolveLlmMode`).
+  ///
+  /// A user choice rather than install state, so it is part of Backup &
+  /// Restore: a restore that lacks it resets it to on, like every other
+  /// managed key.
+  bool get llmEnabled => _prefs.getBool(_kLlmEnabled) ?? true;
+  Future<void> setLlmEnabled(bool value) => _prefs.setBool(_kLlmEnabled, value);
 
   /// Cached install source. The platform channel that reads it is served by
   /// MainActivity, which does not exist in the WorkManager and background-SMS
@@ -177,6 +188,7 @@ class SettingsRepository {
     _kTxTypeHintSeen,
     _kHistoryHintSeen,
     _kBillActionsHintSeen,
+    _kLlmEnabled,
   ];
 
   /// Snapshot of user settings for a backup (only keys that are actually set).

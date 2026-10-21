@@ -143,4 +143,36 @@ void main() {
         .sync(skipIf: () => true);
     expect(c.read(attestationIneligibleProvider), isFalse);
   });
+
+  group('the LLM switch', () {
+    test('defaults on', () async {
+      final c = await _container();
+      expect(c.read(llmEnabledProvider), isTrue);
+    });
+
+    test('set persists before the state moves', () async {
+      final c = await _container();
+      final prefs = c.read(sharedPreferencesProvider);
+      bool? persistedAtFlip;
+      c.listen<bool>(
+        llmEnabledProvider,
+        (_, _) => persistedAtFlip = prefs.getBool('llm_enabled'),
+      );
+
+      await c.read(llmEnabledProvider.notifier).set(false);
+
+      expect(c.read(llmEnabledProvider), isFalse);
+      // A pass still running on the old services re-reads prefs, so the
+      // write must already be there when anything reacts to the new state.
+      expect(persistedAtFlip, isFalse);
+    });
+
+    test('turning it off leaves a non-proxy mode alone', () async {
+      // The test runner has no proxy build config, so this pins only that
+      // the provider is wired; resolveLlmMode's tests cover optedOut itself.
+      final c = await _container(bootstrapKey: 'sk-or-stored');
+      await c.read(llmEnabledProvider.notifier).set(false);
+      expect(c.read(llmModeProvider), LlmMode.byok);
+    });
+  });
 }

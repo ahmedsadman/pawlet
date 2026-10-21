@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pawlet/config/build_config.dart';
 import 'package:pawlet/services/app_services.dart';
 import 'package:pawlet/services/llm/llm_mode.dart';
 import 'package:pawlet/services/llm/openrouter_provider.dart';
@@ -60,6 +61,32 @@ void main() {
       expect(s.attestation, isNull);
     });
 
+    test(
+      'optedOut builds attestation, model stats and heartbeat but no LLM provider',
+      () async {
+        final s = await build(LlmMode.optedOut);
+        expect(s.llmProvider, isNull);
+        expect(s.attestation, isNotNull);
+        expect(s.modelStatsReporter, isNotNull);
+        expect(s.processingService.isProxy, isNotNull);
+        // Same rule as proxy: present whenever the build has a server.
+        expect(s.heartbeat != null, BuildConfig.apiBaseConfigured);
+        // No provider to guard.
+        expect(s.processingService.llmAllowed, isNull);
+      },
+    );
+
+    test('proxy re-reads the LLM switch from fresh prefs', () async {
+      final s = await build(LlmMode.proxy);
+      final allowed = s.processingService.llmAllowed!;
+      expect(await allowed(), isTrue);
+
+      // Another isolate (or the UI notifier) turned the LLM off: the write
+      // reaches the platform store but not this isolate's prefs cache.
+      SharedPreferences.setMockInitialValues({'llm_enabled': false});
+      expect(await allowed(), isFalse);
+    });
+
     test('none has no provider at all', () async {
       final s = await build(LlmMode.none);
       expect(s.llmProvider, isNull);
@@ -67,9 +94,10 @@ void main() {
     });
   });
 
-  group('model stats are sent only in proxy mode', () {
+  group('model stats are sent only on the proxy session', () {
     for (final (mode, sends) in const [
       (LlmMode.proxy, true),
+      (LlmMode.optedOut, true),
       (LlmMode.byok, false),
       (LlmMode.none, false),
     ]) {
