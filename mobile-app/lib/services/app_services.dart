@@ -315,6 +315,17 @@ class AppServices {
     exchangeRate.close();
   }
 
+  /// [dispose], once no processing pass is running on this bundle. The UI
+  /// rebuilds its bundle whenever the mode moves (the LLM switch, a saved
+  /// key), possibly mid-pass; closing at once would free the on-device
+  /// model's interpreter under a running inference and cut off the pass's
+  /// network calls. Meanwhile the pass re-checks the LLM switch before each
+  /// LLM call, so a turned-off LLM is still never called.
+  Future<void> disposeWhenIdle() async {
+    await processingService.whenIdle();
+    dispose();
+  }
+
   /// Background-isolate dispose: closes the isolate-local LLM http client and the
   /// on-device model's native interpreter.
   ///

@@ -180,7 +180,9 @@ final appServicesProvider = Provider<AppServices>((ref) {
   // Rebuilt on every mode change, so the daily task follows the build (see
   // syncHeartbeat).
   unawaited(syncHeartbeat());
-  ref.onDispose(services.dispose);
+  // A pass may still be running on this bundle when the mode moves, so the
+  // close waits for it.
+  ref.onDispose(() => unawaited(services.disposeWhenIdle()));
   return services;
 });
 

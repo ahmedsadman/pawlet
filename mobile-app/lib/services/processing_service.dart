@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:decimal/decimal.dart';
@@ -146,6 +147,10 @@ class ProcessingService {
   bool _running = false;
   bool _paused = false;
 
+  /// Completes when the current pass, including its [onPassEnd] tail, is
+  /// over. Null when no pass is in flight.
+  Completer<void>? _passDone;
+
   /// Set when this pass released a row for the foreground; read by
   /// [_rescheduleNext].
   bool _awaitingForeground = false;
@@ -176,6 +181,7 @@ class ProcessingService {
   Future<void> process() async {
     if (_paused || _running) return;
     _running = true;
+    final done = _passDone = Completer<void>();
     _awaitingForeground = false;
     try {
       await smsRepository.reclaimStale(_clock() - staleAfter.inMilliseconds);
@@ -242,6 +248,17 @@ class ProcessingService {
       _running = false;
     }
     await _runPassEnd();
+    if (identical(_passDone, done)) _passDone = null;
+    done.complete();
+  }
+
+  /// Completes once no pass is in flight in this isolate, its [onPassEnd]
+  /// tail included; at once when idle. A pass that starts while an earlier
+  /// one runs its tail is waited for too.
+  Future<void> whenIdle() async {
+    while (_passDone != null) {
+      await _passDone!.future;
+    }
   }
 
   /// Runs [onPassEnd] once the pass is over. Deliberately outside the
