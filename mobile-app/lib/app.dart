@@ -273,8 +273,8 @@ class _RootShellState extends ConsumerState<RootShell>
   /// Offers to lift battery optimization when the OS is shown to be stopping
   /// Pawlet (see [runBatteryPromptCheck]). Same gating as the update offer: a
   /// sheet shown while locked would cover the lock screen, and the import's
-  /// progress dialog must stay the top route. Also waits for the home route
-  /// to be on top, so it never lands over a page the user opened.
+  /// progress dialog must stay the top route. Skips when anything is pushed
+  /// above home (page, sheet, dialog), and the next resume tries again.
   Future<void> _offerBatteryExemption() async {
     await ref.read(authControllerProvider.notifier).resumeSettled;
     if (!mounted || !await _awaitUnlocked() || !mounted) return;
@@ -285,7 +285,7 @@ class _RootShellState extends ConsumerState<RootShell>
           mounted &&
           ref.read(authControllerProvider).status == AuthStatus.unlocked &&
           !ref.read(processingServiceProvider).isPaused &&
-          (ModalRoute.isCurrentOf(context) ?? true),
+          !Navigator.of(context).canPop(),
     );
   }
 
