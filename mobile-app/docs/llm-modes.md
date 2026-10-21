@@ -1,6 +1,6 @@
 # LLM modes
 
-How the app reaches a large language model to improve classification accuracy — or does not reach one at all — is decided by a **mode** resolved at runtime from four inputs. Three modes exist, each giving the user a different privacy/accuracy trade-off. The resolution function is pure (same inputs always produce the same answer), so every isolate lands on the same mode.
+How the app reaches a large language model to improve classification accuracy — or does not reach one at all — is decided by a **mode** resolved at runtime from five inputs. Four modes exist, each giving the user a different privacy/accuracy trade-off. The resolution function is pure (same inputs always produce the same answer), so every isolate lands on the same mode.
 
 ## The four modes
 
@@ -13,14 +13,15 @@ Defined in `lib/services/llm/llm_mode.dart` and resolved by `resolveLlmMode()`:
 
 What each mode sends to Pawlet's server besides classify calls: `proxy` and `optedOut` send the [heartbeat](heartbeat.md) (including each day's LLM group: `on`/`off`/`byok`/`none`) and the [local-model stats](model-stats.md); `byok` and `none` send only the heartbeat (in builds that set `PAWLET_API_BASE`).
 
-The four inputs:
+The five inputs:
 
 1. **`fromPlay`** — Whether the Play Store installed this app. Read from the platform over a channel served by `MainActivity` (`lib/services/install_source.dart`), compared against the known Play package name.
 2. **`proxyConfigured`** — Whether the build sets both `PAWLET_API_BASE` and `PLAY_CLOUD_PROJECT_NUMBER` (`lib/config/build_config.dart`). Release builds set both; debug builds set only the API base (for the prompt bundle).
 3. **`hasKey`** — Whether the user has saved an OpenRouter key in Settings. Older builds copied their baked-in key into the same keystore slot on every launch; `lib/data/secure_store.dart` tells the two apart and discards the old one on first read, so upgrading never lands an install in `byok` on Pawlet's former shared key.
 4. **`attestationIneligible`** — Whether Pawlet's server or Play itself has rejected this device. Set when the server answers 403 at `/v1/session` or `/v1/classify`, or when Play Integrity reports that Play Store or Play Services is missing (`lib/services/auth/attestation_service.dart`, `lib/services/auth/play_integrity.dart`). Cleared on app update or after 7 days (`SettingsRepository.expireAttestationIneligible`).
+5. **`llmEnabled`** — The "Use LLM for unknown messages" switch in Settings, on by default (`SettingsRepository.llmEnabled`, held in the UI by `llmEnabledProvider` in `lib/state/providers.dart`). It is included in backups.
 
-Resolution logic: if all of `fromPlay`, `proxyConfigured`, and not `attestationIneligible` hold, the mode is `proxy`. Otherwise, `byok` if a key exists, else `none`.
+Resolution logic: if all of `fromPlay`, `proxyConfigured`, and not `attestationIneligible` hold, the install is proxy-eligible: the mode is `proxy` when `llmEnabled` is on and `optedOut` when it is off. Otherwise, `byok` if a key exists, else `none`; the switch plays no part there.
 
 **Current reachability:** `proxy` is live for Play installs of release builds. Debug and sideloaded builds never reach it because they are not from Play or do not set both environment variables.
 
@@ -87,7 +88,7 @@ The flag is also the reason the mode function is pure rather than reading the ch
 Settings shows different controls depending on the mode. The bring-your-own-key section, when shown, sits directly above the Privacy section:
 
 - **`proxy`:** No bring-your-own-key section. Shows the "Use LLM for unknown messages" switch (`lib/ui/settings/llm_opt_out_tile.dart`), which controls whether to use the LLM (default on). Turning it off shows a warning bottom sheet; turning it back on is immediate. A short privacy paragraph explains the LLM runs server-side on Pawlet's infrastructure.
-- **`optedOut`:** No bring-your-own-key section. Shows the "Use LLM for unknown messages" switch (currently off). The privacy paragraph explains that message text never leaves the phone, model-stats counting and the heartbeat (which days the app ran, no message content) are still sent.
+- **`optedOut`:** No bring-your-own-key section. Shows the "Use LLM for unknown messages" switch (currently off). The privacy paragraph is the same as in `none` (see `_privacyCopy` in `lib/ui/settings_page.dart`): messages never leave the phone, the on-device model is the only classifier, and a message it cannot classify is marked failed in Messages, where it can be retried later.
 - **`byok`:** The bring-your-own-key section is shown (`lib/ui/settings/byok_section.dart`). The user enters a key, which is validated before storage. The privacy paragraph explains that messages the on-device model cannot categorize are sent to OpenRouter with the user's own key, Pawlet's service never sees them, and the app tells Pawlet's server only which days it was opened or ran and its app version.
 - **`none`:** The bring-your-own-key section is shown, identical to `byok`. The privacy paragraph states **your messages never leave your phone** (narrow claim, accurate — currency exchange rates are still fetched over the network).
 

@@ -348,7 +348,7 @@ Recovery comes from two mechanisms instead:
   **"network connected" constraint**, so an offline backlog schedules a catch-up at
   delay zero and the OS simply holds it until connectivity returns, then runs it. An idle
   app with an empty queue schedules no catch-up; its only background wake is the daily
-  [heartbeat](heartbeat.md) task, in proxy and bring-your-own-key modes, which runs no
+  [heartbeat](heartbeat.md) task, in every mode when the build has a server, which runs no
   processing pass.
 
   **The network constraint survives §5 deliberately.** A pass now does useful work
