@@ -21,7 +21,7 @@ Future<Decimal?> _noRate() async => null;
 /// 1. the Layer-1 sender/card gate — a miss is terminal `ignored`;
 /// 2. the on-device model — a confident verdict is terminal;
 /// 3. the cloud LLM, for anything the first two could not settle — when one is
-///    configured and still allowed ([llmAllowed]). With no LLM, or one the
+///    configured and still allowed at the moment of the call ([llmAllowed]). With no LLM, or one the
 ///    user has since turned off, anything the on-device model declines
 ///    becomes a terminal `failure`.
 ///
@@ -99,8 +99,8 @@ class ProcessingService {
   /// a failed check skips counting.
   final Future<bool> Function()? isProxy;
 
-  /// Whether the LLM may still be called, asked right before layer 3 for each
-  /// message. The user can turn the LLM off while this service lives on, in
+  /// Whether the LLM may still be called, asked for each message right before
+  /// the LLM call, once the row holds the LLM slot. The user can turn the LLM off while this service lives on, in
   /// this isolate (mid-pass) or another; once it says no, nothing new is sent.
   /// False or a failed check fails the message as local-only, exactly as if
   /// there were no LLM. Null skips the check.
@@ -365,12 +365,6 @@ class ProcessingService {
       // inference for good.
       if (!hasLlm) return await _failLocalOnly(record, heldSince);
 
-      // The user turned the LLM off after this service was built: the same
-      // dead end as having none.
-      if (!await _llmStillAllowed()) {
-        return await _failLocalOnly(record, heldSince);
-      }
-
       // Layer 3.
       if (!await isOnline()) {
         return await _deferForLlm(record, heldSince, declined: declined);
@@ -380,6 +374,15 @@ class ProcessingService {
         return await _deferForLlm(record, heldSince, declined: declined);
       }
       heldSince = slotAt; // the promotion rewrote `updated_at`
+
+      // The user turned the LLM off after this service was built: the same
+      // dead end as having none. Checked here, with nothing left to await
+      // before the call, so a switch flipped while the checks above ran is
+      // still honoured. The terminal write moves the row out of `sending`,
+      // which frees the slot for the next row.
+      if (!await _llmStillAllowed()) {
+        return await _failLocalOnly(record, heldSince);
+      }
 
       final outcome = await classifier.classifyRemote(
         sender: record.sender,
