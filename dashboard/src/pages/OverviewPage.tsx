@@ -6,6 +6,7 @@ import { RangePicker } from "../components/RangePicker";
 import { Skeleton } from "../components/Skeleton";
 import { StatTile } from "../components/StatTile";
 import { TimeSeriesChart } from "../charts/TimeSeriesChart";
+import { LlmGroupsCard } from "../charts/LlmGroupsCard";
 import { InfoTip } from "../components/InfoTip";
 import { useOverview } from "../api/queries";
 import { fmtAgo, fmtCount, fmtDelta, fmtPerInstallDay, fmtPercent } from "../lib/format";
@@ -100,6 +101,7 @@ export default function OverviewPage() {
                     series={[{ key: "activeInstalls", label: "Active installs", color: SERIES[1] }]}
                   />
                 </Card>
+                <LlmGroupsCard items={d.llmGroups} />
                 <Card title="New installs per day" statId="chart.newInstallsPerDay">
                   <TimeSeriesChart
                     data={d.daily}

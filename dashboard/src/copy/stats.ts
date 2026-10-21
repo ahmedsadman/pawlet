@@ -10,7 +10,7 @@ export interface StatCopy {
 }
 
 const WHO_REPORTS =
-  "Installs using Pawlet's server or their own API key report; installs with no AI service never do. Installs that never passed Play Integrity are included and marked unattested.";
+  "Installs with a server (Play or own key) report heartbeats, whatever their LLM setting. Message counts come only from Play installs using Pawlet's server. Installs that never passed Play Integrity are included and marked unattested.";
 /**
  * The app release that first sends heartbeats. The release owner replaces
  * this with "app version <versionCode>" when that release is cut.
@@ -348,6 +348,14 @@ export const statCopy = {
     computation:
       "On-device rate = accepted ÷ (accepted + declined). The change is in percentage points against the previous period of the same length. The line is a 7-day weighted average (each day and the 6 before it, pooled); dots are single days; a dashed line marks a day a new app version handled over half of at least 20 messages.",
     caveat: `Model errors (no prediction) are counted but left out of the rate. The ring's LLM count is messages the model declined; the footer's "via LLM" also includes model errors, since those go on to the LLM too. ${MESSAGES_REPORTED}`,
+  },
+  "chart.llmGroups": {
+    title: "LLM setting",
+    meaning: "Which LLM service active installs use: Pawlet's server, their own key, or none.",
+    computation:
+      "Each install active in the range counts once under its most recent reported LLM group. LLM on = Play install using Pawlet's server; Turned off = Play install that disabled the LLM in Settings; Own key = user's OpenRouter key; No LLM = no AI service (sideloaded, failed Play Integrity, or no key); Unknown = app versions that don't report the setting. Installs with no reported group count as LLM on if they made a call in the range, otherwise Unknown. The groups add up to active installs.",
+    caveat:
+      "Recorded since the first app release that reports the setting; earlier versions appear as Unknown unless they made a call.",
   },
   "col.messagesToday": {
     title: "Today",
