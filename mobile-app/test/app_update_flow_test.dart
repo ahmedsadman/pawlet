@@ -507,4 +507,43 @@ void main() {
 
     expect(settings.updatePromptSnoozedUntil, isNotNull);
   });
+
+  testWidgets('reports true when the offer sheet went up', (tester) async {
+    final api = FakePlayUpdateApi(info: availableUpdate());
+    final harness = await _pumpHarness(tester, api);
+    final shown = runAppUpdateCheck(
+      harness.context,
+      harness.ref,
+      canPrompt: () => true,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(offerTitle), findsOneWidget);
+    await tester.tap(find.text('Not now'));
+    await tester.pumpAndSettle();
+    expect(await shown, isTrue);
+  });
+
+  testWidgets('reports false when there is nothing to offer', (tester) async {
+    final api = FakePlayUpdateApi(info: updateInfo());
+    final harness = await _pumpHarness(tester, api);
+    final shown = runAppUpdateCheck(
+      harness.context,
+      harness.ref,
+      canPrompt: () => true,
+    );
+    await tester.pumpAndSettle();
+    expect(await shown, isFalse);
+  });
+
+  testWidgets('reports false when it may not prompt', (tester) async {
+    final api = FakePlayUpdateApi(info: availableUpdate());
+    final harness = await _pumpHarness(tester, api);
+    final shown = runAppUpdateCheck(
+      harness.context,
+      harness.ref,
+      canPrompt: () => false,
+    );
+    await tester.pumpAndSettle();
+    expect(await shown, isFalse);
+  });
 }
