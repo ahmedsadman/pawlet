@@ -239,3 +239,40 @@ func TestHeartbeatLimitKey(t *testing.T) {
 		})
 	}
 }
+
+func TestHeartbeatAcceptsLLMGroup(t *testing.T) {
+	h := newHeartbeatHarness(t, 10)
+	body := `{"installId":"` + heartbeatID +
+		`","days":[{"day":"2026-10-09","appVersionCode":28,"opened":true,"alive":true,"llm":"off"}]}`
+	rec := h.post(body)
+	h.assertOutcome(t, rec, http.StatusNoContent, metrics.OK)
+
+	days, err := h.store.InstallDays(context.Background(), attest.InstallHash(heartbeatID))
+	if err != nil {
+		t.Fatalf("InstallDays() error = %v", err)
+	}
+	if len(days) != 1 || days[0].LLM != "off" {
+		t.Fatalf("days = %+v, want LLM = off", days)
+	}
+}
+
+func TestHeartbeatRejectsUnknownLLMGroup(t *testing.T) {
+	h := newHeartbeatHarness(t, 10)
+	body := `{"installId":"` + heartbeatID +
+		`","days":[{"day":"2026-10-09","appVersionCode":28,"opened":true,"alive":true,"llm":"maybe"}]}`
+	h.assertOutcome(t, h.post(body), http.StatusBadRequest, metrics.BadRequest)
+}
+
+func TestHeartbeatWithoutLLMStillAccepted(t *testing.T) {
+	h := newHeartbeatHarness(t, 10)
+	rec := h.post(validHeartbeatBody)
+	h.assertOutcome(t, rec, http.StatusNoContent, metrics.OK)
+
+	days, err := h.store.InstallDays(context.Background(), attest.InstallHash(heartbeatID))
+	if err != nil {
+		t.Fatalf("InstallDays() error = %v", err)
+	}
+	if len(days) != 1 || days[0].LLM != "" {
+		t.Fatalf("days = %+v, want LLM = empty", days)
+	}
+}

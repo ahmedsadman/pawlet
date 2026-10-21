@@ -256,3 +256,55 @@ func TestRecordHeartbeatZeroVersionDoesNotWipe(t *testing.T) {
 		t.Errorf("day version = %d, want 28 (zero should not wipe)", days[0].AppVersionCode)
 	}
 }
+
+func TestRecordHeartbeatLaterHeartbeatOverwritesLLM(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+
+	if err := s.RecordHeartbeat(ctx, "hash-l1", now,
+		[]HeartbeatDay{{Day: "2026-10-13", AppVersionCode: 28, Opened: true, LLM: "on"}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+	if err := s.RecordHeartbeat(ctx, "hash-l1", now.Add(time.Hour),
+		[]HeartbeatDay{{Day: "2026-10-13", AppVersionCode: 28, Alive: true, LLM: "off"}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+
+	days, err := s.InstallDaysBetween(ctx, "2026-10-13", "2026-10-13")
+	if err != nil {
+		t.Fatalf("InstallDaysBetween() error = %v", err)
+	}
+	if len(days) != 1 {
+		t.Fatalf("len(days) = %d, want 1", len(days))
+	}
+	if days[0].LLM != "off" {
+		t.Errorf("LLM = %q, want off (later heartbeat wins)", days[0].LLM)
+	}
+}
+
+func TestRecordHeartbeatMissingLLMKeepsStoredValue(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+
+	if err := s.RecordHeartbeat(ctx, "hash-l2", now,
+		[]HeartbeatDay{{Day: "2026-10-13", AppVersionCode: 28, Opened: true, LLM: "on"}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+	if err := s.RecordHeartbeat(ctx, "hash-l2", now.Add(time.Hour),
+		[]HeartbeatDay{{Day: "2026-10-13", AppVersionCode: 28, Alive: true, LLM: ""}}); err != nil {
+		t.Fatalf("RecordHeartbeat() error = %v", err)
+	}
+
+	days, err := s.InstallDays(ctx, "hash-l2")
+	if err != nil {
+		t.Fatalf("InstallDays() error = %v", err)
+	}
+	if len(days) != 1 {
+		t.Fatalf("len(days) = %d, want 1", len(days))
+	}
+	if days[0].LLM != "on" {
+		t.Errorf("LLM = %q, want on (empty should not clear)", days[0].LLM)
+	}
+}
