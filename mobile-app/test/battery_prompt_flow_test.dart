@@ -51,12 +51,14 @@ class _Harness {
   late BuildContext context;
   late WidgetRef ref;
 
-  Future<bool> run({bool canPrompt = true}) => runBatteryPromptCheck(
-    context,
-    ref,
-    canPrompt: () => canPrompt,
-    clock: () => _now,
-  );
+  Future<bool> run({bool canPrompt = true, bool hasSms = true}) =>
+      runBatteryPromptCheck(
+        context,
+        ref,
+        canPrompt: () => canPrompt,
+        hasSms: () async => hasSms,
+        clock: () => _now,
+      );
 }
 
 Future<_Harness> _pump(
@@ -141,6 +143,7 @@ void main() {
     final shown = h.run();
     await tester.pumpAndSettle();
 
+    expect(find.text("Pawlet can't run in the background"), findsOneWidget);
     expect(find.textContaining('Restricted'), findsOneWidget);
     await tester.tap(find.text('Open settings'));
     await tester.pumpAndSettle();
@@ -148,6 +151,19 @@ void main() {
     expect(h.power.settingsCalls, 1);
     expect(h.power.requestCalls, 0);
     expect(await shown, isTrue);
+  });
+
+  testWidgets('restricted without SMS permission shows no sheet', (
+    tester,
+  ) async {
+    final h = await _pump(tester);
+    h.power.restricted = true;
+    final shown = h.run(hasSms: false);
+    await tester.pumpAndSettle();
+
+    expect(find.text("Pawlet can't run in the background"), findsNothing);
+    expect(h.detector.scans, 1);
+    expect(await shown, isFalse);
   });
 
   testWidgets('Not now closes the sheet and keeps the snooze', (tester) async {

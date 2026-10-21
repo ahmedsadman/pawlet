@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/battery_prompt_policy.dart';
+import '../services/permissions.dart';
 import '../state/providers.dart';
 import 'widgets/sheet_parts.dart';
 
@@ -25,6 +26,7 @@ Future<bool> runBatteryPromptCheck(
   BuildContext context,
   WidgetRef ref, {
   required bool Function() canPrompt,
+  Future<bool> Function()? hasSms,
   int Function()? clock,
 }) async {
   final guard = ref.read(_guardProvider);
@@ -40,6 +42,7 @@ Future<bool> runBatteryPromptCheck(
   guard.busy = true;
   try {
     await detector.scanIfDue();
+    if (!await (hasSms ?? AppPermissions.hasSms)()) return false;
     final verdict = BatteryPromptPolicy.decide(
       exempt: await power.isBatteryExempt(),
       restricted: await power.isBackgroundRestricted(),
@@ -101,7 +104,9 @@ class _BatteryPromptSheet extends StatelessWidget {
         const SheetIcon(Icons.battery_alert_rounded),
         const SizedBox(height: 16),
         Text(
-          'Pawlet is missing messages',
+          restricted
+              ? "Pawlet can't run in the background"
+              : 'Pawlet is missing messages',
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w600,
           ),
