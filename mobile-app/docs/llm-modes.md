@@ -2,15 +2,16 @@
 
 How the app reaches a large language model to improve classification accuracy — or does not reach one at all — is decided by a **mode** resolved at runtime from four inputs. Three modes exist, each giving the user a different privacy/accuracy trade-off. The resolution function is pure (same inputs always produce the same answer), so every isolate lands on the same mode.
 
-## The three modes
+## The four modes
 
 Defined in `lib/services/llm/llm_mode.dart` and resolved by `resolveLlmMode()`:
 
 - **`proxy`** — Play install talking to Pawlet's own server, which holds the OpenRouter key. The message text leaves the phone but the user never manages a key.
+- **`optedOut`** — Play install that passed attestation (proxy-eligible) but turned off the LLM via the "Use LLM for unknown messages" switch in Settings. Keeps the proxy session, heartbeat and model-stats uploads; messages the on-device model cannot classify are marked failed.
 - **`byok`** (bring your own key) — Calls OpenRouter directly with a key the user entered in Settings. Non-Play installs, and Play installs that failed attestation, land here when a key is saved.
 - **`none`** — No LLM at all. The on-device model is the only classifier, and your messages never leave your phone.
 
-What each mode sends to Pawlet's server besides classify calls: `proxy` sends the [heartbeat](heartbeat.md) and the [local-model stats](model-stats.md); `byok` sends only the heartbeat (in builds that set `PAWLET_API_BASE`); `none` sends nothing, and moving to it deletes the unsent heartbeat log and cancels the daily heartbeat task.
+What each mode sends to Pawlet's server besides classify calls: `proxy` and `optedOut` send the [heartbeat](heartbeat.md) (including each day's LLM group: `on`/`off`/`byok`/`none`) and the [local-model stats](model-stats.md); `byok` sends only the heartbeat (in builds that set `PAWLET_API_BASE`); `none` sends nothing, and moving to it deletes the unsent heartbeat log and cancels the daily heartbeat task.
 
 The four inputs:
 
@@ -85,13 +86,14 @@ The flag is also the reason the mode function is pure rather than reading the ch
 
 Settings shows different controls depending on the mode. The bring-your-own-key section, when shown, sits directly above the Privacy section:
 
-- **`proxy`:** No bring-your-own-key section. A short privacy paragraph explains the LLM runs server-side on Pawlet's infrastructure.
+- **`proxy`:** No bring-your-own-key section. Shows the "Use LLM for unknown messages" switch (`lib/ui/settings/llm_opt_out_tile.dart`), which controls whether to use the LLM (default on). Turning it off shows a warning bottom sheet; turning it back on is immediate. A short privacy paragraph explains the LLM runs server-side on Pawlet's infrastructure.
+- **`optedOut`:** No bring-your-own-key section. Shows the "Use LLM for unknown messages" switch (currently off). The privacy paragraph explains that message text never leaves the phone, model-stats counting and the heartbeat (which days the app ran, no message content) are still sent.
 - **`byok`:** The bring-your-own-key section is shown (`lib/ui/settings/byok_section.dart`). The user enters a key, which is validated before storage. The privacy paragraph explains that messages the on-device model cannot categorize are sent to OpenRouter with the user's own key, Pawlet's service never sees them, and the app tells Pawlet's server only which days it was opened or ran and its app version.
 - **`none`:** The bring-your-own-key section is shown, identical to `byok`. The privacy paragraph states **your messages never leave your phone** (narrow claim, accurate — currency exchange rates are still fetched over the network).
 
 When `attestationIneligible` is true and the mode is `byok` or `none`, an additional warning paragraph appears in peach, explaining that this device did not pass Google's integrity check and a personal key is the only way to restore LLM parsing.
 
-The section's visibility is controlled by `LlmMode.showsByokSection`, which returns false only for `proxy`.
+The section's visibility is controlled by `LlmMode.showsByokSection`, which returns false only for `proxy` and `optedOut`.
 
 ## Key validation before storage
 
@@ -113,10 +115,10 @@ The app previously included an OpenRouter API key compiled into the build. That 
 
 ## What happens with no LLM
 
-When the mode is `none`, the on-device model is gated exactly as in the other modes: both confidence thresholds and the structural checks (a missing amount span, an unparseable number, a foreign currency with no conversion path) apply. A low-confidence guess is never written to the ledger, LLM or not.
+When the mode is `optedOut` or `none`, the on-device model is gated exactly as in the other modes: both confidence thresholds and the structural checks (a missing amount span, an unparseable number, a foreign currency with no conversion path) apply. A low-confidence guess is never written to the ledger, LLM or not.
 
-If the gate rejects the message, the row is marked `failure` with the new `FailureReason.localOnly`, shown in Messages as "On-device parsing failed". This is a terminal state but recoverable: the Messages page already offers Retry on every failure row, so saving a key later and retrying will re-run the message through the pipeline, which now defers it to the LLM.
+If the gate rejects the message, the row is marked `failure` with `FailureReason.localOnly`, shown in Messages as "On-device parsing failed". This is a terminal state but recoverable: the Messages page already offers Retry on every failure row, so saving a key later (in `none` mode) or turning the LLM switch back on (in `optedOut` mode) and retrying will re-run the message through the pipeline, which now defers it to the LLM.
 
-The `needs_llm` flag is never set when no LLM exists, because it is permanent (never cleared) and its two readers would otherwise strand the row. A row that already carries the flag from an earlier state (e.g. the user removed their key) is re-run through the on-device model rather than skipped.
+The `needs_llm` flag is never set when no LLM exists, because it is permanent (never cleared) and its two readers would otherwise strand the row. A row that already carries the flag from an earlier state (e.g. the user removed their key or turned off the LLM) is re-run through the on-device model rather than skipped.
 
 Layer 3 is skipped entirely with no LLM — no provider is constructed, and no network call is made.
