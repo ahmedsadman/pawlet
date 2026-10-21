@@ -9,9 +9,6 @@ import '../state/finance_providers.dart';
 import '../state/messages_providers.dart';
 import '../state/providers.dart';
 
-/// Export all local data to a JSON file (saved wherever the user picks in the
-/// system save dialog) or restore it from a picked file (replace-all, after a confirmation). PIN and
-/// API key are never included.
 /// Default name offered in the save dialog, e.g.
 /// `pawlet-backup-2026-10-21-1430.json` (local time).
 @visibleForTesting
@@ -21,6 +18,9 @@ String backupFileName(DateTime now) {
       '${two(now.hour)}${two(now.minute)}.json';
 }
 
+/// Export all local data to a JSON file (saved wherever the user picks in the
+/// system save dialog) or restore it from a picked file (replace-all, after a
+/// confirmation). PIN and API key are never included.
 class BackupRestorePage extends ConsumerStatefulWidget {
   const BackupRestorePage({super.key});
 
