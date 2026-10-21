@@ -53,10 +53,12 @@ Future<bool> runBatteryPromptCheck(
     if (verdict == BatteryPromptVerdict.none) return false;
     if (!context.mounted || !canPrompt()) return false;
 
+    // Snooze is written before showing so a swipe-away counts as "Not now".
     await store.setPromptSnoozedUntil(
       now() + BatteryPromptPolicy.snooze.inMilliseconds,
     );
-    if (!context.mounted) return false;
+    // Re-check: a check blocked at the last moment still snoozed.
+    if (!context.mounted || !canPrompt()) return false;
     final accepted = await confirmBatteryPrompt(context, verdict);
     if (!accepted) return true;
 
