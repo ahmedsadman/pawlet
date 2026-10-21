@@ -1859,7 +1859,7 @@ void main() {
     });
 
     test(
-      'no-LLM mode counts nothing: no decline there spares an LLM call',
+      'no-LLM mode counts nothing: it has no proxy session to send on',
       () async {
         const unbuildable = 'balance 500 BDT';
         final local = _FnLocal(
@@ -1882,7 +1882,9 @@ void main() {
         final accepted = await queue('CHK', content: content);
         final rejected = await queue('CHK', content: unbuildable);
 
-        await statsService(local: local).process(); // no llm: hasLlm is false
+        // No LLM and off the proxy session, as LlmMode.none is. An opted-out
+        // install also has no LLM but is on the session, and does count.
+        await statsService(local: local, isProxy: () async => false).process();
 
         expect((await row(accepted))['status'], 'success');
         expect((await row(rejected))['status'], 'failure');
@@ -1985,6 +1987,118 @@ void main() {
       expect((await row(id))['status'], 'success');
       expect((await row(id))['local_verdict'], isNull);
       expect(await tally(), isEmpty);
+      await db.close();
+    });
+  });
+
+  group('LLM opt-out', () {
+    late ModelStatsRepository stats;
+    const content = 'debit 50 BDT';
+
+    setUp(() => stats = ModelStatsRepository(db));
+
+    ProcessingService optOutService({
+      LlmProvider? llm,
+      required LocalClassifier local,
+      bool online = true,
+      Future<bool> Function()? isProxy,
+      Future<bool> Function()? llmAllowed,
+    }) => ProcessingService(
+      smsRepository: sms,
+      banksRepository: banks,
+      classifier: Classifier(llm, local: local),
+      financeWriter: FinanceWriter(db, nowMs: () => now),
+      isOnline: () async => online,
+      currency: () => 'BDT',
+      clock: () => now,
+      modelStats: stats,
+      appVersionCode: () async => 21,
+      isProxy: isProxy,
+      llmAllowed: llmAllowed,
+    );
+
+    Future<void> expectLocalOnlyFailure(int id) async {
+      final r = await row(id);
+      expect(r['status'], 'failure');
+      expect(r['failure_reason'], FailureReason.localOnly.value);
+      expect(r['next_attempt_at'], isNull);
+    }
+
+    test('opted-out pass fails a needs_llm row', () async {
+      // Flagged while the LLM was on. With it off there is nothing to wait
+      // for, so the offline skip must not park the row.
+      final id = await queue('CHK', content: content);
+      await db.update(
+        'sms_records',
+        {'needs_llm': 1},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      await optOutService(
+        local: _FnLocal((_) => _localUnsure),
+        online: false,
+        isProxy: () async => true,
+      ).process();
+
+      await expectLocalOnlyFailure(id);
+      await db.close();
+    });
+
+    test('opted-out installs still count verdicts', () async {
+      final id = await queue('CHK', content: content);
+      await optOutService(
+        local: _FnLocal((_) => _localUnsure),
+        isProxy: () async => true,
+      ).process();
+
+      expect((await row(id))['local_verdict'], 'declined');
+      final s = (await db.query('model_stats')).single;
+      expect([s['accepted'], s['declined'], s['unavailable']], [0, 1, 0]);
+      await db.close();
+    });
+
+    test('llmAllowed false short-circuits layer 3', () async {
+      final llm = _FakeLlm(result: _expense());
+      final id = await queue('CHK', content: content);
+      await optOutService(
+        llm: llm,
+        local: _FnLocal((_) => _localUnsure),
+        llmAllowed: () async => false,
+      ).process();
+
+      expect(llm.calls, 0);
+      await expectLocalOnlyFailure(id);
+      expect(await db.query('transactions'), isEmpty);
+      await db.close();
+    });
+
+    test('a failing llmAllowed check is treated as false', () async {
+      final llm = _FakeLlm(result: _expense());
+      final id = await queue('CHK', content: content);
+      await optOutService(
+        llm: llm,
+        local: _FnLocal((_) => _localUnsure),
+        llmAllowed: () async => throw StateError('prefs unavailable'),
+      ).process();
+
+      expect(llm.calls, 0);
+      await expectLocalOnlyFailure(id);
+      await db.close();
+    });
+
+    test('llmAllowed true keeps today\'s path', () async {
+      final llm = _FakeLlm(result: _expense());
+      final id = await queue('CHK', content: content);
+      await optOutService(
+        llm: llm,
+        local: _FnLocal((_) => _localUnsure),
+        llmAllowed: () async => true,
+      ).process();
+
+      expect(llm.calls, 1);
+      final r = await row(id);
+      expect(r['status'], 'success');
+      expect(r['parse_source'], ParseSource.llm.value);
       await db.close();
     });
   });

@@ -60,11 +60,12 @@ class AppServices {
   final ConnectivityService connectivity;
   final NotificationService notifications;
 
-  /// Null in [LlmMode.none].
+  /// Null in [LlmMode.optedOut] and [LlmMode.none].
   final LlmProvider? llmProvider;
 
-  /// Present only in [LlmMode.proxy]. The UI isolate warms it up on launch,
-  /// resume and reconnect (see `refreshLlmNetworkState`).
+  /// Present only on the proxy session ([LlmMode.proxy] and
+  /// [LlmMode.optedOut]). The UI isolate warms it up on launch, resume and
+  /// reconnect (see `refreshLlmNetworkState`).
   final AttestationService? attestation;
 
   /// The server's prompt bundle for [LlmMode.byok]. Built in every mode
@@ -78,13 +79,15 @@ class AppServices {
   final ExchangeRateService exchangeRate;
 
   /// Sends the on-device model's daily counts to Pawlet's server. Present only
-  /// in [LlmMode.proxy], the only mode that counts: BYOK and no-LLM installs
-  /// neither count nor send, which keeps BYOK usage off Pawlet's server and
-  /// no-LLM's "nothing leaves the phone" promise.
+  /// on the proxy session ([LlmMode.proxy] and [LlmMode.optedOut]), the only
+  /// modes that count: BYOK and no-LLM installs neither count nor send, which
+  /// keeps BYOK usage off Pawlet's server and no-LLM's "nothing leaves the
+  /// phone" promise. Opting out stops message text going to an LLM, not the
+  /// counts.
   final ModelStatsReporter? modelStatsReporter;
 
   /// Records days the app ran or was opened and uploads them. Present in
-  /// proxy and BYOK modes in a build pointed at a server; null in no-LLM,
+  /// every mode but no-LLM, in a build pointed at a server; null in no-LLM,
   /// which keeps its "nothing leaves the phone" promise.
   final Heartbeat? heartbeat;
 
@@ -106,13 +109,14 @@ class AppServices {
       proxyConfigured: BuildConfig.proxyConfigured,
       hasKey: apiKey.isNotEmpty,
       attestationIneligible: settings.attestationIneligible,
+      llmEnabled: settings.llmEnabled,
     );
     return (mode: mode, apiKey: apiKey);
   }
 
-  /// A heartbeat for an install that may send one (proxy or BYOK, in a build
-  /// pointed at a server), whose sends re-check that from fresh prefs: the
-  /// mode can move in another isolate while this object lives on.
+  /// A heartbeat for an install that may send one (any mode but no-LLM, in a
+  /// build pointed at a server), whose sends re-check that from fresh prefs:
+  /// the mode can move in another isolate while this object lives on.
   static Heartbeat _heartbeat({
     required Database database,
     required SharedPreferences prefs,
@@ -165,7 +169,7 @@ class AppServices {
     // The UI isolate moves its own mode later via refreshLlmNetworkState, and
     // only while its ProcessingService is idle, because flipping the mode
     // rebuilds (and disposes) this object.
-    final attestation = mode == LlmMode.proxy
+    final attestation = mode.usesProxySession
         ? AttestationService(
             apiBase: BuildConfig.apiBase,
             store: SecureStore(),
@@ -182,36 +186,38 @@ class AppServices {
         apiKey: apiKey,
         bundle: promptBundles.current,
       ),
-      LlmMode.none => null,
+      LlmMode.optedOut || LlmMode.none => null,
     };
 
     final modelStats = ModelStatsRepository(database);
-    // Whether the install is still in proxy mode. Attestation can flag it
-    // ineligible (possibly from another isolate) while this bundle lives on,
-    // so the mode is re-resolved from fresh prefs on every call. The key only
-    // picks between byok and none, so it cannot make this proxy. Offered only
-    // to a proxy bundle: a byok bundle keeps calling OpenRouter even if fresh
-    // prefs would now resolve proxy, and that usage must never be counted.
-    Future<bool> stillProxy() async {
+    // Whether the install is still on the proxy session. Attestation can flag
+    // it ineligible (possibly from another isolate) while this bundle lives
+    // on, so the mode is re-resolved from fresh prefs on every call. The key
+    // only picks between byok and none, and the LLM switch only between proxy
+    // and optedOut, so neither can move this answer. Offered only to a
+    // proxy-session bundle: a byok bundle keeps calling OpenRouter even if
+    // fresh prefs would now resolve proxy, and that usage must never be
+    // counted.
+    Future<bool> stillOnProxySession() async {
       await prefs.reload();
       return resolveLlmMode(
-            fromPlay: settings.installedFromPlay,
-            proxyConfigured: BuildConfig.proxyConfigured,
-            hasKey: false,
-            attestationIneligible: settings.attestationIneligible,
-          ) ==
-          LlmMode.proxy;
+        fromPlay: settings.installedFromPlay,
+        proxyConfigured: BuildConfig.proxyConfigured,
+        hasKey: false,
+        attestationIneligible: settings.attestationIneligible,
+        llmEnabled: true,
+      ).usesProxySession;
     }
 
-    // Gated on the attestation service, which exists only in proxy mode: the
-    // counts travel on the proxy session and nowhere else.
+    // Gated on the attestation service, which exists only on the proxy
+    // session: the counts travel on it and nowhere else.
     final modelStatsReporter = attestation == null
         ? null
         : ModelStatsReporter(
             apiBase: BuildConfig.apiBase,
             repository: modelStats,
             attestation: attestation,
-            isProxy: stillProxy,
+            isProxy: stillOnProxySession,
           );
 
     final heartbeat = _sendsHeartbeat(mode)
@@ -241,10 +247,20 @@ class AppServices {
       reschedule: (delay) => delay == null
           ? BackgroundWorker.cancelCatchUp()
           : BackgroundWorker.scheduleCatchUp(delay),
-      // Counted only in proxy mode, re-checked per verdict with the same
-      // resolution the reporter uses before each send.
+      // Counted only on the proxy session, re-checked per verdict with the
+      // same resolution the reporter uses before each send.
       modelStats: modelStats,
-      isProxy: attestation == null ? null : stillProxy,
+      isProxy: attestation == null ? null : stillOnProxySession,
+      // The user can turn the LLM off while this bundle lives on: the UI
+      // rebuilds its bundle, possibly under a running pass, and a background
+      // isolate's bundle never hears of it. So a proxy bundle re-reads the
+      // switch from fresh prefs before every LLM call.
+      llmAllowed: mode == LlmMode.proxy
+          ? () async {
+              await prefs.reload();
+              return settings.llmEnabled;
+            }
+          : null,
       // Every pass, in any isolate, means the app ran today.
       onPassEnd: () async {
         await modelStatsReporter?.maybeFlush();

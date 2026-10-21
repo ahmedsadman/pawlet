@@ -25,7 +25,8 @@ const Duration kModelStatsRetryAfterMin = kUploadRetryAfterMin;
 /// (`POST /v1/model-stats`), so the admin dashboard can show how many messages
 /// the model settles without the LLM.
 ///
-/// Built only in proxy mode (see AppServices), the only mode that counts:
+/// Built only on the proxy session (see AppServices) — proxy mode, or a
+/// proxy install whose user turned the LLM off — the only modes that count:
 /// BYOK and no-LLM installs neither count nor send. Triggered at the end of
 /// every processing pass and on app resume; [maybeFlush] decides whether
 /// anything goes out.
@@ -53,9 +54,9 @@ class ModelStatsReporter {
   final ModelStatsRepository _repository;
   final AttestationService _attestation;
 
-  /// Whether the install is in proxy mode right now. This object outlives a
-  /// mode change made in another isolate (attestation flagging the install
-  /// ineligible), so the mode is re-read before anything is sent.
+  /// Whether the install is on the proxy session right now. This object
+  /// outlives a mode change made in another isolate (attestation flagging the
+  /// install ineligible), so the mode is re-read before anything is sent.
   final Future<bool> Function() _isProxy;
   final http.Client _client;
   final bool _ownsClient;

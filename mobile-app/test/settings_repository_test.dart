@@ -86,6 +86,31 @@ void main() {
     expect(r.bulkImportOffered, isTrue);
   });
 
+  group('llmEnabled', () {
+    test('llmEnabled defaults to true', () async {
+      final r = await repo();
+      expect(r.llmEnabled, isTrue);
+    });
+
+    test('llmEnabled round-trips through exportAll/importAll', () async {
+      // A user choice, not install state, so a backup carries it.
+      final r = await repo();
+      await r.setLlmEnabled(false);
+      final snap = r.exportAll();
+      expect(snap['llm_enabled'], false);
+
+      await r.setLlmEnabled(true);
+      await r.importAll(snap);
+      expect(r.llmEnabled, isFalse);
+    });
+
+    test('importAll without llm_enabled resets it to true', () async {
+      final r = await repo({'llm_enabled': false});
+      await r.importAll(const {});
+      expect(r.llmEnabled, isTrue);
+    });
+  });
+
   group('install-scoped LLM flags', () {
     test('both default to false', () async {
       SharedPreferences.setMockInitialValues({});

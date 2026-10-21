@@ -17,13 +17,17 @@ Future<void> refreshLlmNetworkState({
   required Future<void> Function() syncIneligible,
 }) async {
   switch (mode) {
+    // Opted out keeps the proxy session: attestation still carries the
+    // model-stats upload, and a rejection must still reach the UI.
     case LlmMode.proxy:
+    case LlmMode.optedOut:
       await attestation?.warmUp();
       await syncIneligible();
     case LlmMode.byok:
       await promptBundles.refresh();
     case LlmMode.none:
-      // Nothing leaves the phone in this mode, not even a bundle fetch.
+      // No LLM and no proxy session, so there is nothing to keep warm and no
+      // bundle to fetch.
       break;
   }
 }

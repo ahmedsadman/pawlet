@@ -102,7 +102,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             "with your own API key; Pawlet's service never sees them. The app "
             "tells Pawlet's server only which days it was opened or ran and its "
             'app version.',
-      LlmMode.none =>
+      LlmMode.optedOut || LlmMode.none =>
         'Your messages never leave your phone. The on-device model is the only '
             'classifier, and a message it cannot read is marked failed in Messages, '
             'where you can retry it later.',
