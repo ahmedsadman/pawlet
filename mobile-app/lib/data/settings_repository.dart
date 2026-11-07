@@ -9,7 +9,8 @@ class SettingsRepository {
 
   final SharedPreferences _prefs;
 
-  static const _kHideBalance = 'hide_balance';
+  // Balance visibility is session-only now; the old `hide_balance` key is no
+  // longer read or backed up.
   static const _kSummaryRange = 'summary_range';
   static const _kTxRange = 'tx_range';
   static const _kTxTypes = 'tx_types';
@@ -37,11 +38,6 @@ class SettingsRepository {
     'qwen/qwen3.8-27b:free',
     'nex-agi/nex-n2.5-pro:free',
   ];
-
-  /// Masks monetary values across the Finance tab.
-  bool get hideBalance => _prefs.getBool(_kHideBalance) ?? false;
-  Future<void> setHideBalance(bool value) =>
-      _prefs.setBool(_kHideBalance, value);
 
   String? get summaryRange => _prefs.getString(_kSummaryRange);
   Future<void> setSummaryRange(String key) =>
@@ -184,7 +180,6 @@ class SettingsRepository {
     _kTxSort,
   ];
   static const List<String> _backupBoolKeys = [
-    _kHideBalance,
     _kTxTypeHintSeen,
     _kHistoryHintSeen,
     _kBillActionsHintSeen,

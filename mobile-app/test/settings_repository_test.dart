@@ -46,21 +46,30 @@ void main() {
   });
 
   test('exportAll captures only set keys', () async {
-    final r = await repo({'hide_balance': true});
+    final r = await repo({'tx_type_hint_seen': true});
     final snap = r.exportAll();
-    expect(snap['hide_balance'], true);
+    expect(snap['tx_type_hint_seen'], true);
     // history_hint_seen_v2 was never written, so it is absent from the snapshot.
     expect(snap.containsKey('history_hint_seen_v2'), isFalse);
   });
 
   test('importAll restores a snapshot', () async {
-    final r = await repo({'hide_balance': true, 'tx_sort': 'amount'});
+    final r = await repo({'tx_type_hint_seen': true, 'tx_sort': 'amount'});
     final snap = r.exportAll();
-    await r.setHideBalance(false);
+    await r.setTxTypeHintSeen(false);
     await r.setTxSort('date');
     await r.importAll(snap);
-    expect(r.hideBalance, isTrue);
+    expect(r.txTypeHintSeen, isTrue);
     expect(r.txSort, 'amount');
+  });
+
+  test('the retired hide_balance key is not backed up or restored', () async {
+    final r = await repo({'hide_balance': true});
+    expect(r.exportAll().containsKey('hide_balance'), isFalse);
+    await r.importAll(const {'hide_balance': false});
+    // Left untouched: importAll neither clears nor writes unmanaged keys.
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('hide_balance'), isTrue);
   });
 
   test('importAll clears keys missing from the snapshot (replace)', () async {

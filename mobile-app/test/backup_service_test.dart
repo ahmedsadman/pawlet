@@ -63,16 +63,19 @@ void main() {
   });
 
   test('restore replaces settings with the backup snapshot', () async {
-    final prefs = await settings({'tx_sort': 'amount', 'hide_balance': true});
+    final prefs = await settings({
+      'tx_sort': 'amount',
+      'tx_type_hint_seen': true,
+    });
     final db = await openTestDb();
     final json = await BackupService(db: db, settings: prefs).exportJson();
 
     await prefs.setTxSort('date'); // mutate after the snapshot
-    await prefs.setHideBalance(false);
+    await prefs.setTxTypeHintSeen(false);
 
     await BackupService(db: db, settings: prefs).importJson(json);
     expect(prefs.txSort, 'amount');
-    expect(prefs.hideBalance, isTrue);
+    expect(prefs.txTypeHintSeen, isTrue);
 
     await db.close();
   });
@@ -108,7 +111,10 @@ void main() {
   });
 
   test('clears settings when the backup omits the settings section', () async {
-    final prefs = await settings({'tx_sort': 'amount', 'hide_balance': true});
+    final prefs = await settings({
+      'tx_sort': 'amount',
+      'tx_type_hint_seen': true,
+    });
     final db = await openTestDb();
     // Well-formed DB payload (all four tables empty) but no `settings` key.
     final json = jsonEncode({
@@ -124,7 +130,7 @@ void main() {
     await BackupService(db: db, settings: prefs).importJson(json);
     // Absent settings section => managed keys reset to their defaults (replace).
     expect(prefs.txSort, isNull);
-    expect(prefs.hideBalance, isFalse);
+    expect(prefs.txTypeHintSeen, isFalse);
 
     await db.close();
   });

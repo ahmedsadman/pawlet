@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -326,17 +327,20 @@ final dataRevisionSyncProvider = Provider<DataRevisionSync>((ref) {
   return sync;
 });
 
-/// Whether monetary values are masked across the Finance tab. Persisted locally
-/// so the choice survives restarts.
+/// Whether the Total Balance and Trends amounts are masked. Session-only:
+/// starts hidden on every launch and snaps back to hidden whenever the app
+/// leaves the foreground, so the first screen never shows totals on open.
 class BalanceHidden extends Notifier<bool> {
   @override
-  bool build() => ref.watch(settingsRepositoryProvider).hideBalance;
-
-  Future<void> toggle() async {
-    final value = !state;
-    await ref.read(settingsRepositoryProvider).setHideBalance(value);
-    state = value;
+  bool build() {
+    // onHide fires on the way to the background (home, app switch, screen
+    // off) but not for transient overlays such as the notification shade.
+    final lifecycle = AppLifecycleListener(onHide: () => state = true);
+    ref.onDispose(lifecycle.dispose);
+    return true;
   }
+
+  void toggle() => state = !state;
 }
 
 final balanceHiddenProvider = NotifierProvider<BalanceHidden, bool>(
