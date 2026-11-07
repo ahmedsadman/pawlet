@@ -19,13 +19,17 @@ Bank _deposit(String name, String balance) => Bank(
   createdAt: DateTime(2026, 1, 1),
 );
 
-Future<void> _pump(WidgetTester tester, List<Bank> banks) async {
+Future<void> _pump(
+  WidgetTester tester,
+  List<Bank> banks, {
+  bool hidden = false,
+}) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        ...financeOverrides(banks: banks),
+        ...financeOverrides(banks: banks, hidden: hidden),
         sharedPreferencesProvider.overrideWithValue(prefs),
       ],
       child: MaterialApp(theme: AppTheme.theme, home: const FinancePage()),
@@ -51,6 +55,34 @@ void main() {
     expect(find.text('Total Balance'), findsOneWidget);
     expect(find.text('2,000.00 BDT'), findsOneWidget);
     expect(find.text('Add a bank to get started'), findsNothing);
+  });
+
+  testWidgets('the toggle under Trends reveals and re-hides the total', (
+    tester,
+  ) async {
+    await _pump(tester, [_deposit('Checking', '2000.00')], hidden: true);
+    // No eye button in the app bar any more.
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: find.byType(Icon)),
+      findsNothing,
+    );
+    expect(find.text('2,000.00 BDT'), findsNothing);
+    expect(find.text('Hide balances'), findsNothing);
+
+    // Sits between Trends and the sections below it (no bills here, so the
+    // Summary Graph comes next).
+    final toggle = tester.getTopLeft(find.text('Show balances')).dy;
+    expect(toggle, greaterThan(tester.getTopLeft(find.text('Trends')).dy));
+    expect(toggle, lessThan(tester.getTopLeft(find.text('Summary Graph')).dy));
+
+    await tester.tap(find.text('Show balances'));
+    await tester.pump();
+    expect(find.text('2,000.00 BDT'), findsOneWidget);
+
+    await tester.tap(find.text('Hide balances'));
+    await tester.pump();
+    expect(find.text('2,000.00 BDT'), findsNothing);
+    expect(find.text('Show balances'), findsOneWidget);
   });
 
   testWidgets('shows a FAB that opens the add menu', (tester) async {

@@ -3,8 +3,8 @@ import 'package:flutter/rendering.dart'; // ScrollDirection
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/finance_providers.dart';
-import '../state/providers.dart';
 import 'banks_page.dart';
+import 'widgets/finance/balance_visibility_toggle.dart';
 import 'widgets/finance/credit_card_bills_section.dart';
 import 'widgets/finance/review_entry_card.dart';
 import 'widgets/finance/summary_graph_card.dart';
@@ -16,6 +16,8 @@ import 'widgets/finance/trends_card.dart';
 /// The Finance tab: balances, credit-card bills, stats, summary graph and
 /// transactions. Read-only and served entirely from the local database.
 /// When no banks exist yet, the Total Balance card shows an Add Bank CTA.
+/// Total Balance and Trends amounts stay masked until the user taps the
+/// toggle under Trends.
 class FinancePage extends ConsumerStatefulWidget {
   const FinancePage({super.key});
 
@@ -90,7 +92,6 @@ class _FinancePageState extends ConsumerState<FinancePage> {
 
   @override
   Widget build(BuildContext context) {
-    final hidden = ref.watch(balanceHiddenProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -106,13 +107,6 @@ class _FinancePageState extends ConsumerState<FinancePage> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          IconButton(
-            tooltip: hidden ? 'Show balances' : 'Hide balances',
-            icon: Icon(hidden ? Icons.visibility_off : Icons.visibility),
-            onPressed: () => ref.read(balanceHiddenProvider.notifier).toggle(),
-          ),
-        ],
       ),
       floatingActionButton: AnimatedSlide(
         duration: const Duration(milliseconds: 200),
@@ -141,7 +135,9 @@ class _FinancePageState extends ConsumerState<FinancePage> {
                 TotalBalanceCard(),
                 SizedBox(height: 8),
                 TrendsCard(),
-                SizedBox(height: 8),
+                // Reveals the two cards above; it reads as their divider, so
+                // it replaces the usual gap.
+                BalanceVisibilityToggle(),
                 CreditCardBillsSection(),
                 SizedBox(height: 8),
                 SummaryGraphCard(),
