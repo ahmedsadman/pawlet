@@ -217,14 +217,10 @@ void main() {
     expect(find.text('SMS body for 13'), findsOneWidget);
   });
 
-  testWidgets('hides SMS bodies while balances are hidden', (tester) async {
-    final (actions, _) = await _pump(tester, _bill(), hidden: true);
+  testWidgets('hidden balances leave the bill SMS visible', (tester) async {
+    await _pump(tester, _bill(), hidden: true);
 
-    expect(find.text('SMS body for 70'), findsNothing);
-    expect(find.text('Hidden while balances are hidden.'), findsOneWidget);
-    await tester.tap(find.text('Mark paid'));
-    await tester.pumpAndSettle();
-    expect((actions as _FakeBillActions).calls, [(7, true)]);
+    expect(find.text('SMS body for 70'), findsOneWidget);
   });
 
   testWidgets('opening the sheet retires the bill hint', (tester) async {
@@ -232,7 +228,7 @@ void main() {
     expect(prefs.getBool('bill_actions_hint_seen'), isTrue);
   });
 
-  testWidgets('hides amounts and SMS in legs while balances are hidden', (
+  testWidgets('hidden balances leave leg amounts and SMS visible', (
     tester,
   ) async {
     await _pump(
@@ -245,12 +241,10 @@ void main() {
       hidden: true,
     );
 
-    expect(find.text('8,020.00 BDT'), findsNothing);
-    expect(find.textContaining('****'), findsWidgets);
-    expect(find.text('SMS body for 11'), findsNothing);
-    expect(find.textContaining('Cash'), findsOneWidget);
+    expect(find.textContaining('****'), findsNothing);
+    expect(find.text('SMS body for 11'), findsOneWidget);
     final cashText = tester.widget<Text>(find.textContaining('Cash'));
-    expect(cashText.data, isNot(contains('8,020.00')));
+    expect(cashText.data, contains('8,020.00'));
   });
 
   testWidgets('shows no payment headings when legs are empty', (tester) async {

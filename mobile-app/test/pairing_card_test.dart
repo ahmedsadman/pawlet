@@ -82,7 +82,7 @@ void main() {
     expect(find.text('Hide messages'), findsOneWidget);
   });
 
-  testWidgets('hidden balances mask the difference and the messages', (
+  testWidgets('hidden balances leave the difference and messages visible', (
     tester,
   ) async {
     await _pump(
@@ -91,9 +91,9 @@ void main() {
       hidden: true,
     );
 
-    expect(find.text('2h apart'), findsOneWidget);
-    expect(find.textContaining('difference'), findsNothing);
-    expect(find.text('Show messages'), findsNothing);
+    expect(find.text('−1,510.00 BDT'), findsOneWidget);
+    expect(find.textContaining('difference'), findsOneWidget);
+    expect(find.text('Show messages'), findsOneWidget);
   });
 
   testWidgets('Show messages reveals through ExpandReveal', (tester) async {
