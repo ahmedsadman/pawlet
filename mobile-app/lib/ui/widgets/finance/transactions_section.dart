@@ -125,7 +125,6 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
   @override
   Widget build(BuildContext context) {
     final currency = ref.watch(currencyProvider).value?.data ?? '';
-    final hidden = ref.watch(balanceHiddenProvider);
     final async = ref.watch(transactionsProvider(_query));
 
     return Column(
@@ -188,14 +187,14 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
             _lastCount = result.data.transactions.isEmpty
                 ? _pageSize
                 : result.data.transactions.length;
-            return _content(result.data, currency, hidden);
+            return _content(result.data, currency);
           },
         ),
       ],
     );
   }
 
-  Widget _content(TransactionsPage page, String currency, bool hidden) {
+  Widget _content(TransactionsPage page, String currency) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -215,18 +214,14 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
             TransactionRow(
               tx: tx,
               currency: currency,
-              // While hidden, keep rows collapsed and non-expandable so the raw
-              // SMS (which contains the amount) can't be revealed.
-              expanded: !hidden && _expandedId == tx.id,
+              expanded: _expandedId == tx.id,
               // No tap target for rows with no SMS text to reveal (manual rows,
-              // or an SMS row gone missing) or while balances are hidden.
-              onTap: (hidden || !tx.hasSmsText)
+              // or an SMS row gone missing).
+              onTap: !tx.hasSmsText
                   ? null
                   : () => setState(
                       () => _expandedId = _expandedId == tx.id ? null : tx.id,
                     ),
-              // Long-press changes the type; allowed even while hidden (it never
-              // reveals the amount).
               onLongPress: () => _editTransaction(tx),
             ),
         ],
@@ -246,15 +241,14 @@ class _TransactionsSectionState extends ConsumerState<TransactionsSection> {
   });
 }
 
-class _Totals extends ConsumerWidget {
+class _Totals extends StatelessWidget {
   const _Totals({required this.page, required this.currency});
 
   final TransactionsPage page;
   final String currency;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final hidden = ref.watch(balanceHiddenProvider);
+  Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
@@ -263,7 +257,6 @@ class _Totals extends ConsumerWidget {
             value: formatMoney(
               double.tryParse(page.totals.income) ?? 0,
               currency,
-              hidden: hidden,
             ),
             color: AppTheme.income,
           ),
@@ -275,7 +268,6 @@ class _Totals extends ConsumerWidget {
             value: formatMoney(
               double.tryParse(page.totals.expense) ?? 0,
               currency,
-              hidden: hidden,
             ),
             color: AppTheme.expense,
           ),

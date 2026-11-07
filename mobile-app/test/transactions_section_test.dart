@@ -14,6 +14,8 @@ import 'package:pawlet/ui/widgets/expand_reveal.dart';
 import 'package:pawlet/ui/widgets/finance/transactions_section.dart';
 import 'package:pawlet/ui/widgets/skeleton.dart';
 
+import 'support/balance_test_overrides.dart';
+
 TransactionItem _tx(int id, TxType type, String amount) => TransactionItem(
   id: id,
   messageId: 100 + id,
@@ -36,6 +38,7 @@ TransactionsPage _page(int page) => TransactionsPage(
 Future<void> _pump(
   WidgetTester tester, {
   Map<String, Object> prefsSeed = const {},
+  bool hidden = false,
 }) async {
   SharedPreferences.setMockInitialValues(prefsSeed);
   final prefs = await SharedPreferences.getInstance();
@@ -43,6 +46,7 @@ Future<void> _pump(
     ProviderScope(
       overrides: [
         settingsRepositoryProvider.overrideWithValue(SettingsRepository(prefs)),
+        overrideBalanceHidden(hidden),
         currencyProvider.overrideWith(
           (ref) async => const CachedResult(data: 'BDT', stale: false),
         ),
@@ -153,21 +157,19 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('masks amounts and blocks row expansion when hidden', (
+  testWidgets('hidden balances leave amounts and messages visible', (
     tester,
   ) async {
-    await _pump(tester, prefsSeed: const {'hide_balance': true});
+    await _pump(tester, hidden: true);
 
-    // Totals and the row amount are masked (currency kept, sign dropped).
-    expect(find.text('900.00 BDT'), findsNothing);
-    expect(find.text('300.00 BDT'), findsNothing);
-    expect(find.text('−50.00 BDT'), findsNothing);
-    expect(find.text('**** BDT'), findsWidgets);
+    expect(find.text('900.00 BDT'), findsOneWidget);
+    expect(find.text('300.00 BDT'), findsOneWidget);
+    expect(find.text('−50.00 BDT'), findsOneWidget);
+    expect(find.text('**** BDT'), findsNothing);
 
-    // Tapping a row must NOT reveal the backing SMS (it contains the amount).
     await tester.tap(find.text('ACME-1'));
     await tester.pumpAndSettle();
-    expect(find.text('SMS body for 101'), findsNothing);
+    expect(find.text('SMS body for 101'), findsOneWidget);
   });
 
   testWidgets('paginates when there is more than one page', (tester) async {

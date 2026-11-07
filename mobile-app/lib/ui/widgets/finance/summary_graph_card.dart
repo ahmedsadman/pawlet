@@ -47,7 +47,6 @@ class _SummaryGraphCardState extends ConsumerState<SummaryGraphCard> {
     final range = resolveDateRange(_preset);
     final async = ref.watch(summaryProvider(range));
     final currency = ref.watch(currencyProvider).value?.data ?? '';
-    final hidden = ref.watch(balanceHiddenProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -62,97 +61,19 @@ class _SummaryGraphCardState extends ConsumerState<SummaryGraphCard> {
         const SizedBox(height: 12),
         SizedBox(
           height: 260,
-          child: hidden
-              ? const _HiddenChart()
-              : async.when(
-                  skipLoadingOnReload: true,
-                  loading: () => const SummaryChartSkeleton(),
-                  error: (_, _) =>
-                      const FinanceError('Could not load the graph.'),
-                  data: (result) => result.data.isEmpty
-                      ? const Center(
-                          child: EmptyHint(
-                            'No transactions in selected range.',
-                          ),
-                        )
-                      : _Chart(summary: result.data, currency: currency),
-                ),
+          child: async.when(
+            skipLoadingOnReload: true,
+            loading: () => const SummaryChartSkeleton(),
+            error: (_, _) => const FinanceError('Could not load the graph.'),
+            data: (result) => result.data.isEmpty
+                ? const Center(
+                    child: EmptyHint('No transactions in selected range.'),
+                  )
+                : _Chart(summary: result.data, currency: currency),
+          ),
         ),
         const SizedBox(height: 8),
-        if (!hidden) const _Legend(),
-      ],
-    );
-  }
-}
-
-/// Shown in place of the chart when balances are hidden: a dimmed, data-less
-/// axes+grid skeleton in the background with a fully-visible "hidden" indicator
-/// blocking the view in the foreground. The skeleton carries no real values (no
-/// data lines, no numeric axis labels) so nothing leaks.
-class _HiddenChart extends StatelessWidget {
-  const _HiddenChart();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Opacity(
-            opacity: 0.3,
-            child: LineChart(
-              LineChartData(
-                minX: 0,
-                maxX: 6,
-                minY: 0,
-                maxY: 100,
-                lineBarsData: const [],
-                lineTouchData: const LineTouchData(enabled: false),
-                titlesData: const FlTitlesData(show: false),
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: true,
-                  horizontalInterval: 20,
-                  verticalInterval: 1,
-                  getDrawingHorizontalLine: (_) => FlLine(
-                    color: theme.colorScheme.outlineVariant,
-                    strokeWidth: 1,
-                  ),
-                  getDrawingVerticalLine: (_) => FlLine(
-                    color: theme.colorScheme.outlineVariant,
-                    strokeWidth: 1,
-                  ),
-                ),
-                borderData: FlBorderData(
-                  show: true,
-                  border: Border(
-                    left: BorderSide(color: theme.colorScheme.outline),
-                    bottom: BorderSide(color: theme.colorScheme.outline),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.visibility_off_outlined,
-                size: 32,
-                color: theme.colorScheme.outline,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Amounts hidden',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
-              ),
-            ],
-          ),
-        ),
+        const _Legend(),
       ],
     );
   }

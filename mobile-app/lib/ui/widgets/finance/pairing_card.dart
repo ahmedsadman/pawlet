@@ -1,10 +1,8 @@
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../models/finance/pairing_suggestion.dart';
 import '../../../models/finance/sms_text.dart';
-import '../../../state/providers.dart';
 import '../../../theme/catppuccin_theme.dart';
 import '../../../utils/currency_format.dart';
 import '../../../utils/time_format.dart';
@@ -14,10 +12,8 @@ import 'backing_message.dart';
 import 'finance_badge.dart';
 
 /// One pairing-review question: both legs of a suggested pair, how far apart
-/// they are, and their backing messages on demand. While balances are hidden
-/// the amount difference and the messages (which quote amounts) stay hidden
-/// too.
-class PairingCard extends ConsumerStatefulWidget {
+/// they are, and their backing messages on demand.
+class PairingCard extends StatefulWidget {
   const PairingCard({
     required this.suggestion,
     required this.onAnswer,
@@ -30,10 +26,10 @@ class PairingCard extends ConsumerStatefulWidget {
   final ValueChanged<bool> onAnswer;
 
   @override
-  ConsumerState<PairingCard> createState() => _PairingCardState();
+  State<PairingCard> createState() => _PairingCardState();
 }
 
-class _PairingCardState extends ConsumerState<PairingCard> {
+class _PairingCardState extends State<PairingCard> {
   bool _showMessages = false;
 
   @override
@@ -41,7 +37,6 @@ class _PairingCardState extends ConsumerState<PairingCard> {
     final s = widget.suggestion;
     final theme = Theme.of(context);
     final f = AppTheme.flavor;
-    final hidden = ref.watch(balanceHiddenProvider);
     final isTransfer = s.kind == PairingKind.transfer;
     final messages = [s.from.message, s.to.message].whereType<SmsText>();
 
@@ -75,7 +70,7 @@ class _PairingCardState extends ConsumerState<PairingCard> {
             ),
             const SizedBox(height: 12),
             _LegRow(leg: s.from, tint: AppTheme.expense),
-            _Connector(label: _connectorLabel(s, hidden)),
+            _Connector(label: _connectorLabel(s)),
             _LegRow(leg: s.to, tint: isTransfer ? AppTheme.income : f.mauve),
             if (s.otherMatches > 0) ...[
               const SizedBox(height: 8),
@@ -86,7 +81,7 @@ class _PairingCardState extends ConsumerState<PairingCard> {
                 style: theme.textTheme.bodySmall?.copyWith(color: f.subtext0),
               ),
             ],
-            if (messages.isNotEmpty && !hidden) ...[
+            if (messages.isNotEmpty) ...[
               const SizedBox(height: 4),
               Align(
                 alignment: Alignment.centerLeft,
@@ -147,9 +142,9 @@ class _PairingCardState extends ConsumerState<PairingCard> {
   }
 }
 
-String _connectorLabel(PairingSuggestion s, bool hidden) {
+String _connectorLabel(PairingSuggestion s) {
   final gap = '${gapLabel(s.gap)} apart';
-  if (hidden || s.amountDifference == Decimal.zero) return gap;
+  if (s.amountDifference == Decimal.zero) return gap;
   final diff = formatAmount(s.amountDifference.toString(), s.from.currency);
   return '$gap · $diff difference';
 }

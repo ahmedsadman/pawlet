@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../models/finance/bill.dart';
-import '../../../state/providers.dart';
 import '../../../theme/catppuccin_theme.dart';
 import '../../../utils/currency_format.dart';
 import '../../../utils/time_format.dart';
@@ -11,7 +9,7 @@ import 'finance_badge.dart';
 /// A single credit-card bill: statement period, sender, paid/due status,
 /// total. Long-press opens its details. Without [onLongPress] it builds no ink
 /// of its own, so a parent can make it part of a larger tappable surface.
-class BillRow extends ConsumerWidget {
+class BillRow extends StatelessWidget {
   const BillRow({
     required this.bill,
     required this.currency,
@@ -26,14 +24,12 @@ class BillRow extends ConsumerWidget {
   // Inside the ink, so a horizontal inset still lets the ink run edge to edge.
   final EdgeInsetsGeometry padding;
 
-  // Opens the bill sheet; allowed even while balances are hidden (the sheet
-  // masks amounts and SMS bodies itself).
+  // Opens the bill sheet.
   final VoidCallback? onLongPress;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hidden = ref.watch(balanceHiddenProvider);
     final period = bill.statementPeriod ?? bill.receivedAt.toLocal();
 
     final content = Padding(
@@ -67,7 +63,7 @@ class BillRow extends ConsumerWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            formatAmount(bill.normalizedTotalDue, currency, hidden: hidden),
+            formatAmount(bill.normalizedTotalDue, currency),
             style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),

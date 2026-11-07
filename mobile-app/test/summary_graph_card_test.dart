@@ -75,7 +75,7 @@ void main() {
     expect(find.text('No transactions in selected range.'), findsOneWidget);
   });
 
-  testWidgets('hides the chart and legend when balances are hidden', (
+  testWidgets('hidden balances leave the chart and legend visible', (
     tester,
   ) async {
     await _pump(
@@ -92,11 +92,9 @@ void main() {
       hidden: true,
     );
 
-    // A decorative (data-less) chart skeleton renders behind the indicator.
     expect(find.byType(LineChart), findsOneWidget);
-    expect(find.text('Amounts hidden'), findsOneWidget);
-    // Legend is dropped while hidden.
-    expect(find.text('Income'), findsNothing);
-    expect(find.text('Expense'), findsNothing);
+    expect(find.text('Amounts hidden'), findsNothing);
+    expect(find.text('Income'), findsOneWidget);
+    expect(find.text('Expense'), findsOneWidget);
   });
 }

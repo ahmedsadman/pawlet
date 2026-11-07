@@ -27,8 +27,7 @@ Future<void> showBillSheet(BuildContext context, WidgetRef ref, Bill bill) {
 
 /// A bill's details: header, the bill SMS, its linked payment legs grouped as
 /// "Paid from" (the funding bank debit) and "Payment received" (the card's own
-/// leg), and a Mark paid / Mark unpaid action. SMS bodies are withheld while
-/// balances are hidden (they carry amounts); the action stays available.
+/// leg), and a Mark paid / Mark unpaid action.
 class BillSheet extends ConsumerStatefulWidget {
   const BillSheet({required this.bill, super.key});
 
@@ -91,7 +90,6 @@ class _BillSheetState extends ConsumerState<BillSheet> {
   @override
   Widget build(BuildContext context) {
     final bill = widget.bill;
-    final hidden = ref.watch(balanceHiddenProvider);
     final currency =
         ref.watch(currencyProvider).value?.data ?? bill.normalizedCurrency;
     return SafeArea(
@@ -102,18 +100,17 @@ class _BillSheetState extends ConsumerState<BillSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Header(bill: bill, currency: currency, hidden: hidden),
+              _Header(bill: bill, currency: currency),
               if (bill.message case final message?) ...[
                 const SizedBox(height: 16),
                 const _Label('Bill SMS'),
-                _MessageBox(hidden: hidden, child: BackingMessage(message)),
+                _MessageBox(child: BackingMessage(message)),
               ],
               if (bill.linkedTransactionIds.isNotEmpty)
                 _PaymentLegs(
                   billId: bill.id,
                   cardBankId: bill.bankId,
                   currency: currency,
-                  hidden: hidden,
                 ),
               const SizedBox(height: 24),
               if (_error != null)
@@ -140,15 +137,10 @@ class _BillSheetState extends ConsumerState<BillSheet> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({
-    required this.bill,
-    required this.currency,
-    required this.hidden,
-  });
+  const _Header({required this.bill, required this.currency});
 
   final Bill bill;
   final String currency;
-  final bool hidden;
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +187,7 @@ class _Header extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Text(
-          formatAmount(bill.normalizedTotalDue, currency, hidden: hidden),
+          formatAmount(bill.normalizedTotalDue, currency),
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
           ),
@@ -225,12 +217,10 @@ class _Label extends StatelessWidget {
   }
 }
 
-/// The expanded-transaction panel styling around an SMS; a placeholder line
-/// instead while balances are hidden.
+/// The expanded-transaction panel styling around an SMS.
 class _MessageBox extends StatelessWidget {
-  const _MessageBox({required this.hidden, required this.child});
+  const _MessageBox({required this.child});
 
-  final bool hidden;
   final Widget child;
 
   @override
@@ -242,14 +232,7 @@ class _MessageBox extends StatelessWidget {
         color: theme.colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: hidden
-          ? Text(
-              'Hidden while balances are hidden.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            )
-          : child,
+      child: child,
     );
   }
 }
@@ -259,7 +242,6 @@ class _PaymentLegs extends ConsumerWidget {
     required this.billId,
     required this.cardBankId,
     required this.currency,
-    required this.hidden,
   });
 
   final int billId;
@@ -268,7 +250,6 @@ class _PaymentLegs extends ConsumerWidget {
   /// other leg (a bank debit, or a manual entry) is what paid it.
   final int? cardBankId;
   final String currency;
-  final bool hidden;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -314,13 +295,13 @@ class _PaymentLegs extends ConsumerWidget {
 
   Widget _leg(BuildContext context, TransactionItem leg) {
     if (leg.message case final message?) {
-      return _MessageBox(hidden: hidden, child: BackingMessage(message));
+      return _MessageBox(child: BackingMessage(message));
     }
     // Manual leg (or its SMS is gone): nothing to show, so summarise the row.
     final theme = Theme.of(context);
     return Text(
       '${leg.bankName ?? leg.sender} · '
-      '${formatAmount(leg.normalizedAmount, currency, hidden: hidden)} · '
+      '${formatAmount(leg.normalizedAmount, currency)} · '
       '${dateLabel(leg.date)}',
       style: theme.textTheme.bodySmall,
     );
