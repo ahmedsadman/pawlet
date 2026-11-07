@@ -119,7 +119,7 @@ The file is a UTF-8 JSON object with this shape:
     "pairing_rejections": [ /* row objects */ ]  // optional; omit or empty is fine
   },
   "settings": {                          // optional; omit to reset all settings
-    "hide_balance": true,
+    "tx_type_hint_seen": true,
     "tx_sort": "amount"
   }
 }
@@ -236,11 +236,12 @@ up; anything else in `settings` is ignored.
 | `tx_range` | string | saved transactions range |
 | `tx_types` | string | comma-joined transaction-type filter |
 | `tx_sort` | string | transactions sort key |
-| `hide_balance` | bool | mask monetary values |
 | `llm_enabled` | bool | "Use LLM for unknown messages" switch (default true); visible and effective only in proxy/opted-out modes |
 | `tx_type_hint_seen` | bool | one-time hint dismissed |
 | `bill_actions_hint_seen` | bool | one-time bill long-press hint dismissed |
 | `history_hint_seen_v2` | bool | one-time History hint dismissed (the older `history_hint_seen` key is no longer read, so it is ignored on restore) |
+
+Older backups may carry `hide_balance`. It is ignored on restore: balance visibility is no longer a setting (balances start hidden on every launch and resume).
 
 ## After a restore
 
