@@ -129,7 +129,7 @@ class FinanceWriter {
     if (meta.normalizedTotalDue == null) return false;
 
     // Strict: the bill needs card evidence — the card in the content, or a
-    // masked last four sent by the card's own bank. That credit bank is
+    // last four sent by the card's own bank. That credit bank is
     // authoritative (the LLM's bank guess is not enough on its own).
     final bank = matchCreditCardInContent(record.sender, record.content, banks);
     if (bank == null) return false;

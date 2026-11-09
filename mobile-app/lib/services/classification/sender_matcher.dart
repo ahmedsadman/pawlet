@@ -100,9 +100,15 @@ final _digit = RegExp(r'\d');
 /// Fewest mask characters that make a bare four-digit group read as a card.
 const _minLastFourMasks = 2;
 
-/// True when [content] shows a suffix-only masked card ending in
-/// [cardDigits]'s last group — mask characters, then the four digits, with no
-/// visible first group — e.g. "Card#***0000" or "XXXX-XXXX-XXXX-0000".
+/// A "Card#" label ending right where a digit run starts.
+final _cardLabelBefore = RegExp(r'\bcard\s*#\s*$', caseSensitive: false);
+
+/// True when [content] shows a suffix-only card ending in [cardDigits]'s last
+/// group, with no visible first group, in one of two forms:
+/// - masked: mask characters, then the four digits — e.g. "Card#***0000" or
+///   "XXXX-XXXX-XXXX-0000";
+/// - labelled: a "Card#" label, then the bare four digits — e.g. "Card# 0000"
+///   or "Card#0000" (UCB).
 ///
 /// Four digits are weak evidence, so this is never consulted alone: the
 /// [BankMatchTier.lastFour] tier also requires a catalog-flagged bank and that
@@ -111,12 +117,15 @@ const _minLastFourMasks = 2;
 /// head means a different card. Any digit before the mask, even across
 /// whitespace, reads as a visible first group, so "Tk 500 ***0000" does not
 /// match.
-bool contentMatchesMaskedLastFour(String content, String? cardDigits) {
+bool contentMatchesLastFour(String content, String? cardDigits) {
   final digits = _parseCardDigits(cardDigits);
   if (digits == null) return false;
   for (final run in _digitRun.allMatches(content)) {
     // Runs are maximal, so "***10000" is one five-digit run, never "0000".
     if (run[0] != digits.last4) continue;
+    if (_cardLabelBefore.hasMatch(content.substring(0, run.start))) {
+      return true;
+    }
     var start = run.start;
     var masks = 0;
     while (start > 0 && _maskOrSeparator.hasMatch(content[start - 1])) {
@@ -142,7 +151,7 @@ enum BankMatchTier {
   /// ([contentMatchesCardDigits]).
   exactCard,
 
-  /// A suffix-only masked card ([contentMatchesMaskedLastFour]) from a bank the
+  /// A suffix-only card ([contentMatchesLastFour]) from a bank the
   /// catalog flags with [BankCatalogEntry.cardLastFourOnly], sent by that bank.
   /// Outranks [sender]: card rows carry no matchers, so a sender match can only
   /// reach the deposit, which would take the card's balance. This accepts that
@@ -184,7 +193,7 @@ bool _lastFourMatches(String sender, String content, Bank bank) {
   if (entry == null || !entry.cardLastFourOnly) return false;
   final lower = sender.toLowerCase();
   if (!entry.matchers.any(lower.contains)) return false;
-  return contentMatchesMaskedLastFour(content, bank.cardDigits);
+  return contentMatchesLastFour(content, bank.cardDigits);
 }
 
 /// The bank [tiers] settle on, or null when none does.
@@ -224,7 +233,7 @@ final _cardTiers = [
 
 /// The credit bank whose card evidence appears in this SMS, or null.
 /// Used by the finance writer to attach a bill to a card. [sender] is needed
-/// because a masked last four only counts when the card's own bank sent it.
+/// because a bare last four only counts when the card's own bank sent it.
 Bank? matchCreditCardInContent(
   String sender,
   String content,

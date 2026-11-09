@@ -29,11 +29,12 @@ found is invisible to the pipeline and its messages are discarded unread.
 short run of mask characters, digits, spaces or hyphens. This covers the common printed
 forms — `4238****3241`, `4238 12 3241`, `4238-XXXX-XXXX-3241`, and the bare number.
 
-**Masked last four.** For banks flagged in the catalog (`lib/data/bank_catalog.dart`), a
-suffix-only masked card ending in the stored last four — mask characters, then the four
-digits, with no visible first group (e.g. `Card#***0000`, `XXXX-XXXX-XXXX-0000`). Requires
-at least two mask characters and that the sender contains one of that bank's catalog
-matchers. Currently applies to BRAC Bank only.
+**Last four.** For banks flagged in the catalog (`lib/data/bank_catalog.dart`), a
+suffix-only card ending in the stored last four, with no visible first group, in one of two
+forms: masked — mask characters, then the four digits (e.g. `Card#***0000`,
+`XXXX-XXXX-XXXX-0000`), with at least two mask characters — or labelled — a `Card#` label,
+then the bare four digits (e.g. `Card# 0000`, `Card#0000`). Either way the sender must
+contain one of that bank's catalog matchers. Currently applies to BRAC Bank and UCB.
 
 **Loose card.** Some banks expose only *three* digits per side (`000***111`). The loose matcher
 handles those by pairing up the digit runs in the message and testing each pair:
@@ -59,13 +60,13 @@ a longer number.
 ### Ranked matching
 
 Matching is ranked by tier (`BankMatchTier` in `lib/services/classification/sender_matcher.dart`),
-strongest first: exact card → masked last four → sender → loose card.
+strongest first: exact card → last four → sender → loose card.
 
 | Caller | Tiers | Tie rule |
 |---|---|---|
 | Layer-1 gate (`processing_service.dart`, `bulk_import/bulk_gate.dart`) | all four | no tie rule; any tier wins |
 | Transaction (`finance_writer.dart`) | all four | exact takes first match; others must be unique |
-| Bill (`finance_writer.dart`) | exact, masked last four, loose (no sender) | exact takes first match; others must be unique |
+| Bill (`finance_writer.dart`) | exact, last four, loose (no sender) | exact takes first match; others must be unique |
 
 Under **exact card** the first matching bank wins: eight digits make a collision
 implausible. Every weaker tier must land on exactly one bank; a tie falls through to the
@@ -75,7 +76,7 @@ because a bill that belongs to no card is meaningless.
 
 Sender deliberately outranks loose card for transactions: a deposit SMS printing a masked
 account number (`A/C 123***678 debited`) can resemble a card, and attributing it to a
-credit card would silently stop that deposit's balance from updating. Masked last four
+credit card would silently stop that deposit's balance from updating. Last four
 outranks sender because card rows carry no matchers — a sender match on a card SMS can
 only reach the deposit, which would take the card's balance.
 
