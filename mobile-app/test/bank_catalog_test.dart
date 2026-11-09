@@ -22,6 +22,7 @@ void main() {
       'dbbl',
       'dutch-bangla bank limited',
     ]);
+    expect(bankCatalogByLabel('UCB')!.matchers, ['ucb']);
     expect(
       bankCatalogByLabel('Eastern Bank Limited'),
       isNull,
@@ -56,6 +57,8 @@ void main() {
     expect(singleCatalogMatch('EASTERN BANK LIMITED')?.label, 'EBL');
     expect(singleCatalogMatch('DBBL')?.label, 'DBBL');
     expect(singleCatalogMatch('Dutch-Bangla Bank Limited')?.label, 'DBBL');
+    expect(singleCatalogMatch('UCB')?.label, 'UCB');
+    expect(singleCatalogMatch('UCB.')?.label, 'UCB');
   });
 
   test('singleCatalogMatch is null for unknown senders', () {
