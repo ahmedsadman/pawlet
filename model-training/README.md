@@ -22,7 +22,7 @@ re-evaluation it costs before deciding.
 
 ## Data
 
-`data/sms-dataset-v1.jsonl` — 820 records: expense 261, bill 146, transfer 140,
+`data/sms-dataset-v1.jsonl` — 920 records: expense 301, bill 166, transfer 180,
 null 118, income 155.
 
 Every row is a real bank SMS format with the values substituted (amounts, card
