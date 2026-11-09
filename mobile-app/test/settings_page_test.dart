@@ -161,13 +161,9 @@ void main() {
       find.byType(SwitchListTile).first,
     );
     expect(switchTile.value, true);
-    expect(
-      find.text(
-        "When the on-device model can't classify a message, its text is sent "
-        "to Pawlet's AI service to be categorized. Recommended.",
-      ),
-      findsOneWidget,
-    );
+    // The privacy copy below explains where messages go; the switch has no
+    // description of its own.
+    expect(switchTile.subtitle, isNull);
   });
 
   testWidgets('byok and none modes hide the LLM switch', (tester) async {
