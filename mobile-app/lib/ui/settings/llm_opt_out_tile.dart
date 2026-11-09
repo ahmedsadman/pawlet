@@ -19,10 +19,6 @@ class LlmOptOutTile extends ConsumerWidget {
     return SwitchListTile(
       contentPadding: EdgeInsets.zero,
       title: const Text('Use LLM for unknown messages'),
-      subtitle: const Text(
-        "When the on-device model can't classify a message, its text is sent "
-        "to Pawlet's AI service to be categorized. Recommended.",
-      ),
       value: enabled,
       onChanged: (value) async {
         if (value) {
