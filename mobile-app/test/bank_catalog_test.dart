@@ -18,6 +18,10 @@ void main() {
       'stanchart',
     ]);
     expect(bankCatalogByLabel('BRAC Bank')!.matchers, ['brac', 'brac-bank']);
+    expect(bankCatalogByLabel('DBBL')!.matchers, [
+      'dbbl',
+      'dutch-bangla bank limited',
+    ]);
     expect(
       bankCatalogByLabel('Eastern Bank Limited'),
       isNull,
@@ -50,6 +54,8 @@ void main() {
     expect(singleCatalogMatch('BRAC-BANK')?.label, 'BRAC Bank');
     // A matcher containing spaces still works as a substring.
     expect(singleCatalogMatch('EASTERN BANK LIMITED')?.label, 'EBL');
+    expect(singleCatalogMatch('DBBL')?.label, 'DBBL');
+    expect(singleCatalogMatch('Dutch-Bangla Bank Limited')?.label, 'DBBL');
   });
 
   test('singleCatalogMatch is null for unknown senders', () {

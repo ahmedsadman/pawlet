@@ -41,6 +41,10 @@ const List<BankCatalogEntry> kBankCatalog = [
     matchers: ['brac', 'brac-bank'],
     cardLastFourOnly: true,
   ),
+  BankCatalogEntry(
+    label: 'DBBL',
+    matchers: ['dbbl', 'dutch-bangla bank limited'],
+  ),
 ];
 
 /// Looks up a catalog entry by its exact label, or null if unknown.
