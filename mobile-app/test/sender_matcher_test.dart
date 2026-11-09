@@ -249,7 +249,7 @@ void main() {
     });
   });
 
-  group('contentMatchesMaskedLastFour', () {
+  group('contentMatchesLastFour', () {
     const digits = '4111|0000';
 
     test('matches suffix-only masked cards', () {
@@ -261,7 +261,7 @@ void main() {
         '***0000',
       ]) {
         expect(
-          contentMatchesMaskedLastFour(content, digits),
+          contentMatchesLastFour(content, digits),
           isTrue,
           reason: content,
         );
@@ -269,33 +269,30 @@ void main() {
     });
 
     test('needs at least two mask characters', () {
-      expect(contentMatchesMaskedLastFour('Card#*0000', digits), isFalse);
-      expect(contentMatchesMaskedLastFour('BDT 0000 paid', digits), isFalse);
+      expect(contentMatchesLastFour('Card#*0000', digits), isFalse);
+      expect(contentMatchesLastFour('BDT 0000 paid', digits), isFalse);
       // A lone "X" ending a word is one mask character, not two.
-      expect(contentMatchesMaskedLastFour('TAX 0000', digits), isFalse);
+      expect(contentMatchesLastFour('TAX 0000', digits), isFalse);
     });
 
     test('leaves cards with a visible first group to the other matchers', () {
       // A matching head is exactCard's job; a mismatching head is another card.
-      expect(contentMatchesMaskedLastFour('5123****0000', digits), isFalse);
-      expect(contentMatchesMaskedLastFour('4111****0000', digits), isFalse);
-      expect(contentMatchesMaskedLastFour('4111 XXXX 0000', digits), isFalse);
+      expect(contentMatchesLastFour('5123****0000', digits), isFalse);
+      expect(contentMatchesLastFour('4111****0000', digits), isFalse);
+      expect(contentMatchesLastFour('4111 XXXX 0000', digits), isFalse);
     });
 
     test('rejects a different last four', () {
-      expect(contentMatchesMaskedLastFour('Card#***0001', digits), isFalse);
+      expect(contentMatchesLastFour('Card#***0001', digits), isFalse);
     });
 
     test('does not read the last four out of a longer number', () {
-      expect(contentMatchesMaskedLastFour('Card#***10000', digits), isFalse);
-      expect(contentMatchesMaskedLastFour('Card#***00001', digits), isFalse);
+      expect(contentMatchesLastFour('Card#***10000', digits), isFalse);
+      expect(contentMatchesLastFour('Card#***00001', digits), isFalse);
     });
 
     test('keeps looking past an unmasked occurrence of the digits', () {
-      expect(
-        contentMatchesMaskedLastFour('Ref 0000, Card#***0000', digits),
-        isTrue,
-      );
+      expect(contentMatchesLastFour('Ref 0000, Card#***0000', digits), isTrue);
     });
 
     test('matches the real BRAC card transaction SMS', () {
@@ -303,23 +300,68 @@ void main() {
           'BDT 12,000 transacted at SHWAPNO on 17/09/26 [11:00:10 AM BST] '
           'using Card#***0000. Available balance: BDT 000,000. '
           'Helpline 16221.';
-      expect(contentMatchesMaskedLastFour(sms, digits), isTrue);
+      expect(contentMatchesLastFour(sms, digits), isTrue);
     });
 
     test('the mask may span line breaks', () {
-      expect(contentMatchesMaskedLastFour('Card:\nXX\n0000', digits), isTrue);
+      expect(contentMatchesLastFour('Card:\nXX\n0000', digits), isTrue);
     });
 
     test('any number just before the mask reads as a visible first group', () {
       // Known miss, accepted: rejecting "4111 XXXX 0000" also rejects an
       // unrelated number separated from the mask only by whitespace.
-      expect(contentMatchesMaskedLastFour('Tk 500 ***0000', digits), isFalse);
+      expect(contentMatchesLastFour('Tk 500 ***0000', digits), isFalse);
+    });
+
+    test('matches a bare last four right after a "Card#" label', () {
+      for (final content in const [
+        'Card# 0000',
+        'Card#0000',
+        'card # 0000',
+        'CARD#\n0000',
+      ]) {
+        expect(
+          contentMatchesLastFour(content, digits),
+          isTrue,
+          reason: content,
+        );
+      }
+    });
+
+    test('a labelled last four needs the "#" and the card label itself', () {
+      expect(contentMatchesLastFour('Card 0000', digits), isFalse);
+      expect(contentMatchesLastFour('Card No. 0000', digits), isFalse);
+      expect(contentMatchesLastFour('ID#0000', digits), isFalse);
+      expect(contentMatchesLastFour('Giftcard#0000', digits), isFalse);
+      expect(contentMatchesLastFour('Card# 12 0000', digits), isFalse);
+    });
+
+    test('a labelled last four is not read out of a longer number', () {
+      expect(contentMatchesLastFour('Card# 10000', digits), isFalse);
+      expect(contentMatchesLastFour('Card# 00001', digits), isFalse);
+      expect(contentMatchesLastFour('Card# 0001', digits), isFalse);
+    });
+
+    test('matches the real UCB card SMS formats', () {
+      for (final sms in const [
+        'UCB Card# 0000(ID#1790390) charged at DAILY SHOPPING for BDT 235.00 '
+            'on 13:13 06.11.26. Avl limit BDT 196517.5',
+        'Dear C/H,Thank you for payment BDT 6040.02 against your UCB '
+            'Card# 0000 (ID# 1790390)',
+        'Thank you for payment BDT 6,040.02 against your UCB Card# 0000 '
+            '(Client ID # 1790390) on 29/10/26 06:37 PM',
+        'Dear C/H, Bill for UCB Card#0000 (ID# 1790390) for OCT-26. Total Due '
+            'is BDT 6040.02 Dr & USD 0.00 Min Due is BDT 500.00 & USD 0.00 Due '
+            'date 12-11-26',
+      ]) {
+        expect(contentMatchesLastFour(sms, digits), isTrue, reason: sms);
+      }
     });
 
     test('null / malformed card digits never match', () {
-      expect(contentMatchesMaskedLastFour('***0000', null), isFalse);
-      expect(contentMatchesMaskedLastFour('***0000', '0000'), isFalse);
-      expect(contentMatchesMaskedLastFour('***0000', '411|0000'), isFalse);
+      expect(contentMatchesLastFour('***0000', null), isFalse);
+      expect(contentMatchesLastFour('***0000', '0000'), isFalse);
+      expect(contentMatchesLastFour('***0000', '411|0000'), isFalse);
     });
   });
 
@@ -634,6 +676,57 @@ void main() {
     test('gates in a card with no deposit set up', () {
       expect(gateBanks('BRACBANK', cardSms, [bracCard]), [bracCard]);
       expect(hasGateBank('BRACBANK', cardSms, [bracCard]), isTrue);
+    });
+
+    group('UCB labelled last four', () {
+      final ucbDeposit = _bank('UCB', matchers: const ['ucb']);
+      final ucbCard = _bank(
+        'UCB',
+        accountType: 'credit',
+        cardDigits: '4111|7588',
+      );
+      const chargeSms =
+          'UCB Card# 7588(ID#1790390) charged at DAILY SHOPPING for BDT '
+          '235.00 on 13:13 06.11.26. Avl limit BDT 196517.5';
+      const billSms =
+          'Dear C/H, Bill for UCB Card#7588 (ID# 1790390) for OCT-26. Total '
+          'Due is BDT 6040.02 Dr & USD 0.00 Min Due is BDT 500.00 & USD 0.00 '
+          'Due date 12-11-26';
+
+      test('lands card SMS on the card, not the deposit', () {
+        for (final sender in const ['UCB', 'UCB.']) {
+          expect(
+            resolveTransactionBank(sender, chargeSms, [ucbDeposit, ucbCard]),
+            same(ucbCard),
+            reason: sender,
+          );
+        }
+        expect(
+          matchCreditCardInContent('UCB', billSms, [ucbDeposit, ucbCard]),
+          same(ucbCard),
+        );
+      });
+
+      test('gates in a card with no deposit set up', () {
+        expect(gateBanks('UCB.', chargeSms, [ucbCard]), [ucbCard]);
+      });
+
+      test('a debit card ending in other digits stays on the deposit', () {
+        expect(
+          resolveTransactionBank('UCB', chargeSms.replaceAll('7588', '1234'), [
+            ucbDeposit,
+            ucbCard,
+          ]),
+          same(ucbDeposit),
+        );
+      });
+
+      test("ignores the same text from another bank's sender", () {
+        expect(
+          matchCreditCardInContent('CITYTOUCH', chargeSms, [ucbCard]),
+          isNull,
+        );
+      });
     });
   });
 }

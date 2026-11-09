@@ -17,8 +17,9 @@ class BankCatalogEntry {
   /// Lowercase substrings; a sender matches if it contains any of them.
   final List<String> matchers;
 
-  /// Whether this bank's card SMS may identify the card by a masked last four
-  /// alone (e.g. "Card#***0000"). This *adds* a way to match: the bank's cards
+  /// Whether this bank's card SMS may identify the card by its last four alone,
+  /// masked (e.g. "Card#***0000") or after a "Card#" label (e.g.
+  /// "Card# 0000"). This *adds* a way to match: the bank's cards
   /// still match on both four-digit groups too. Only honoured when the SMS
   /// sender contains one of [matchers], since four digits alone are weak
   /// evidence.
@@ -45,7 +46,7 @@ const List<BankCatalogEntry> kBankCatalog = [
     label: 'DBBL',
     matchers: ['dbbl', 'dutch-bangla bank limited'],
   ),
-  BankCatalogEntry(label: 'UCB', matchers: ['ucb']),
+  BankCatalogEntry(label: 'UCB', matchers: ['ucb'], cardLastFourOnly: true),
 ];
 
 /// Looks up a catalog entry by its exact label, or null if unknown.

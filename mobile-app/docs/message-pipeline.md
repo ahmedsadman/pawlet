@@ -165,8 +165,8 @@ all (§5):
    settle:
    - **Layer-1 gate (local, free):** does the sender match one of your banks' matchers,
      or does the body contain one of your registered card numbers — in full, masked
-     down to three digits a side, or (for catalog-flagged banks) showing only the masked
-     last four? If not, the message is **ignored with no LLM call** — this is what stops
+     down to three digits a side, or (for catalog-flagged banks) showing only the last
+     four? If not, the message is **ignored with no LLM call** — this is what stops
      OTPs, promos, and personal texts from spending API quota. See [Matching](matching.md),
      which also explains why card digits are a credit card's *only* way through this gate.
    - **On-device model (local, free):** a message that passes the gate is first run through
